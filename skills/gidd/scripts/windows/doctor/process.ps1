@@ -1,6 +1,8 @@
 ﻿function Invoke-DoctorProcess {
     param([string]$Executable, [string[]]$Arguments, [int]$TimeoutSeconds = 5)
 
+    # Private helper for the Windows doctor checks.
+
     # ProcessStartInfo.ArgumentList is unavailable in Windows PowerShell 5.1.
     $quoted = foreach ($argument in $Arguments) {
         '"' + [regex]::Replace([regex]::Replace($argument, '(\\*)"', '$1$1\"'), '(\\+)$', '$1$1') + '"'

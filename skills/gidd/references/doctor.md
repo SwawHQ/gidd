@@ -10,6 +10,20 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\script
 
 两个参数均为必需的绝对路径。Agent 根据用户指定项目和客户端实际技能目录传入，不将技能源码目录当作目标仓库；Shell 不展开的 `~` 须由调用方展开。目标可以是仓库子目录，配置始终在 Git 返回的仓库根下查找。用户技能目录可以尚未存在，doctor 不建立它。
 
+## 源码归属
+
+`scripts/windows/doctor.ps1` 负责参数、显式加载、组合检查与 JSON/退出码；`scripts/windows/doctor/` 是其私有实现目录：
+
+| 文件 | 职责 |
+| --- | --- |
+| `platform.ps1` | Windows 平台与架构 |
+| `tools.ps1` | executable 候选、版本检查及 Node/Bun 选择 |
+| `repository.ps1` | Git 工作树、commit、remote |
+| `configuration.ps1` | 仓库配置文件存在性及验证状态 |
+| `process.ps1` | 上述检查使用的子进程启动、输出捕获、超时 |
+
+这些 `.ps1` 文件由入口 dot-source 加载，是私有辅助文件，不是独立命令或 `.psm1` 模块。新增领域检查在该目录实现并由入口显式调用，不扫描目录自动执行。`process.ps1` 当前没有其他命令调用，出现真实跨命令复用需求时再考虑移入公共目录。
+
 ## 工具选择
 
 依次检查 PATH 中的同名 `.exe`，失败后尝试 GIDD 共享工具。仅执行 `--version`，每个子进程最多等待 5 秒，stdin 关闭。首版不运行 `.cmd` 包装器，不修改 PATH。

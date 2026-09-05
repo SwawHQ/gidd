@@ -47,7 +47,8 @@ function Run-Case([string]$Name, [string]$SearchPath, [scriptblock]$Validate, [s
 }
 
 try {
-    foreach ($path in @($doctor, (Join-Path $root 'skills/gidd/scripts/windows/process.ps1'), $PSCommandPath)) {
+    $sources = @((Get-ChildItem -LiteralPath (Join-Path $root 'skills/gidd/scripts/windows') -Filter '*.ps1' -Recurse).FullName) + @($PSCommandPath)
+    foreach ($path in $sources) {
         $bytes = [IO.File]::ReadAllBytes($path)
         Assert-True ($bytes[0] -eq 239 -and $bytes[1] -eq 187 -and $bytes[2] -eq 191) 'PowerShell source needs UTF-8 BOM'
         $tokens = $null; $errors = $null
