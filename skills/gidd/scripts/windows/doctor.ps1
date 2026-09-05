@@ -14,7 +14,7 @@ function New-Check {
 }
 
 try {
-    foreach ($file in @('process.ps1', 'platform.ps1', 'tools.ps1', 'repository.ps1', 'configuration.ps1')) {
+    foreach ($file in @('_process.ps1', 'platform.ps1', 'tools.ps1', 'repository.ps1', 'configuration.ps1')) {
         . (Join-Path $PSScriptRoot "doctor/$file")
     }
     if ([string]::IsNullOrWhiteSpace($RepositoryPath) -or [string]::IsNullOrWhiteSpace($UserSkillsRoot)) {

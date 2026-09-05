@@ -1,7 +1,7 @@
 ﻿function Invoke-DoctorProcess {
     param([string]$Executable, [string[]]$Arguments, [int]$TimeoutSeconds = 5)
 
-    # Private helper for the Windows doctor checks.
+    # Internal execution helper, not a diagnostic domain.
 
     # ProcessStartInfo.ArgumentList is unavailable in Windows PowerShell 5.1.
     $quoted = foreach ($argument in $Arguments) {

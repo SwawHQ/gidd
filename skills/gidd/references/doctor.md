@@ -20,9 +20,9 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\script
 | `tools.ps1` | executable 候选、版本检查及 Node/Bun 选择 |
 | `repository.ps1` | Git 工作树、commit、remote |
 | `configuration.ps1` | 仓库配置文件存在性及验证状态 |
-| `process.ps1` | 上述检查使用的子进程启动、输出捕获、超时 |
+| `_process.ps1` | 上述检查使用的子进程启动、输出捕获、超时 |
 
-这些 `.ps1` 文件由入口 dot-source 加载，是私有辅助文件，不是独立命令或 `.psm1` 模块。新增领域检查在该目录实现并由入口显式调用，不扫描目录自动执行。`process.ps1` 当前没有其他命令调用，出现真实跨命令复用需求时再考虑移入公共目录。
+这些 `.ps1` 文件由入口 dot-source 加载，不是独立命令或 `.psm1` 模块。领域检查按职责命名；以下划线开头的 `_process.ps1` 表示内部执行辅助，不代表一个检查领域。下划线只是项目命名约定，不具有 PowerShell 访问控制语义。新增领域检查在该目录实现并由入口显式调用，不扫描目录自动执行。`_process.ps1` 当前没有其他命令调用，出现真实跨命令复用需求时再考虑移入公共目录。
 
 ## 工具选择
 
