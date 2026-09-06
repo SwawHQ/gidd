@@ -80,6 +80,28 @@ public class Tool {
         Assert ($result.action -eq 'reused' -and (Get-FileHash (Join-Path $tools 'bun/install.json')).Hash -eq $hash) 'Repeat install must be offline and unchanged'
     } finally { $lock.Dispose() }
     Pass 'install, manifest, repeat without download, Unicode paths'
+    $managedBin = Join-Path $tools 'bun'
+    $managedExe = Join-Path $managedBin 'bun.exe'
+    $recordPath = Join-Path $managedBin 'install.json'
+    $recordText = [IO.File]::ReadAllText($recordPath)
+    try {
+        foreach ($searchPath in @($managedBin, $managedBin.Replace('\','/'), ($managedBin + '\..\bun'), $managedBin.ToUpperInvariant())) {
+            $env:PATH = $searchPath
+            foreach ($managedPath in @($managedExe, $managedExe.Replace('\','/'))) {
+                [IO.File]::WriteAllText($recordPath, $recordText)
+                $check = Find-Tool 'bun' ([version]'1.2') '^(\d+\.\d+\.\d+)$' $managedPath
+                Assert ($check.status -eq 'ready') 'Equivalent PATH spelling must accept an intact managed tool'
+                [IO.File]::WriteAllText($recordPath, 'incomplete manifest')
+                $check = Find-Tool 'bun' ([version]'1.2') '^(\d+\.\d+\.\d+)$' $managedPath
+                Assert ($check.status -eq 'invalid' -and $check.details.rejected.Count -ge 2) 'Equivalent PATH spelling must not bypass managed integrity'
+                Assert (@($check.details.rejected | Where-Object reason -ne managed_integrity_failed).Count -eq 0) 'Reject every equivalent candidate before execution'
+            }
+        }
+    } finally {
+        $env:PATH = $savedPath
+        [IO.File]::WriteAllText($recordPath, $recordText)
+    }
+    Pass 'managed PATH aliases retain integrity checks for intact and invalid manifests'
     foreach ($phase in @('downloaded','extracted','verified','published')) {
         $target = Join-Path $fixture "kill-$phase/gidd.tools"
         $worker = Wait-Worker (Start-Worker $target $phase)
@@ -167,11 +189,25 @@ public class Tool {
     [void][IO.Directory]::CreateDirectory($external)
     Copy-Item $exe (Join-Path $external 'node.exe'); Copy-Item $exe (Join-Path $external 'gh.exe')
     $env:PATH=$external
-    $newSkills = Join-Path $fixture 'not-created-skills'
-    $json = & $shellPath -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $code 'setup-tools.ps1') -UserSkillsRoot $newSkills
-    Assert ($LASTEXITCODE -eq 0 -and ($json | ConvertFrom-Json).status -eq 'ready') 'Reuse existing Node and gh'
-    Assert (-not (Test-Path $newSkills)) 'External reuse creates no directories'
-    Pass 'public entry reuses Node and gh without creating data'
+    foreach ($runtimeName in @('node','bun')) {
+        if ($runtimeName -eq 'bun') { Copy-Item $exe (Join-Path $external 'bun.exe') }
+        $newSkills = Join-Path $fixture "not-created-$runtimeName-skills"
+        foreach ($existingRoot in @($false,$true)) {
+            if ($existingRoot) { [void][IO.Directory]::CreateDirectory((Join-Path $newSkills 'gidd.tools')) }
+            $json = & $shellPath -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $code 'setup-tools.ps1') -UserSkillsRoot $newSkills -ArchiveDirectory (Join-Path $fixture 'missing-offline-files')
+            Assert ($LASTEXITCODE -eq 0) 'External reuse must succeed offline'
+            $report = $json | ConvertFrom-Json
+            Assert ($report.status -eq 'ready' -and $report.tools.Count -eq 2) 'Report runtime and gh'
+            $runtimeResult = @($report.tools | Where-Object name -eq $runtimeName)
+            Assert ($runtimeResult.Count -eq 1 -and $runtimeResult[0].action -eq 'reused' -and
+                $runtimeResult[0].path -eq (Join-Path $external "$runtimeName.exe")) 'Report the actual selected runtime name and path'
+            $ghResult = @($report.tools | Where-Object name -eq gh)
+            Assert ($ghResult.Count -eq 1 -and $ghResult[0].action -eq 'reused' -and
+                $ghResult[0].path -eq (Join-Path $external 'gh.exe')) 'Keep gh reuse unchanged'
+            if (-not $existingRoot) { Assert (-not (Test-Path $newSkills)) 'External reuse creates no directories' }
+            Pass "public entry reports reused $runtimeName and gh; existing tools root: $existingRoot"
+        }
+    }
     Write-Output "Passed $script:count installation/recovery cases."
 } finally {
     $env:PATH=$savedPath
