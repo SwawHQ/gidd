@@ -30,7 +30,7 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\script
 
 `scripts/windows/setup-tools/` 按 `_filesystem.ps1`（锁和受控路径）、`download.ps1`（下载与归档）、`install.ps1`（发布事务）拆分。真实共用的探测与完整性代码位于相邻 `lib/`。
 
-`gidd.tools/` 本身就是工具根，不再增加 `tools/` 层。源码仓库的开发入口使用同样的结构，但根为该 checkout 的 `.dev/`，目前只准备 Bun；两个根的工具和缓存各自独立。
+`gidd.tools/` 本身就是工具根，不再增加 `tools/` 层。源码仓库的开发入口使用同样的结构，但根为该 checkout 的 `.dev/`，同时准备 Bun 和 Node 用于双运行时测试；开发 Node 使用独立清单 `scripts/dev/runtimes.json`，不会使技能初始化额外下载 Node。两个根的工具和缓存各自独立。
 
 ## 中断恢复
 

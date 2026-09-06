@@ -1,8 +1,8 @@
-import { test } from 'bun:test';
+import { test } from 'node:test';
 import { symlinkSync, unlinkSync } from 'node:fs';
 import { adapter, assert, code, compile, dirname, existsSync, fixture, hash, installSpec, join, json, makeZip, mkdirSync, ok, ps, readFileSync, startAdapter, stub, until, write } from './support/helpers.mjs';
 
-test('setup: install, integrity, interrupted publication, locks, preservation and reuse', async () => {
+test('setup: install, integrity, interrupted publication, locks, preservation and reuse', { timeout: 120000 }, async () => {
   const f = fixture();
   try {
     const exe = compile(f.root), archive = join(f.root,'bun.zip');
@@ -98,4 +98,21 @@ test('setup: install, integrity, interrupted publication, locks, preservation an
       }
     }
   } finally { f.dispose(); }
-},120000);
+});
+
+test('setup: Node archive version, integrity and offline reuse', { timeout: 120000 }, () => {
+  const f=fixture();
+  try {
+    const exe=compile(f.root), archive=join(f.root,'node.zip'), root=join(f.root,'.dev');
+    makeZip(f.root,archive,[{name:'node/node.exe',source:exe}]);
+    const definition={name:'node',version:'24.0.0',archive:'node.zip',url:'https://example.invalid/node.zip',sha256:hash(archive),files:[{entry:'node/node.exe',name:'node.exe'}],supplements:[]};
+    const path=join(f.root,'node.json'); write(path,JSON.stringify(definition));
+    assert.equal(json(ok(adapter(f.root,installSpec(root,path,f.root)))).action,'installed');
+    assert.equal(existsSync(join(root,'.cache/node')),false);
+    assert.equal(json(ok(adapter(f.root,installSpec(root,path,join(f.root,'missing'))))).action,'reused');
+    write(path,JSON.stringify({...definition,version:'24.1.0'}));
+    assert.match(adapter(f.root,installSpec(join(f.root,'wrong-version'),path,f.root)).stderr,/installed_version_mismatch/);
+    write(join(root,'node/node.exe'),'corrupt');
+    assert.match(adapter(f.root,installSpec(root,path,f.root)).stderr,/occupied_or_invalid_target/);
+  } finally { f.dispose(); }
+});

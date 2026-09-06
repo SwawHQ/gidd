@@ -7,7 +7,7 @@
 
 function Remove-GiddStage {
     param([string]$ToolsRoot, [string]$Name)
-    if ($Name -notin @('bun','gh')) { throw 'invalid_tool_name' }
+    if ($Name -notin @('bun','gh','node')) { throw 'invalid_tool_name' }
     $stage = [IO.Path]::GetFullPath((Join-Path $ToolsRoot ".cache/$Name"))
     $expected = [IO.Path]::GetFullPath($ToolsRoot).TrimEnd('\') + '\.cache\' + $Name
     if ($stage -ne $expected) { throw 'stage_outside_root' }

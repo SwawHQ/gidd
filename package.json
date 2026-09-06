@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "bun scripts/dev/dev.mjs .test",
-    "test:live": "bun scripts/dev/dev.mjs .test-live"
+    "test": "cmd.exe /d /c dev.cmd .test",
+    "test:bun": "cmd.exe /d /c dev.cmd .test-bun",
+    "test:node": "cmd.exe /d /c dev.cmd .test-node",
+    "test:live": "cmd.exe /d /c dev.cmd .test-live"
   }
 }

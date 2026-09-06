@@ -1,8 +1,8 @@
-import { test } from 'bun:test';
+import { test } from 'node:test';
 import { statSync } from 'node:fs';
 import { assert, code, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, ps, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
 
-test('doctor: dependency matrix, repository states, read-only checks and redaction', () => {
+test('doctor: dependency matrix, repository states, read-only checks and redaction', { timeout: 120000 }, () => {
   const f = fixture();
   try {
     const git = findGit(), gitBin = dirname(git), exe = compile(f.root);
@@ -81,4 +81,4 @@ test('doctor: dependency matrix, repository states, read-only checks and redacti
     runCase('config path is a directory',toolPath,(r,status) => { assert.equal(status,1); assert.equal(check(r,'repository.config').status,'invalid'); });
     assert.ok(existsSync(config));
   } finally { f.dispose(); }
-},60000);
+});

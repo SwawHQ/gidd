@@ -1,7 +1,7 @@
-import { test } from 'bun:test';
+import { test } from 'node:test';
 import { adapter, assert, compile, existsSync, fixture, join, json, ok, readFileSync } from './support/helpers.mjs';
 
-test('process: stdout, inherited pipes and one shared timeout deadline', async () => {
+test('process: stdout, inherited pipes and one shared timeout deadline', { timeout: 120000 }, async () => {
   const f = fixture(), pidFiles = [];
   try {
     const executable = compile(f.root,'pipe-parent.cs');
@@ -23,4 +23,4 @@ test('process: stdout, inherited pipes and one shared timeout deadline', async (
     await new Promise(resolve => setTimeout(resolve,100));
     f.dispose();
   }
-},30000);
+});

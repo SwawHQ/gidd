@@ -87,7 +87,8 @@ export function stub(source, destination, mode, managed = false) {
   if (managed) {
     const dir = dirname(destination);
     const files = readdirSync(dir).filter(name => name !== 'install.json').map(name => ({ name, length: lstatSync(join(dir, name)).size, sha256: hash(join(dir, name)) }));
-    write(join(dir, 'install.json'), JSON.stringify({ schema: 'gidd.install/v1', name: destination.endsWith('bun.exe') ? 'bun' : 'gh', platform: 'windows-x64', version: '1.2.15', archive_sha256: '0'.repeat(64), files }));
+    const name = destination.endsWith('bun.exe') ? 'bun' : destination.endsWith('node.exe') ? 'node' : 'gh';
+    write(join(dir, 'install.json'), JSON.stringify({ schema: 'gidd.install/v1', name, platform: 'windows-x64', version: name === 'node' ? '24.0.0' : name === 'gh' ? '2.98.0' : '1.2.15', archive_sha256: '0'.repeat(64), files }));
   }
 }
 export function snapshot(root) {
