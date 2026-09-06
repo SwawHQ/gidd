@@ -1,0 +1,41 @@
+# GitHub 身份检查（Windows）
+
+用户要求“检查此仓库的 GitHub 登录”时，Agent 先确定目标仓库和预期主机、账号，再调用 `scripts/windows/check-identity.ps1`。该命令会联网检查，但不启用仓库、不安装工具、不发起登录或切换账号，不写入配置或 commit。
+
+```powershell
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <技能目录>\scripts\windows\check-identity.ps1 -RepositoryPath D:\projects\example -Hostname github.com -Account octocat
+```
+
+`RepositoryPath` 必须是现有工作树内的本地盘绝对路径。`Hostname` 默认 `github.com`，`Account` 可省略（只报告实际账号），`Remote` 默认 `origin`。账号比较忽略大小写。预期账号由 Agent 根据用户意图传入，不从工具配置推断；本轮不扩展 `config.toml` schema。
+
+PowerShell 仅定位工具和启动 JavaScript：按既有仓库工具配置复用 PATH 或受管目录中的 gh、Git、Bun/Node，任一可用运行时即可。业务入口为 `scripts/github.mjs`，Node/Bun 执行同一套逻辑。配置或启动失败时先运行离线 doctor；检查不会为了诊断而下载工具。
+
+已确定工具路径的 Agent 也可直接调用：
+
+```powershell
+& <node.exe或bun.exe> <技能目录>\scripts\github.mjs --repository D:\projects\example --hostname github.com --account octocat --git <git.exe绝对路径> --gh <gh.exe绝对路径>
+```
+
+省略 `--git` 或 `--gh` 明确报告对应工具不可用，不自行搜索替代命令。脚本只接受实际 `.exe`，不接受开发者私有包装命令。
+
+## 结果
+
+标准输出为 JSON，`schema = gidd.identity/v1`，各项独立报告：
+
+| 检查 | 验证内容 |
+| --- | --- |
+| `github.api` | `gh api --hostname <host> --method GET user --jq .login` 实际返回的账号；与预期不一致为 `mismatch` |
+| `repository` | 目标是可读取的 Git 工作树 |
+| `git.author` | `git var GIT_AUTHOR_IDENT` 有效作者姓名和邮箱，包括当前进程的作者覆盖；不据此推断 GitHub 登录 |
+| `git.remote_read` | 经 `insteadOf` 解析的远程为同一主机、无内嵌凭据的 HTTPS URL 时，尝试非交互 `git ls-remote`；空仓库无 HEAD 也可读取成功 |
+| `git.authentication` | 始终 `not_checked`：远程可读不能证明 Git 使用的账号或推送权限 |
+
+`checks_passed` / 退出 0 表示前四项都通过，仍不代表 Git 推送认证通过。失败、不匹配、依赖缺失或远程未检查为 `needs_attention` / 退出 1；参数、平台或启动错误为退出 2。API 请求失败可能是凭据、网络或服务问题，不直接判定“未登录”。错误输出仅保留原因码，不转发子进程 stderr、失败 stdout 或完整远程 URL。
+
+当前仅验证 Windows x64、Windows PowerShell 5.1、Bun 1.2.15 与 Node 24。SSH、其他主机、带凭据或查询参数的远程不会进行传输探测，返回 `not_checked`；这不是认证失败。`doctor.ps1` 仍是纯离线诊断。
+
+每个业务子进程默认最多 15 秒，终止确认最多额外 500 毫秒，输出最多 1 MiB；一项失败后继续独立项。关闭 stdin，禁用 Git/GCM 的交互提示，不执行 `auth login`、`auth switch` 或 `auth setup-git`。继承调用进程选定的 gh 认证环境（包括 `GH_CONFIG_DIR` 和 token 环境变量），不读取或输出 token；Git 继续使用自身现有凭据配置。外部凭据助手自身的行为由该助手决定。
+
+收到异常或账号不匹配后，Agent 报告事实并与用户明确后续操作。用户明确要求登录时使用独立的 [授权入口](authorization.md)，展示本次 URL 和一次性代码、抑制浏览器启动、等待用户授权并验证实际账号。检查成功不是仓库启用记录，也不授权创建 Issue/PR。
+
+协议依据：[gh api](https://cli.github.com/manual/gh_api)、[git var](https://git-scm.com/docs/git-var)、[git ls-remote](https://git-scm.com/docs/git-ls-remote)。

@@ -55,9 +55,10 @@ try {
         [Console]::WriteLine([IO.File]::ReadAllText((Join-Path $PSScriptRoot "help/$language.txt")))
         exit 0
     }
-    if ($Command -notin @('.info','.setup','.test','.test-bun','.test-node','.test-live','bun','node')) { throw 'Unknown command. Use dev.cmd .help.' }
+    if ($Command -notin @('.info','.setup','.test','.test-bun','.test-node','.test-live','.auth','bun','node')) { throw 'Unknown command. Use dev.cmd .help.' }
+    if ($Command -eq '.auth' -and $Argument -notmatch '^[A-Za-z0-9][A-Za-z0-9-]{0,99}$') { throw '.auth requires the expected GitHub account.' }
     if ($Command -eq '.info' -and $Argument) { throw '.info takes no arguments.' }
-    if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev','config')) { throw 'Unknown test suite.' }
+    if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev','config','github')) { throw 'Unknown test suite.' }
     foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','doctor/platform.ps1')) { . (Join-Path $codeRoot $file) }
     if ((Get-DoctorPlatformCheck).status -ne 'ready') { throw 'unsupported_platform' }
     if ($Command -in @('.setup','.test-live') -and $Argument) {
@@ -76,6 +77,14 @@ try {
         exit $LASTEXITCODE
     }
     $checks = @{ bun = (Get-DevRuntime 'bun'); node = (Get-DevRuntime 'node') }
+    if ($Command -eq '.auth') {
+        $runtimeName = @('bun','node' | Where-Object { $checks[$_].status -eq 'ready' } | Select-Object -First 1)
+        if (-not $runtimeName.Count) { throw 'No runtime available. Run dev.cmd .setup first.' }
+        $gh = Find-Tool 'gh' ([version]'2.98.0') '^gh version (\d+\.\d+\.\d+)' (Join-Path $toolsRoot 'gh/gh.exe') $storage.tools.gh.version
+        if ($gh.status -ne 'ready') { throw 'gh 2.98.0 or newer unavailable. Prepare gh explicitly with the skill tool setup.' }
+        & $checks[$runtimeName[0]].details.path (Join-Path $repoRoot 'skills/gidd/scripts/auth.mjs') --repository $repoRoot --account $Argument --gh $gh.details.path
+        exit $LASTEXITCODE
+    }
     if ($Command -eq '.info') {
         @{ schema='gidd.dev/v1'; bun=$checks.bun; node=$checks.node; tools_root=$toolsRoot; storage=$storage } | ConvertTo-Json -Depth 8
         if ($checks.bun.status -eq 'ready' -and $checks.node.status -eq 'ready') { exit 0 } else { exit 1 }

@@ -1,12 +1,16 @@
 ---
 name: gidd
-description: Diagnose GIDD prerequisites and prepare missing portable tools when the user asks to initialize GIDD or troubleshoot its environment. Currently supports Windows diagnosis and tool installation; tool storage configuration is supported; repository enablement and Issue/PR workflows are not yet implemented.
+description: Diagnose GIDD prerequisites, check GitHub identity, request device authorization when explicitly asked to log in, and prepare missing portable tools. Currently verified on Windows; repository enablement and Issue/PR workflows are not yet implemented.
 license: MIT
 ---
 
 # GIDD
 
 Use [references/doctor.md](references/doctor.md) for Windows diagnosis, tool selection, output meanings, and follow-up guidance. The executable entry is `scripts/windows/doctor.ps1`; it works without Node.js or Bun installed.
+
+When the user asks to check GitHub login for a repository, use [references/identity.md](references/identity.md) and `scripts/windows/check-identity.ps1`. Resolve the target repository, host and optional expected account. This performs read-only network checks using an available Node.js or Bun; it does not log in, switch accounts or enable the repository. Report API identity, Git remote readability and commit author separately. A readable public remote does not verify Git authentication or push permission.
+
+For an explicit login/authorization request, use [references/authorization.md](references/authorization.md) and `scripts/windows/authorize.ps1`. Require the expected account, show this attempt's URL and code, retain the waiting process, and verify the resulting API identity. Reuse a matching login; report an existing account mismatch without switching. Credentials are managed by gh, not GIDD configuration. A login request does not enable the repository.
 
 When the user has authorized preparing missing tools, use [references/setup.md](references/setup.md) and `scripts/windows/setup-tools.ps1`. Pass the explicit target repository. Explain the resolved tool directory from [references/configuration.md](references/configuration.md). The installer reuses available runtimes and gh, downloads only missing tools, and can resume after interruption. Run doctor again afterwards; tool readiness does not enable the repository.
 
@@ -16,6 +20,6 @@ The repository configuration belongs at `<repository>/.agents/skills/gidd/config
 
 Explain diagnostic facts and missing prerequisites. An available Node.js or Bun is sufficient; do not require both. `local_ready` includes validation of the supported tool storage schema only; it does not validate enablement or authentication. A `not_checked` result is not a failed login.
 
-Tool storage TOML is read without a JavaScript runtime; see the restricted schema and template in [references/configuration.md](references/configuration.md). Automatic config generation/editing, enablement, authentication, and GitHub development automation remain unimplemented. Do not claim they ran or infer authorization to install from a diagnostic failure. Future JavaScript logic must use standard APIs supported by both Node.js and Bun.
+Tool storage TOML is read without a JavaScript runtime; see the restricted schema and template in [references/configuration.md](references/configuration.md). Automatic config generation/editing, enablement, and GitHub development automation remain unimplemented. Do not claim they ran or infer authorization to install or log in from a diagnostic failure. JavaScript logic must use standard APIs supported by both Node.js and Bun.
 
 For a removal request, have the Agent identify the actual skill installation directory, then inspect it, the repository configuration, and the default and configured tool directories; explain the cleanup scope before removal. Removing GIDD from one repository does not authorize removal of shared tools. Do not remove externally managed tools or treat local file deletion as GitHub logout or authorization revocation.

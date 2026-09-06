@@ -74,19 +74,31 @@ gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 
 切换配置不会自动搬迁或删除旧工具。确认所有安装与测试退出、目标尚不存在后可显式迁移原目录，再用 `.setup` 验证完整性与复用。安装期间不得删除缓存根或锁文件。只清理明确拥有的工具目录；用户级存储可能由其他仓库共用，外部 PATH 工具不属于本项目。更多清理边界见配置文档。
 
-`dev.cmd` 仅在子进程范围隔离 PowerShell 模块路径，防止从 PowerShell 7 启动 PowerShell 5.1 时继承不兼容模块；不修改系统 PATH、Git 配置、登录或用户级技能目录。
+`dev.cmd` 仅在子进程范围隔离 PowerShell 模块路径，防止从 PowerShell 7 启动 PowerShell 5.1 时继承不兼容模块；不修改系统 PATH、Git 配置或用户级技能目录。显式 `.auth` 可以通过 gh 保存登录凭据。
+
+## 显式 GitHub 授权
+
+```powershell
+.\dev.cmd .auth octocat
+```
+
+账号必填，开发快捷入口使用 github.com；其他主机使用技能的 `scripts/windows/authorize.ps1 -Hostname`。需要现成的 gh 2.98.0+ 和 Bun/Node 任一种；`.auth` 不下载工具，`.setup` 仍只准备开发运行时，缺少 gh 时通过技能 `setup-tools.ps1 -RepositoryPath <仓库绝对路径>` 显式准备。
+
+入口先核验并复用匹配身份；否则在需要授权时显示本次 URL 和代码，等待用户在网页授权，最后验证实际账号。等待时保留进程，成功、失败、取消或超时后退出，不启动常驻服务。凭据由 gh 管理，可继承调用环境选定的 GH_CONFIG_DIR；不更改 Git 凭据助手或启用仓库。当前账号不匹配时明确报错，不自动切换。详见 [设备授权协议与凭据边界](skills/gidd/references/authorization.md)。
+
+`.test github` 只执行离线 fixture，覆盖授权、复用、不匹配、超时、取消及入口调用；不会申请真实代码或修改真实登录。人工授权验证需单独运行 `.auth`，不能把普通测试通过当作真实授权完成。
 
 ## 测试
 
 日常修改先用 `.test <测试组>` 验证受影响部分，提交前执行完整 `.test`。每组显示 PASS/FAIL 和耗时，结束后汇总失败文件及可复制的 PowerShell 复跑命令；双运行时执行结束后显示各运行时结果与总耗时。汇总按测试文件计数，不替代运行器输出的用例断言详情。一组失败不会阻止后续组或另一运行时执行。本地测试无需等待 GitHub CI。
 
-默认 `.test` 先检查 Bun 和 Node 均可用，再依次使用二者执行同一套 `tests/*.test.mjs` 离线用例；任一运行失败，命令整体失败。支持测试组 `all`（默认）、`doctor`、`setup`、`process`、`dev`、`config`。缺少任一运行时就明确报错，不安装、不联网，也不把未执行的运行时算作通过。`.test-bun` 和 `.test-node` 只检查并运行指定运行时，适合定位问题，不能替代双运行时验收。
+默认 `.test` 先检查 Bun 和 Node 均可用，再依次使用二者执行同一套 `tests/*.test.mjs` 离线用例；任一运行失败，命令整体失败。支持测试组 `all`（默认）、`doctor`、`setup`、`process`、`dev`、`config`、`github`。缺少任一运行时就明确报错，不安装、不联网，也不把未执行的运行时算作通过。`.test-bun` 和 `.test-node` 只检查并运行指定运行时，适合定位问题，不能替代双运行时验收。
 
 测试使用 `node:test` 与 `node:assert/strict`，Bun 通过自身测试运行器执行，Node 使用 `--test`。用例、断言、临时目录、进程调度共用 JavaScript；`scripts/dev/dev.mjs` 适配启动参数，两种运行时均按文件串行启动独立进程，隔离测试状态，也避免 Bun 1.2.15 的 `node:test` 多文件注册缓存漏执行。`tests/support/windows.ps1` 仅调用被测 PowerShell 函数、检查 BOM 后解析语法、编译 fixture executable 和构造 ZIP。C# fixture 用于模拟 Windows executable 和继承输出管道的进程，不属于产品。
 
 `bun run test` 使用相同的双运行时入口；`bun run test:bun`、`bun run test:node` 分别选择一种。已有 npm 时也可以使用相应的 `npm run` 命令，但便携安装不提供 npm。
 
-测试保留诊断只读、依赖缺失、PATH/受管工具选择、Node/Bun 复用、凭据脱敏、损坏目标保留、SHA/ZIP/版本拒绝、junction 拒绝、并发锁、强制终止恢复和共享超时期限等场景。当前产品 JavaScript 仍是规划位置，双运行时测试验证现有开发代码和 PowerShell 接口，不能据此声称尚未实现的产品功能已支持 Node/Bun。
+测试保留诊断只读、依赖缺失、PATH/受管工具选择、Node/Bun 复用、凭据脱敏、损坏目标保留、SHA/ZIP/版本拒绝、junction 拒绝、并发锁、强制终止恢复和共享超时期限等场景。`github` 组使用离线 fixture 验证 API 账号匹配、独立失败、凭据脱敏、进程超时和只读 Git 作者检查；不会触碰真实登录。产品身份检查用法见 [身份检查协议](skills/gidd/references/identity.md)，该入口需显式调用才会联网。其他空 JavaScript 文件仍是规划位置。
 
 官方归档验证需要显式运行：
 

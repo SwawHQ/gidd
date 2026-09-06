@@ -56,4 +56,4 @@ Bun 与 gh 各自发布：Bun 完成而 gh 失败时，保留已完成的 Bun，
 
 stdout 是 `gidd.setup-tools/v1` JSON；成功退出 0，`status=ready`，`tools` 列出 `installed` 或 `reused` 及实际路径。失败退出 1，`status=error`，`reason` 提供原因，`tools` 保留已完成项；stderr 显示进度与错误。`install_locked_or_unwritable` 需要确认另一个安装是否在运行；`occupied_or_invalid_target` 需要检查该正式目录，不要直接删除。
 
-成功后再次运行 doctor。`ready` 只表示运行时与 gh 可用；Git、仓库、配置和认证仍需各自检查。工具存储配置读取已实现；自动配置写入、启用记录、登录与完整开发流程尚未实现，不能报告“仓库已启用”。
+成功后再次运行 doctor。`ready` 只表示运行时与 gh 可用；Git、仓库、配置和认证仍需各自检查。需要检查账号时使用 [身份检查](identity.md)，用户明确要求登录时使用 [设备授权](authorization.md)。自动配置写入、启用记录与完整开发流程尚未实现，不能报告“仓库已启用”。

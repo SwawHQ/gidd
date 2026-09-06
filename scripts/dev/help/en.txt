@@ -7,12 +7,13 @@ GIDD repository development (Windows x64 / Windows PowerShell 5.1)
   dev.cmd .test-bun [suite]      Run only Bun tests.
   dev.cmd .test-node [suite]     Run only Node tests.
   dev.cmd .test-live [archive-dir]  Test official Bun/gh/Node archives and reuse under both runtimes.
+  dev.cmd .auth <account>        Explicit GitHub.com authorization; wait for the device code flow.
   dev.cmd bun [args...]          Run the configured portable Bun, without PATH fallback.
   dev.cmd node [args...]         Run the configured portable Node, without PATH fallback.
   dev.cmd sys bun [args...]  Run Bun from PATH only.
   dev.cmd sys node [args...] Run Node from PATH only.
 
-Suites: all (default), doctor, setup, process, dev, config.
+Suites: all (default), doctor, setup, process, dev, config, github.
 Each suite reports its result and duration; failures include PowerShell rerun commands.
 Use a focused suite while editing, then run .test before submitting changes.
 No arguments show help. Help language: argument, GIDD_DEV_LANG, locale, then English.
@@ -23,6 +24,7 @@ Tool storage, versions and download roots follow .agents/skills/gidd/config.toml
 Defaults for missing downloads: Node LTS, stable Bun; existing usable tools are reused.
 Offline first installs require exact bundled versions; see DEVELOPMENT.md.
 Portable Node includes the runtime and license, without npm; tests have no npm dependencies.
+.auth can save gh credentials; it never opens a browser or configures Git credential helpers.
 Tests never log in. No command enables GIDD or changes user skills or system PATH.
 Product JavaScript must still work in both Node.js and Bun.
 See DEVELOPMENT.md for boundaries, test adapters and cleanup.
