@@ -36,6 +36,8 @@
 
 默认 Node 使用最新 LTS、Bun 使用最新稳定版，只在需要下载时解析；已有可用版本继续复用，诊断与测试不检查更新。`skills/gidd/assets/runtimes.json` 和 `scripts/dev/runtimes.json` 保留 Bun/gh 与开发 Node 的已验证版本校验信息。版本解析、官方校验信息、下载、SHA-256 校验、独占锁、版本验证及中断恢复共用技能脚本，不通过 Bun 安装 Node，也不通过 Node 安装 Bun。已有工具目录版本冲突时保留并报错，自动升级/回滚命令尚未实现。
 
+Windows 上的 Bun 1.2.15 存在已复现的子进程兼容问题：启动不存在的程序后，后续 `spawnSync` 可能报告 `Out of memory`；脱离 GIDD 的最小示例也会触发。相同示例在 Bun 1.4.2 和 Node 上未复现，开发验收建议使用已验证的 Bun 1.4.2。`latest` 不会升级已有安装；升级前需确认实际使用的是 PATH 还是便携版本，便携版本应在安装器未运行时备份原 `bun/`，再执行 `.setup bun` 并确认选中的版本，最后运行完整 `.test`。
+
 便携 Node 只提取 `node.exe` 和完整的上游 `LICENSE`，不附带 npm；当前测试没有 npm 依赖。开发入口可用 `.setup gh` 准备 gh；已安装 skill 的工具初始化仍只需 Bun/Node 任一种可用，不会因开发清单额外下载 Node。
 
 安装只需 `.setup bun`、`.setup node` 或 `.setup gh`，不接受本地安装包目录。缺少工具时按配置联网下载并校验；已可用且满足配置的工具直接复用，不联网。实际安装位置由 `tools.directory` 决定。
