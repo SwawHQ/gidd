@@ -1,0 +1,20 @@
+GIDD 仓库开发（Windows x64 / Windows PowerShell 5.1）
+
+  dev.cmd .help [zh|en]          显示帮助，不需要 Bun/Node，不下载。
+  dev.cmd .info                  分别报告开发 Bun 和 Node。
+  dev.cmd .setup [归档目录]      准备 Bun 和 Node，优先复用，否则按配置安装。
+  dev.cmd .test [测试组]         用 Bun 和 Node 分别执行同一套离线测试。
+  dev.cmd .test-bun [测试组]     只运行 Bun 测试。
+  dev.cmd .test-node [测试组]    只运行 Node 测试。
+  dev.cmd .test-live [归档目录]  两种运行时验证官方 Bun/gh/Node 归档及复用。
+
+测试组：all（默认）、doctor、setup、process、dev、config。
+无参数显示帮助。帮助语言按参数、GIDD_DEV_LANG、系统语言、英文的顺序选择。
+只有 .setup 和 .test-live 可以下载；.test 不会安装缺失工具。
+工具目录、版本与下载来源读取 .agents/skills/gidd/config.toml。
+缺失时默认下载 Node LTS、Bun 稳定版；已有可用工具继续复用。
+首次离线安装须固定内置基线版本，详见 DEVELOPMENT.md。
+Node 仅包含运行时和许可证，不附带 npm；当前测试无 npm 依赖。
+本入口不启用 GIDD，不修改用户技能、PATH、Git 配置或登录状态。
+产品 JavaScript 仍须同时支持 Node.js 和 Bun。
+开发边界、测试适配和清理方式见 DEVELOPMENT.md。

@@ -7,8 +7,8 @@
 - **目标仓库**：用户要求启用 GIDD 并进行开发的 Git 仓库。
 - **技能安装目录**：实际包含 GIDD `SKILL.md` 和配套脚本的目录，可以位于用户技能目录或目标仓库的 `.agents/skills/gidd/`。
 - **仓库配置文件**：固定为 `<目标仓库>/.agents/skills/gidd/config.toml`，与技能安装范围无关。
-- **用户技能根目录**：目标 Agent 客户端实际使用的用户级技能目录；使用 `~/.agents/skills/` 的客户端中，`~` 指当前操作系统用户的家目录。
-- **共享工具目录**：固定为 `<用户技能根目录>/gidd.tools/`，例如 `~/.agents/skills/gidd.tools/`；它与用户级技能目录 `gidd/` 并列，不是技能安装目录。
+- **用户技能根目录**：由 Agent 客户端自行决定；技能安装位置及用户级/仓库级模式不写入 GIDD 配置，也不参与下载工具路径解析。
+- **工具目录**：推荐 `~/.agents/skills/gidd.tools/`，其中 `~` 指当前操作系统用户家目录。`tools.directory` 直接指定家目录路径、仓库相对路径或本地盘绝对路径，独立于技能安装位置；规则见 `skills/gidd/references/configuration.md`。
 - 本项目的 `skills/gidd/` 是技能发布源码目录，不等于用户安装位置，也不因存在该目录而启用本项目自身的 GIDD 流程。
 
 ## Accepted
@@ -17,13 +17,13 @@
 
 2. **GIDD-002 — 对话管理与显式启用。** GIDD 的安装、初始化和管理以用户与 Agent 的对话为入口；例如“当前仓库启用 GIDD”“检查此仓库的 GitHub 登录”。安装到用户目录只提供技能，不启用任何仓库。用户明确要求启用某个目标仓库后，Agent 才执行该仓库的初始化；再次初始化应复用有效配置并补齐缺项，不重复登录或重建开发任务。底层脚本提供可验证的操作与结果，首版不另做面向人类的交互式配置向导。
 
-3. **GIDD-003 — 配置唯一且具体归属。** 运行配置 `config.toml` 只保存在 `<目标仓库>/.agents/skills/gidd/`；用户级技能安装目录，若出现 GIDD `config.toml` 属于未定义行为，如何使用看用户如何提示；`config.toml` 不会自动继承或多层覆盖。用户级技能服务的目标仓库也使用上述固定路径；该目录只有配置文件时，不代表已安装完整技能。`config.toml` 使用注释解释字段，允许人类直接编辑，Agent 修改时保留无关字段和注释。启用记录的具体字段及 schema 在实现前确定，不能仅凭目录存在就执行治理流程。
+3. **GIDD-003 — 配置唯一且具体归属。** 运行配置 `config.toml` 只保存在 `<目标仓库>/.agents/skills/gidd/`；用户级技能安装目录，若出现 GIDD `config.toml` 属于未定义行为，如何使用看用户如何提示；`config.toml` 不会自动继承或多层覆盖。用户级技能服务的目标仓库也使用上述固定路径；该目录只有配置文件时，不代表已安装完整技能。`config.toml` 使用注释解释字段，允许人类直接编辑，Agent 修改时保留无关字段和注释。工具配置 schema v1 已确定为 `schema_version`、`tools.directory` 与 node/bun/gh 内联表（version、source），模板见 `skills/gidd/assets/config.example.toml`。启用记录仍未定义，不能凭配置存在执行治理流程。
 
 4. **GIDD-004 — 认证由授权事实确认。** `config.toml` 可以记录预期 GitHub 主机与账号，不保存 token、密码或二次验证码；修改账号字段不能视作已登录。有人参与的 gh 登录统一展示本次认证返回的 URL 和一次性用户代码，不自动打开浏览器，由用户在任意设备完成授权；脚本等待并验证实际身份后才报告成功。GitHub API 认证、Git 传输认证和 commit 作者信息分别检查。无 GUI 环境也采用该流程；长期凭据的保存位置由选定认证方式决定，不承诺复制配置即可复制登录状态。
 
-5. **GIDD-005 — 实现与规则保持精简。** `skills/gidd/scripts/` 业务代码使用 JavaScript，Node.js 与 Bun 均为支持目标，只使用双方支持的标准 API，同一功能须在两种运行时验证；系统 Shell 可承担无 Bun/Node 前提的环境诊断与必要启动操作，GitHub 开发流程业务逻辑仍使用 JavaScript；不预先宣称未经测试的运行时或平台兼容性。规则应指明文件、目录、命令或其他具体实体；涉及交互原则时给出使用例子。源码、发布物和本地下载数据必须区分，README 由维护者维护。当前实现范围为 Issue #2 的 Windows 基础 doctor 与 Issue #5 的工具初始化；不得把尚未实现的初始化或治理能力表述为可用。PowerShell 源文件使用带 BOM 的 UTF-8，验证须先检查 BOM 再进行语法解析。
+5. **GIDD-005 — 实现与规则保持精简。** `skills/gidd/scripts/` 业务代码使用 JavaScript，Node.js 与 Bun 均为支持目标，只使用双方支持的标准 API，同一功能须在两种运行时验证；系统 Shell 可承担无 Bun/Node 前提的环境诊断、工具存储配置读取与必要启动操作，GitHub 开发流程业务逻辑仍使用 JavaScript；不预先宣称未经测试的运行时或平台兼容性。规则应指明文件、目录、命令或其他具体实体；涉及交互原则时给出使用例子。源码、发布物和本地下载数据必须区分，README 由维护者维护。当前实现范围为 Windows 基础 doctor、工具初始化及工具存储配置，仓库开发入口由 Issue #8 跟踪；不得把尚未实现的初始化或治理能力表述为可用。PowerShell 源文件使用带 BOM 的 UTF-8，验证须先检查 BOM 再进行语法解析。
 
-6. **GIDD-006 — 工具集中存储与清理。** 已有可用的 Bun、gh 优先复用；需要 GIDD 下载工具时才建立共享工具目录，Bun、gh 分别保存在其 `bun/`、`gh/` 下。该目录只管理 GIDD 下载的工具及配套安装数据，不保存 GIDD `config.toml`；目录及全部子目录不得包含 `SKILL.md`。其中 `INSTALLATION.md` 说明用途、工具来源和清理方式，供人类及 Agent 主动读取。建立共享工具目录不代表安装用户级技能或启用任何仓库。收到卸载请求时，GIDD 管理流程检查当前仓库的 `.agents/skills/gidd/`、用户级 `gidd/` 和 `gidd.tools/`，展示清理范围；仅卸载当前仓库不得自动删除共享工具，无法确认其他仓库是否使用时不得声称工具已无引用。完整卸载须明确包含共享工具；不得删除复用的外部工具，也不得将删除文件表述为退出 GitHub 或撤销授权。
+6. **GIDD-006 — 工具集中存储与清理。** 已有可用的 Bun、gh 优先复用；需要 GIDD 下载工具时才建立实际工具目录；默认工具目录为 `~/.agents/skills/gidd.tools/`，用户通过 `tools.directory` 直接指定位置。Bun、Node、gh 分别保存在工具根的 `bun/`、`node/`、`gh/` 下，Node 下载目前由仓库开发入口提供。该目录只管理 GIDD 下载的工具及配套安装数据，不保存 GIDD `config.toml`；目录及全部子目录不得包含 `SKILL.md`。其中 `INSTALLATION.md` 说明用途、工具来源和清理方式，供人类及 Agent 主动读取。建立共享工具目录不代表安装用户级技能或启用任何仓库。收到卸载请求时，GIDD 管理流程检查 Agent 确认的技能实际安装目录、仓库配置文件、默认及配置指定的工具目录，展示清理范围；仅卸载当前仓库不得自动删除共享工具，无法确认其他仓库是否使用时不得声称工具已无引用。完整卸载须明确包含共享工具；不得删除复用的外部工具，也不得将删除文件表述为退出 GitHub 或撤销授权。
 
 ## Open
 
@@ -32,6 +32,8 @@
 
 ## Maintainer Notes
 
-- 当前实现 Windows x64 / Windows PowerShell 5.1 基础 doctor 与便携 Bun/gh 工具初始化，包含完整性校验、独占锁和中断后重试；配置写入、登录及 Issue/PR 业务脚本尚未实现。空 package.json 及其余空 JavaScript 脚本仅表达规划位置，不是有效清单或业务实现。
+- 仓库开发入口为根 `dev.cmd`，用法见 `DEVELOPMENT.md`。`scripts/dev/` 和 `tests/` 属于仓库开发工具；`.setup` 准备 Bun 和 Node，`.test` 分别在两种运行时执行同一套 JavaScript 用例，Windows 辅助仅保留被测 PowerShell 接口与 fixture 构造。开发 Node 离线基线清单位于 `scripts/dev/runtimes.json`，仅提取运行时和许可证，不附带 npm。工具目录由固定位置的仓库配置解析；无配置时开发默认 `.dev/`，本仓库实例选择 `.devv/`，二者均精确忽略且不随技能发布。工具位置读取 `tools.directory`，下载版本与来源读取工具内联表，不需要 Agent 技能安装模式或用户技能根参数；产品脚本的 Node/Bun 双运行时约束不变，技能工具初始化仍只要求其中一种运行时可用。
+
+- 当前实现 Windows x64 / Windows PowerShell 5.1 基础 doctor 与便携 Bun/gh 工具初始化，包含完整性校验、独占锁和中断后重试；工具配置读取、缺失工具的稳定版本解析与官方 SHA-256 校验已实现；浮动版本不自动升级已有工具，固定版本冲突时保留并报错。自动升级/回滚、自动配置写入、启用记录、登录及 Issue/PR 业务脚本尚未实现。根 package.json 用于仓库开发测试；其余空 JavaScript 产品脚本仅表达规划位置，不是业务实现。
 - GIDD 自有代码和技能文档采用根 LICENSE 的 MIT 许可证；第三方下载工具保留各自许可证。结构整理由 Issue #1 跟踪，Windows doctor 由 Issue #2 跟踪。
 - 已用 Windows 便携 gh 2.98.0 验证：抑制浏览器启动、展示 URL 和一次性代码、用户自行授权后，登录成功且 API 返回预期账号；临时凭据已清理。Linux 无 GUI 流程尚未实测。
