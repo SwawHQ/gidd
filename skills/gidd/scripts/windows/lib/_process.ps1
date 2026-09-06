@@ -1,7 +1,7 @@
-﻿function Invoke-DoctorProcess {
+﻿function Invoke-GiddProcess {
     param([string]$Executable, [string[]]$Arguments, [ValidateRange(1, 3600)][int]$TimeoutSeconds = 5)
 
-    # Internal execution helper, not a diagnostic domain.
+    # Shared by diagnosis and installation; not a diagnostic domain.
 
     # ProcessStartInfo.ArgumentList is unavailable in Windows PowerShell 5.1.
     $quoted = foreach ($argument in $Arguments) {

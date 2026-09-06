@@ -1,0 +1,28 @@
+{
+  "schema": "gidd.runtimes/v1",
+  "platform": "windows-x64",
+  "tools": [
+    {
+      "name": "bun",
+      "version": "1.2.15",
+      "archive": "bun-windows-x64.zip",
+      "url": "https://github.com/oven-sh/bun/releases/download/bun-v1.2.15/bun-windows-x64.zip",
+      "sha256": "3cbfc2668aebd86718b9414fd4a4b4b1ec34a21ca544517310833563a937272f",
+      "files": [{ "entry": "bun-windows-x64/bun.exe", "name": "bun.exe" }],
+      "supplements": [{
+        "name": "LICENSE.md",
+        "url": "https://raw.githubusercontent.com/oven-sh/bun/bun-v1.2.15/LICENSE.md",
+        "sha256": "4cf82fd717b2b34dfabf6087c35fcffd28386054f1791d2e6ecfdfcafe0131a8"
+      }]
+    },
+    {
+      "name": "gh",
+      "version": "2.98.0",
+      "archive": "gh_2.98.0_windows_amd64.zip",
+      "url": "https://github.com/cli/cli/releases/download/v2.98.0/gh_2.98.0_windows_amd64.zip",
+      "sha256": "c28c7b3b584967a05b74d9eaf7481bff24ddc34930bf2d6e442c148236561eb1",
+      "files": [{ "entry": "bin/gh.exe", "name": "gh.exe" }, { "entry": "LICENSE", "name": "LICENSE" }],
+      "supplements": []
+    }
+  ]
+}

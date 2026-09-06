@@ -1,7 +1,7 @@
-﻿param([string]$HelperPath = '', [string]$FunctionName = 'Invoke-DoctorProcess')
+﻿param([string]$HelperPath = '', [string]$FunctionName = 'Invoke-GiddProcess')
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-if (-not $HelperPath) { $HelperPath = Join-Path $PSScriptRoot '../../skills/gidd/scripts/windows/doctor/_process.ps1' }
+if (-not $HelperPath) { $HelperPath = Join-Path $PSScriptRoot '../../skills/gidd/scripts/windows/lib/_process.ps1' }
 foreach ($path in @($HelperPath, $PSCommandPath)) {
     $bytes = [IO.File]::ReadAllBytes($path)
     if ($bytes[0] -ne 239 -or $bytes[1] -ne 187 -or $bytes[2] -ne 191) { throw 'Missing PowerShell UTF-8 BOM' }

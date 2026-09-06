@@ -8,13 +8,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 
-function New-Check {
-    param([string]$Id, [string]$Status, [string]$Reason, [hashtable]$Details = @{})
-    return [ordered]@{ id = $Id; status = $Status; reason = $Reason; details = $Details }
-}
-
 try {
-    foreach ($file in @('_process.ps1', 'platform.ps1', 'tools.ps1', 'repository.ps1', 'configuration.ps1')) {
+    foreach ($file in @('_process.ps1', '_managed.ps1', '_tools.ps1')) {
+        . (Join-Path $PSScriptRoot "lib/$file")
+    }
+    foreach ($file in @('platform.ps1', 'tools.ps1', 'repository.ps1', 'configuration.ps1')) {
         . (Join-Path $PSScriptRoot "doctor/$file")
     }
     if ([string]::IsNullOrWhiteSpace($RepositoryPath) -or [string]::IsNullOrWhiteSpace($UserSkillsRoot)) {

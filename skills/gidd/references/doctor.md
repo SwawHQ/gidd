@@ -20,13 +20,14 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\script
 | `tools.ps1` | executable 候选、版本检查及 Node/Bun 选择 |
 | `repository.ps1` | Git 工作树、commit、remote |
 | `configuration.ps1` | 仓库配置文件存在性及验证状态 |
-| `_process.ps1` | 上述检查使用的子进程启动、输出捕获、超时 |
 
-这些 `.ps1` 文件由入口 dot-source 加载，不是独立命令或 `.psm1` 模块。领域检查按职责命名；以下划线开头的 `_process.ps1` 表示内部执行辅助，不代表一个检查领域。下划线只是项目命名约定，不具有 PowerShell 访问控制语义。新增领域检查在该目录实现并由入口显式调用，不扫描目录自动执行。`_process.ps1` 当前没有其他命令调用，出现真实跨命令复用需求时再考虑移入公共目录。
+这些 `.ps1` 文件由入口 dot-source 加载，不是独立命令或 `.psm1` 模块。领域检查按职责命名，新增检查由入口显式调用，不扫描目录自动执行。doctor 与 setup-tools 现在共同使用 `scripts/windows/lib/` 的 `_process.ps1`（子进程）、`_tools.ps1`（工具探测）和 `_managed.ps1`（安装清单与完整性检查）。下划线表示内部辅助命名约定，不具有 PowerShell 访问控制语义。
 
 ## 工具选择
 
 依次检查 PATH 中的同名 `.exe`，失败后尝试 GIDD 共享工具。仅执行 `--version`，每个子进程最多等待 5 秒，stdin 关闭。首版不运行 `.cmd` 包装器，不修改 PATH。
+
+共享工具须先通过同目录 `install.json` 的文件集合、长度、SHA-256 检查，再运行版本查询；缺少清单或文件损坏时报告 `managed_integrity_failed`，不执行该候选。此校验不适用于外部管理的普通 PATH 工具。若将 GIDD 的同一工具路径加入 PATH，仍需通过共享工具完整性检查。
 
 进程退出和 stdout/stderr 读取共用同一个 5 秒期限；父进程退出后，后代仍持有输出管道时也会返回 `process_timeout`，不会重新开始计时或无限等待。辅助函数不负责终止所有后代进程。
 
@@ -81,7 +82,7 @@ remote 检查只读取本地配置，不访问网络。只对常见 `https://git
 ## Agent 如何使用结果
 
 - 用户说“当前仓库启用 GIDD”：先对明确的目标仓库诊断。已有运行时通过时直接复用，不要求同时安装 Node 和 Bun。
-- `runtime` 缺失：解释需要运行时，并说明 GIDD 便携 Bun 的预期位置；下载初始化属于后续独立操作，当前脚本没有下载功能。
+- `runtime` 缺失：解释需要运行时，并说明 GIDD 便携 Bun 的预期位置；用户已授权准备环境时，按 [setup.md](setup.md) 调用独立安装入口，doctor 自身不下载。
 - `repository.config` 缺失：说明该仓库尚无固定位置配置，再按用户授权进入配置流程；不要用目录存在代替启用记录。
 - `github.identity` 未检查：说明尚未检查，不能说“未登录”。需要认证时由独立流程展示 URL 与一次性代码，当前 doctor 不启动登录。
 - 初始化或修复后重新诊断。退出码 1 不是脚本崩溃；不要无条件重复执行或把结果当作自动安装授权。
