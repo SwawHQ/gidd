@@ -46,12 +46,16 @@ function Write-GiddInstallationGuide {
     $text = @'
 # GIDD-managed tools
 
-This directory is shared by repositories using this user's GIDD skill root.
+The repository config.toml selects this tool storage location.
+It is independent of the skill installation directory and may be shared by repositories.
 It is not a skill: do not add SKILL.md or repository config.toml here.
 
-- bun/ and gh/: published tool files, upstream license materials and install.json.
+- bun/, node/ and gh/ (as needed): published files, upstream licenses and install.json.
+- Pinned sources: skills/gidd/assets/runtimes.json (Bun/gh), scripts/dev/runtimes.json
+  (development Node). Each install.json also records the archive source and hashes.
+- Development Node includes node.exe and LICENSE, without npm.
 - install.json: tool version, upstream source and file hashes; do not edit it.
-- .cache/bun/ and .cache/gh/: temporary downloads and extraction; removed after success
+- .cache/<tool>/: temporary downloads and extraction; removed after success
   or rebuilt on the next explicit retry. Download archives are not retained.
 - .cache/install.lock: OS file lock; its presence alone does not mean installation is running.
 
@@ -61,8 +65,9 @@ final directory requires explicit review; keep it until its ownership is clear.
 Do not delete .cache/ or its lock file while an installer is running.
 
 When uninstalling, distinguish one repository from all shared tools. Remove this
-whole directory only when removal of shared GIDD tools is intended and no installer
-is running. External PATH tools are not owned here. Deleting files does not revoke
+whole directory only when removal of this tool storage is intended and no installer
+is running. Check other repositories before removing shared storage; reference tracking
+is not implemented. External PATH tools are not owned here. Deleting files does not revoke
 GitHub authorization. GIDD's MIT license does not replace upstream tool licenses.
 '@
     if ([IO.File]::Exists($destination) -and [IO.File]::ReadAllText($destination) -ceq $text) { return }

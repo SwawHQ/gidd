@@ -22,14 +22,14 @@ test('test command executes every suite and propagates failures', { timeout: 120
   try {
     const runner=join(f.root,'scripts/dev/dev.mjs');
     write(runner,readFileSync(join(repo,'scripts/dev/dev.mjs'),'utf8'));
-    for (const suite of ['doctor','setup','process','dev']) {
+    for (const suite of ['doctor','setup','process','dev','config']) {
       const marker=join(f.root,`${suite}.ran`);
       write(join(f.root,`tests/${suite}.test.mjs`),
         `import {test} from 'node:test'; import {writeFileSync} from 'node:fs';\ntest('${suite}', () => { writeFileSync(${JSON.stringify(marker)}, 'ran'); ${suite === 'setup' ? "throw new Error('expected fixture failure');" : ''} });\n`);
     }
     const result=run(process.execPath,[runner,'.test']);
     assert.equal(result.status,1,'A failing suite must fail the command');
-    for (const suite of ['doctor','setup','process','dev']) {
+    for (const suite of ['doctor','setup','process','dev','config']) {
       assert.equal(existsSync(join(f.root,`${suite}.ran`)),true,`${suite} must actually execute, including after a failure`);
     }
   } finally { f.dispose(); }
@@ -72,8 +72,8 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     assert.equal(existsSync(nodeLeftover),false);
     assert.equal(existsSync(join(checkout,'.dev/.cache/install.lock')),true);
     const localInfo=json(ok(invoke(['.info'])));
-    assert.equal(localInfo.bun.details.source,'checkout');
-    assert.equal(localInfo.node.details.source,'checkout');
+    assert.equal(localInfo.bun.details.source,'managed');
+    assert.equal(localInfo.node.details.source,'managed');
     // PowerShell may expand the temporary directory's Windows 8.3 alias.
     for (const [actual,expected] of [[localInfo.bun.details.path,localBun],[localInfo.node.details.path,localNode],[localInfo.tools_root,join(checkout,'.dev')]]) {
       const a=statSync(actual,{bigint:true}), b=statSync(expected,{bigint:true});
@@ -83,5 +83,20 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     const occupied=join(checkout,'.dev/bun/user.txt'); write(occupied,'keep');
     const result=invoke(['.setup']); assert.notEqual(result.status,0); assert.match(result.stderr,/occupied_or_invalid_target/);
     assert.equal(readFileSync(occupied,'utf8'),'keep');
+    const config=join(checkout,'.agents/skills/gidd/config.toml');
+    const configuredRoot=join(checkout,'.devv');
+    write(config,'# retain this comment\nschema_version = 1\n[tools]\ndirectory = ".devv"\n');
+    stub(join(bin,'bun.exe'),join(configuredRoot,'bun/bun.exe'),undefined,true);
+    stub(join(bin,'node.exe'),join(configuredRoot,'node/node.exe'),undefined,true);
+    ok(invoke(['.setup']));
+    const configuredInfo=json(ok(invoke(['.info'])));
+    assert.equal(configuredInfo.storage.configured,true);
+    assert.equal(statSync(configuredInfo.tools_root,{bigint:true}).ino,statSync(configuredRoot,{bigint:true}).ino);
+    assert.equal(existsSync(join(configuredRoot,'INSTALLATION.md')),true);
+    assert.equal(readFileSync(occupied,'utf8'),'keep','Switching config must preserve old storage');
+    assert.match(readFileSync(config,'utf8'),/^# retain this comment/);
+    write(config,'invalid = true');
+    assert.notEqual(invoke(['.setup']).status,0); assert.notEqual(invoke(['.info']).status,0);
+    assert.match(ok(invoke(['.help','en'])).stdout,/repository development/);
   } finally { f.dispose(); }
 });

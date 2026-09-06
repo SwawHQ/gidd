@@ -5,10 +5,10 @@
 从实际技能安装目录执行，例如：
 
 ```powershell
-powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\windows\doctor.ps1 -RepositoryPath 'D:\work\project' -UserSkillsRoot 'C:\Users\alice\.agents\skills'
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\windows\doctor.ps1 -RepositoryPath 'D:\work\project'
 ```
 
-两个参数均为必需的绝对路径。Agent 根据用户指定项目和客户端实际技能目录传入，不将技能源码目录当作目标仓库；Shell 不展开的 `~` 须由调用方展开。目标可以是仓库子目录，配置始终在 Git 返回的仓库根下查找。用户技能目录可以尚未存在，doctor 不建立它。
+RepositoryPath 是必需的绝对路径。Agent 根据用户指定项目传入，不将技能源码目录当作目标仓库；Shell 不展开的 `~` 须由调用方展开。目标可以是仓库子目录，工具定位先按最近的 `.git` 标记确定根目录，Git 可用时另行验证工作树；配置不继承用户级文件。`tools.directory` 独立于技能安装位置，doctor 不建立工具目录。
 
 ## 源码归属
 
@@ -19,9 +19,9 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\script
 | `platform.ps1` | Windows 平台与架构 |
 | `tools.ps1` | executable 候选、版本检查及 Node/Bun 选择 |
 | `repository.ps1` | Git 工作树、commit、remote |
-| `configuration.ps1` | 仓库配置文件存在性及验证状态 |
+| `configuration.ps1` | 仓库配置文件存在性及工具存储 schema 验证状态 |
 
-这些 `.ps1` 文件由入口 dot-source 加载，不是独立命令或 `.psm1` 模块。领域检查按职责命名，新增检查由入口显式调用，不扫描目录自动执行。doctor 与 setup-tools 现在共同使用 `scripts/windows/lib/` 的 `_process.ps1`（子进程）、`_tools.ps1`（工具探测）和 `_managed.ps1`（安装清单与完整性检查）。下划线表示内部辅助命名约定，不具有 PowerShell 访问控制语义。
+这些 `.ps1` 文件由入口 dot-source 加载，不是独立命令或 `.psm1` 模块。领域检查按职责命名，新增检查由入口显式调用，不扫描目录自动执行。doctor 与 setup-tools 现在共同使用 `scripts/windows/lib/` 的 `_process.ps1`（子进程）、`_tools.ps1`（工具探测）和 `_managed.ps1`（安装清单与完整性检查），以及 `_configuration.ps1`（工具存储配置与路径）。下划线表示内部辅助命名约定，不具有 PowerShell 访问控制语义。
 
 ## 工具选择
 
@@ -34,9 +34,9 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\script
 | 工具 | 基础版本门槛 | PATH 后的候选 |
 | --- | --- | --- |
 | Git | 2.0 | 无 |
-| Node.js | 22.0 | 无；复用已有 Node |
-| Bun | 1.2 | `<用户技能根>/gidd.tools/bun/bun.exe` |
-| gh | 2.0 | `<用户技能根>/gidd.tools/gh/gh.exe` |
+| Node.js | 22.0 | `<工具根>/node/node.exe`；只复用，不由技能入口下载 |
+| Bun | 1.2 | `<工具根>/bun/bun.exe` |
+| gh | 2.0 | `<工具根>/gh/gh.exe` |
 
 Node 和 Bun 任一种可用即可满足 `runtime`。PATH 中可用运行时优先于共享工具；来源相同时优先 Bun。`tool.node` 缺失而 Bun 可用，不阻止总体本地就绪。拒绝的候选及原因保留在 `details.rejected`。
 
@@ -51,7 +51,6 @@ stdout 为单个 UTF-8 JSON 对象：
   "schema": "gidd.doctor/v1",
   "status": "needs_setup",
   "repository": "D:\\work\\project",
-  "user_skills_root": "C:\\Users\\alice\\.agents\\skills",
   "checks": [
     { "id": "runtime", "status": "missing", "reason": "requires_node_or_bun", "details": { "depends_on": ["tool.node", "tool.bun"] } }
   ]
@@ -69,13 +68,13 @@ stdout 为单个 UTF-8 JSON 对象：
 
 | 退出码 / 总体状态 | 含义 |
 | --- | --- |
-| `0` / `local_ready` | 平台、Git、至少一种运行时、gh、工作树、commit、remote 和配置文件存在性均通过 |
+| `0` / `local_ready` | 平台、Git、至少一种运行时、gh、工作树、commit、remote、配置存在性及工具存储 schema 验证均通过 |
 | `1` / `needs_setup` | 正常完成诊断，基础条件尚不齐备 |
 | `2` / `error` | 调用参数错误或诊断程序无法完成；stderr 提供说明 |
 
-检查项为 `platform`、`tool.git`、`tool.node`、`tool.bun`、`tool.gh`、`runtime`、`repository`、`repository.config`、`repository.config.validation`、`github.identity`、`git.authentication`。只有工作树可读取时才另有 `repository.history` 和 `repository.remotes`；没有 commit 的新仓库报告 `unborn_branch`。
+检查项为 `platform`、`tools.storage`、`tool.git`、`tool.node`、`tool.bun`、`tool.gh`、`runtime`、`repository`、`repository.config`、`repository.config.validation`、`github.identity`、`git.authentication`。只有工作树可读取时才另有 `repository.history` 和 `repository.remotes`；没有 commit 的新仓库报告 `unborn_branch`。
 
-`repository.config` 仅检查 `<仓库根>/.agents/skills/gidd/config.toml` 是文件，不读取 TOML。配置验证、GitHub 身份及 Git 传输认证始终为 `not_checked`。`local_ready` 不代表配置有效、仓库已启用、账号正确或具备推送权限。
+`repository.config` 检查固定路径文件存在性；`repository.config.validation` 验证 [configuration.md](configuration.md) 的工具存储 schema v1。`tools.storage` 报告配置值与解析位置。配置错误时该项为 invalid，managed_tools_checked=false，仅继续外部 PATH 探测，不回退默认受管目录。source=managed 表示受管工具，实际位置以 tools.storage 为准。GitHub 身份与 Git 传输认证仍为 not_checked；local_ready 不代表仓库启用、账号正确或具备推送权限。
 
 remote 检查只读取本地配置，不访问网络。只对常见 `https://github.com/owner/repo` 和 `git@github.com:owner/repo` 地址提取 `github_repository`；其他形式、其他主机或含凭据的 URL 返回 null，Agent 可另行检查，不据此认定 remote 无效。不会输出完整 URL 或子进程原始错误，避免泄露凭据。
 

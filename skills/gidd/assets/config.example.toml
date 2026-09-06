@@ -1,0 +1,13 @@
+# Copy to <repository>/.agents/skills/gidd/config.toml.
+# This config selects tool storage only; it does not enable GIDD or authenticate GitHub.
+schema_version = 1
+
+[tools]
+# Recommended dedicated tools directory; ~ means the current OS user's home.
+directory = "~/.agents/skills/gidd.tools"
+# Repository-relative example:
+# directory = ".devv"
+# Absolute Windows example:
+# directory = "D:/tools/gidd"
+# Skill installation is managed by the Agent, independently of this tools path.
+# URLs, versions and hashes stay in runtimes.json.

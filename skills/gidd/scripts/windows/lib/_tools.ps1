@@ -11,11 +11,11 @@ function Find-Tool {
         $candidates += @{ path = $command.Source; source = 'path' }
     }
     if ($ManagedPath -and (Test-Path -LiteralPath $ManagedPath)) {
-        $candidates += @{ path = $ManagedPath; source = 'gidd.tools' }
+        $candidates += @{ path = $ManagedPath; source = 'managed' }
     }
     $attempts = @()
     foreach ($candidate in $candidates) {
-        $isManaged = $candidate.source -eq 'gidd.tools' -or ($managedFullPath -and
+        $isManaged = $candidate.source -eq 'managed' -or ($managedFullPath -and
             [string]::Equals([IO.Path]::GetFullPath($candidate.path), $managedFullPath, [StringComparison]::OrdinalIgnoreCase))
         if ($isManaged -and
             -not (Test-GiddManagedTool ([IO.Path]::GetDirectoryName($candidate.path)) $Name)) {

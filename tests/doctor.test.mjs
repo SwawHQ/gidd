@@ -11,13 +11,16 @@ test('doctor: dependency matrix, repository states, read-only checks and redacti
     for (const dir of [skills, repository, fakeBin, emptyBin]) mkdirSync(dir, { recursive: true });
     const gitOnly = `${emptyBin};${gitBin}`, toolPath = `${fakeBin};${gitBin}`;
     ok(run(git, ['-C', repository, 'init', '--quiet']));
+    const config=join(repository,'.agents/skills/gidd/config.toml');
+    const validConfig=`schema_version = 1\n[tools]\ndirectory = ${JSON.stringify(join(skills,'gidd.tools').replaceAll('\\','/'))}\n`;
+    write(config,validConfig);
     const check = (report, id) => {
       const matches = report.checks.filter(item => item.id === id);
       assert.equal(matches.length, 1, id); return matches[0];
     };
     const runCase = (name, path, validate, target = repository, env = {}) => {
       const before = snapshot(f.root);
-      const result = ps(join(code, 'doctor.ps1'), ['-RepositoryPath', target, '-UserSkillsRoot', skills], { env: { PATH: path, ...env } });
+      const result = ps(join(code, 'doctor.ps1'), ['-RepositoryPath', target], { env: { PATH: path, ...env } });
       const report = json(result);
       assert.equal(report.schema, 'gidd.doctor/v1');
       assert.deepEqual(snapshot(f.root), before, `Doctor wrote fixture: ${name}`);
@@ -30,14 +33,16 @@ test('doctor: dependency matrix, repository states, read-only checks and redacti
       assert.equal(check(r,'repository').status,'not_checked');
     });
     stub(exe, join(fakeBin,'node.exe'),'v22.0.0'); stub(exe, join(fakeBin,'gh.exe'),'gh version 2.98.0 (test)');
+    rmSync(config);
     runCase('Node alone, unborn repository, missing config',toolPath,(r,status) => {
       assert.equal(status,1); assert.equal(check(r,'runtime').details.selected,'tool.node');
       assert.equal(check(r,'repository.history').reason,'unborn_branch'); assert.equal(check(r,'repository.config').status,'missing');
     });
+    write(config,validConfig);
     stub(exe,join(skills,'gidd.tools/bun/bun.exe'),'1.2.15',true);
     stub(exe,join(skills,'gidd.tools/gh/gh.exe'),'gh version 2.98.0 (test)',true);
     runCase('Bun alone from managed tools',gitOnly,r => {
-      assert.equal(check(r,'runtime').details.selected,'tool.bun'); assert.equal(check(r,'tool.gh').details.source,'gidd.tools');
+      assert.equal(check(r,'runtime').details.selected,'tool.bun'); assert.equal(check(r,'tool.gh').details.source,'managed');
     });
     runCase('PATH Node preferred over managed Bun',toolPath,r => assert.equal(check(r,'runtime').details.selected,'tool.node'));
     stub(exe,join(fakeBin,'bun.exe'),'1.2.15');
@@ -45,7 +50,7 @@ test('doctor: dependency matrix, repository states, read-only checks and redacti
     write(join(fakeBin,'node.exe.mode'),'v18.0.0'); write(join(fakeBin,'bun.exe.mode'),'fail'); write(join(fakeBin,'gh.exe.mode'),'not gh');
     runCase('old, failing and malformed PATH tools fall back',toolPath,r => {
       assert.equal(check(r,'tool.node').status,'invalid');
-      for (const id of ['tool.bun','tool.gh']) assert.equal(check(r,id).details.source,'gidd.tools');
+      for (const id of ['tool.bun','tool.gh']) assert.equal(check(r,id).details.source,'managed');
       assert.ok(!JSON.stringify(r).includes('private-test-secret'));
     });
     write(join(fakeBin,'gh.exe.mode'),'hang');
@@ -60,10 +65,11 @@ test('doctor: dependency matrix, repository states, read-only checks and redacti
     ok(run(git,['-C',repository,'-c','user.name=Fixture','-c','user.email=fixture@example.invalid','-c','commit.gpgsign=false','commit','--allow-empty','--quiet','-m','fixture']));
     ok(run(git,['-C',repository,'remote','add','origin','https://github.com/SwawHQ/gidd.git']));
     ok(run(git,['-C',repository,'remote','add','private','https://username:private-test-secret@example.invalid/private.git']));
-    const config = join(repository,'.agents/skills/gidd/config.toml'); write(config,'deliberately invalid TOML = [');
+    write(config,validConfig);
     runCase('local readiness, explicit target and redacted remote',toolPath,(r,status) => {
       assert.equal(status,0); assert.equal(r.status,'local_ready');
-      for (const id of ['repository.config.validation','github.identity']) assert.equal(check(r,id).status,'not_checked');
+      assert.equal(check(r,'repository.config.validation').status,'ready');
+      assert.equal(check(r,'github.identity').status,'not_checked');
       assert.equal(check(r,'repository.remotes').details.remotes.find(x=>x.name==='origin').github_repository,'SwawHQ/gidd');
       assert.ok(!JSON.stringify(r).includes('private-test-secret'));
     },repository,{GIT_DIR:join(f.root,'nonexistent-git-dir')});
@@ -74,8 +80,14 @@ test('doctor: dependency matrix, repository states, read-only checks and redacti
       const expected=statSync(config,{bigint:true});
       assert.notEqual(expected.ino,0n); assert.equal(actual.dev,expected.dev); assert.equal(actual.ino,expected.ino);
     },nested);
+    write(config,'deliberately invalid TOML = [');
+    runCase('invalid configuration does not pass or select default storage',toolPath,(r,status) => {
+      assert.equal(status,1); assert.equal(check(r,'repository.config.validation').status,'invalid');
+      assert.equal(check(r,'tools.storage').details.managed_tools_checked,false);
+      assert.equal(check(r,'tool.git').status,'ready'); assert.equal(check(r,'github.identity').status,'not_checked');
+    });
     runCase('missing target directory',toolPath,(r,status) => {
-      assert.equal(status,1); assert.equal(check(r,'repository').reason,'directory_missing'); assert.equal(check(r,'runtime').status,'ready');
+      assert.equal(status,1); assert.equal(check(r,'repository').reason,'directory_missing'); assert.equal(check(r,'tool.gh').status,'ready');
     },join(f.root,'not-created'));
     rmSync(config); mkdirSync(config);
     runCase('config path is a directory',toolPath,(r,status) => { assert.equal(status,1); assert.equal(check(r,'repository.config').status,'invalid'); });

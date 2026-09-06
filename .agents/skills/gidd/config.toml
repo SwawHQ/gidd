@@ -1,0 +1,6 @@
+# 本仓库的工具存储配置；不表示启用 GIDD 或完成 GitHub 登录。
+schema_version = 1
+
+[tools]
+# 相对于本仓库根目录，开发入口与技能工具初始化共用该位置。
+directory = ".devv"

@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 $lock = $null
 try {
     $request = [IO.File]::ReadAllText($RequestPath) | ConvertFrom-Json
-    foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','setup-tools/_filesystem.ps1','setup-tools/download.ps1','setup-tools/install.ps1')) {
+    foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','setup-tools/_filesystem.ps1','setup-tools/download.ps1','setup-tools/install.ps1')) {
         $source = Join-Path $request.codeRoot $file
         $bytes = [IO.File]::ReadAllBytes($source)
         if ($bytes.Length -lt 3 -or $bytes[0] -ne 239 -or $bytes[1] -ne 187 -or $bytes[2] -ne 191) { throw "Missing BOM: $source" }
@@ -39,6 +39,7 @@ try {
             }
         }
         'find' { Find-Tool $request.name ([version]$request.minimum) $request.pattern $request.managedPath | ConvertTo-Json -Depth 8 -Compress }
+        'configuration' { Resolve-GiddToolStorage $request.repositoryRoot $request.defaultDirectory $request.userProfilePath | ConvertTo-Json -Depth 8 -Compress }
         'validate' { Test-GiddManagedTool $request.root $request.name | ConvertTo-Json -Compress }
         'stage' { Remove-GiddStage $request.root $request.name }
         'guide' {

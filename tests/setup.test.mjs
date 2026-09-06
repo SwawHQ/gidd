@@ -88,7 +88,8 @@ test('setup: install, integrity, interrupted publication, locks, preservation an
       const skills=join(f.root,`not-created-${runtime}-skills`);
       for (const existing of [false,true]) {
         if (existing) mkdirSync(join(skills,'gidd.tools'),{recursive:true});
-        const report=json(ok(ps(join(code,'setup-tools.ps1'),['-UserSkillsRoot',skills,'-ArchiveDirectory',join(f.root,'missing')],{env:{PATH:external}})));
+        write(join(f.root,'.agents/skills/gidd/config.toml'),`schema_version = 1\n[tools]\ndirectory = ${JSON.stringify(join(skills,'gidd.tools').replaceAll('\\','/'))}\n`);
+        const report=json(ok(ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root,'-ArchiveDirectory',join(f.root,'missing')],{env:{PATH:external}})));
         assert.equal(report.status,'ready'); assert.equal(report.tools.length,2);
         for (const name of [runtime,'gh']) {
           const matches=report.tools.filter(tool=>tool.name===name); assert.equal(matches.length,1);

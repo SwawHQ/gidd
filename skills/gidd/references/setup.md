@@ -3,15 +3,19 @@
 先按 [doctor.md](doctor.md) 检查。用户已授权准备缺失工具后，从实际技能目录执行：
 
 ```powershell
-powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\windows\setup-tools.ps1 -UserSkillsRoot 'C:\Users\alice\.agents\skills'
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\windows\setup-tools.ps1 -RepositoryPath 'D:\work\project'
 ```
 
-只支持已验证的 Windows x64 / Windows PowerShell 5.1，本地盘绝对路径。用户技能目录可不存在；禁止路径经过 junction/symlink 等 reparse point，不修改用户技能目录位置选择。Node/Bun 任一种可用便复用；gh 可用也复用。所有工具均来自外部 PATH 且工具根不存在时，整个操作不建立目录。
+只支持已验证的 Windows x64 / Windows PowerShell 5.1，本地盘绝对路径。工具目录可不存在；禁止路径经过 junction/symlink 等 reparse point。技能安装由 Agent 管理，工具初始化不需要其安装模式或安装目录。Node/Bun 任一种可用便复用；gh 可用也复用。所有工具均来自外部 PATH 且工具根不存在时，整个操作不建立目录。
+
+RepositoryPath 是必需参数，明确目标仓库。先读取目标仓库的固定配置；无配置使用默认共享目录，配置错误停止安装，规则与模板见 [configuration.md](configuration.md)。工具准备不会自动创建或修改 config.toml。
 
 ## 存储与源码
 
+以下工具根默认是 `~/.agents/skills/gidd.tools/`，可由仓库配置覆盖：
+
 ```text
-<用户技能根>/gidd.tools/
+<工具根>/
 ├── INSTALLATION.md       # 程序生成的用途、来源定位和清理说明
 ├── .cache/               # 安装缓存区，不长期保留下载包
 │   ├── install.lock      # 句柄锁文件；退出后保留空文件
@@ -30,7 +34,7 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\script
 
 `scripts/windows/setup-tools/` 按 `_filesystem.ps1`（锁和受控路径）、`download.ps1`（下载与归档）、`install.ps1`（发布事务）拆分。真实共用的探测与完整性代码位于相邻 `lib/`。
 
-`gidd.tools/` 本身就是工具根，不再增加 `tools/` 层。源码仓库的开发入口使用同样的结构，但根为该 checkout 的 `.dev/`，同时准备 Bun 和 Node 用于双运行时测试；开发 Node 使用独立清单 `scripts/dev/runtimes.json`，不会使技能初始化额外下载 Node。两个根的工具和缓存各自独立。
+实际工具根直接包含 `.cache/`、`bun/`、`node/`、`gh/`，按需建立。源码仓库开发入口读取同一配置，同时准备 Bun 和 Node；技能入口只复用已有 Node，不额外下载 Node。配置相同时两入口共用工具和安装锁，配置的实际路径不同则分别管理。
 
 ## 中断恢复
 
@@ -52,4 +56,4 @@ Bun 与 gh 各自发布：Bun 完成而 gh 失败时，保留已完成的 Bun，
 
 stdout 是 `gidd.setup-tools/v1` JSON；成功退出 0，`status=ready`，`tools` 列出 `installed` 或 `reused` 及实际路径。失败退出 1，`status=error`，`reason` 提供原因，`tools` 保留已完成项；stderr 显示进度与错误。`install_locked_or_unwritable` 需要确认另一个安装是否在运行；`occupied_or_invalid_target` 需要检查该正式目录，不要直接删除。
 
-成功后再次运行 doctor。`ready` 只表示运行时与 gh 可用；Git、仓库、配置和认证仍需各自检查。仓库配置写入、登录与完整开发流程尚未实现，不能报告“仓库已启用”。
+成功后再次运行 doctor。`ready` 只表示运行时与 gh 可用；Git、仓库、配置和认证仍需各自检查。工具存储配置读取已实现；自动配置写入、启用记录、登录与完整开发流程尚未实现，不能报告“仓库已启用”。

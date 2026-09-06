@@ -8,17 +8,17 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $codeRoot = Join-Path $repoRoot 'skills/gidd/scripts/windows'
-$toolsRoot = Join-Path $repoRoot '.dev'
+$toolsRoot = $null
+$storage = $null
 $lock = $null
 function Get-DevRuntime {
     param([string]$Name)
     $minimum = if ($Name -eq 'bun') { [version]'1.2.15' } else { [version]'24.0.0' }
     $pattern = if ($Name -eq 'bun') { '^(\d+\.\d+\.\d+)$' } else { '^v(\d+\.\d+\.\d+)$' }
     $check = Find-Tool $Name $minimum $pattern (Join-Path $toolsRoot "$Name/$Name.exe")
-    if ($check.status -eq 'ready' -and $check.details.source -eq 'gidd.tools') { $check.details.source = 'checkout' }
     return $check
 }
-function Test-DevLocalRuntime {
+function Test-DevManagedRuntime {
     param($Check, [string]$Name)
     return $Check.status -eq 'ready' -and [string]::Equals(
         [IO.Path]::GetFullPath($Check.details.path), (Join-Path $toolsRoot "$Name/$Name.exe"), [StringComparison]::OrdinalIgnoreCase)
@@ -44,20 +44,22 @@ try {
     }
     if ($Command -notin @('.info','.setup','.test','.test-bun','.test-node','.test-live')) { throw 'Unknown command. Use dev.cmd .help.' }
     if ($Command -eq '.info' -and $Argument) { throw '.info takes no arguments.' }
-    if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev')) { throw 'Unknown test suite.' }
-    foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','doctor/platform.ps1')) { . (Join-Path $codeRoot $file) }
+    if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev','config')) { throw 'Unknown test suite.' }
+    foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','doctor/platform.ps1')) { . (Join-Path $codeRoot $file) }
     if ((Get-DoctorPlatformCheck).status -ne 'ready') { throw 'unsupported_platform' }
     if ($Command -in @('.setup','.test-live') -and $Argument) {
         if ($Argument -notmatch '^[A-Za-z]:[\\/]') { throw 'archive_directory_must_be_absolute' }
         Assert-GiddPlainPath $Argument
     }
+    $storage = Resolve-GiddToolStorage $repoRoot '.dev'
+    $toolsRoot = $storage.tools_root
     $checks = @{ bun = (Get-DevRuntime 'bun'); node = (Get-DevRuntime 'node') }
     if ($Command -eq '.info') {
-        @{ schema='gidd.dev/v1'; bun=$checks.bun; node=$checks.node; tools_root=$toolsRoot } | ConvertTo-Json -Depth 8
+        @{ schema='gidd.dev/v1'; bun=$checks.bun; node=$checks.node; tools_root=$toolsRoot; storage=$storage } | ConvertTo-Json -Depth 8
         if ($checks.bun.status -eq 'ready' -and $checks.node.status -eq 'ready') { exit 0 } else { exit 1 }
     }
     if ($Command -eq '.setup') {
-        $needsLocal = @('bun','node') | Where-Object { $checks[$_].status -ne 'ready' -or (Test-DevLocalRuntime $checks[$_] $_) }
+        $needsLocal = @('bun','node') | Where-Object { $checks[$_].status -ne 'ready' -or (Test-DevManagedRuntime $checks[$_] $_) }
         if ($needsLocal) {
             foreach ($file in @('setup-tools/_filesystem.ps1','setup-tools/download.ps1','setup-tools/install.ps1')) { . (Join-Path $codeRoot $file) }
             $manifest = [IO.File]::ReadAllText((Join-Path $repoRoot 'skills/gidd/assets/runtimes.json')) | ConvertFrom-Json
@@ -66,11 +68,10 @@ try {
                 if ($item.schema -ne 'gidd.runtimes/v1' -or $item.platform -ne 'windows-x64') { throw 'invalid_runtime_manifest' }
             }
             $lock = Open-GiddInstallLock $toolsRoot
-            $guide = "Development-only Bun and Node for this checkout. Sources and hashes: skills/gidd/assets/runtimes.json (Bun), scripts/dev/runtimes.json (Node), and each tool's install.json.`nNode contains node.exe and upstream LICENSE; npm is not installed.`nTemporary downloads and extraction: .cache/bun/ and .cache/node/ (removed after success or rebuilt on retry). Lock: .cache/install.lock (retained).`nRemove .dev/ or its cache only when no setup or tests are running. External PATH tools and user-level GIDD tools are not owned here.`n"
-            Write-GiddDurableFile (Join-Path $repoRoot '.dev/INSTALLATION.md') ([Text.Encoding]::UTF8.GetBytes($guide))
+            Write-GiddInstallationGuide $toolsRoot
             foreach ($name in @('bun','node')) {
                 $check = Get-DevRuntime $name
-                if ($check.status -ne 'ready' -or (Test-DevLocalRuntime $check $name)) {
+                if ($check.status -ne 'ready' -or (Test-DevManagedRuntime $check $name)) {
                     $definition = @(@($manifest.tools) + @($devManifest.tools) | Where-Object name -eq $name)[0]
                     [void](Install-GiddTool $toolsRoot $definition $Argument {
                         param($phase)

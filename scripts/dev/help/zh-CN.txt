@@ -8,10 +8,10 @@ GIDD 仓库开发（Windows x64 / Windows PowerShell 5.1）
   dev.cmd .test-node [测试组]    只运行 Node 测试。
   dev.cmd .test-live [归档目录]  两种运行时验证官方 Bun/gh/Node 归档及复用。
 
-测试组：all（默认）、doctor、setup、process、dev。
+测试组：all（默认）、doctor、setup、process、dev、config。
 无参数显示帮助。帮助语言按参数、GIDD_DEV_LANG、系统语言、英文的顺序选择。
 只有 .setup 和 .test-live 可以下载；.test 不会安装缺失工具。
-开发下载数据放在本次 checkout 已忽略的 .dev/ 下。
+工具目录读取 .agents/skills/gidd/config.toml；.info 显示实际位置。
 Node 仅包含运行时和许可证，不附带 npm；当前测试无 npm 依赖。
 本入口不启用 GIDD，不修改用户技能、PATH、Git 配置或登录状态。
 产品 JavaScript 仍须同时支持 Node.js 和 Bun。
