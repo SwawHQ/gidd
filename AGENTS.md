@@ -21,17 +21,17 @@
 
 4. **GIDD-004 — 认证由授权事实确认。** `config.toml` 可以记录预期 GitHub 主机与账号，不保存 token、密码或二次验证码；修改账号字段不能视作已登录。有人参与的 gh 登录统一展示本次认证返回的 URL 和一次性用户代码，不自动打开浏览器，由用户在任意设备完成授权；脚本等待并验证实际身份后才报告成功。GitHub API 认证、Git 传输认证和 commit 作者信息分别检查。无 GUI 环境也采用该流程；长期凭据的保存位置由选定认证方式决定，不承诺复制配置即可复制登录状态。
 
-5. **GIDD-005 — 实现与规则保持精简。** `skills/gidd/scripts/` 使用 JavaScript，优先 Bun，并以 Node.js 标准 API 为可行基础；系统 Shell 可承担无 Bun/Node 前提的环境诊断与必要启动操作，GitHub 开发流程业务逻辑仍使用 JavaScript；不预先宣称未经测试的运行时或平台兼容性。规则应指明文件、目录、命令或其他具体实体；涉及交互原则时给出使用例子。源码、发布物和本地下载数据必须区分，README 由维护者维护。现阶段只整理结构与规范，不填充占位脚本的实现。
+5. **GIDD-005 — 实现与规则保持精简。** `skills/gidd/scripts/` 业务代码使用 JavaScript，Node.js 与 Bun 均为支持目标，只使用双方支持的标准 API，同一功能须在两种运行时验证；系统 Shell 可承担无 Bun/Node 前提的环境诊断与必要启动操作，GitHub 开发流程业务逻辑仍使用 JavaScript；不预先宣称未经测试的运行时或平台兼容性。规则应指明文件、目录、命令或其他具体实体；涉及交互原则时给出使用例子。源码、发布物和本地下载数据必须区分，README 由维护者维护。当前实现范围为 Issue #2 的 Windows 基础 doctor；不得把尚未实现的初始化或治理能力表述为可用。PowerShell 源文件使用带 BOM 的 UTF-8，验证须先检查 BOM 再进行语法解析。
 
 6. **GIDD-006 — 工具集中存储与清理。** 已有可用的 Bun、gh 优先复用；需要 GIDD 下载工具时才建立共享工具目录，Bun、gh 分别保存在其 `bun/`、`gh/` 下。该目录只管理 GIDD 下载的工具及配套安装数据，不保存 GIDD `config.toml`；目录及全部子目录不得包含 `SKILL.md`。其中 `INSTALLATION.md` 说明用途、工具来源和清理方式，供人类及 Agent 主动读取。建立共享工具目录不代表安装用户级技能或启用任何仓库。收到卸载请求时，GIDD 管理流程检查当前仓库的 `.agents/skills/gidd/`、用户级 `gidd/` 和 `gidd.tools/`，展示清理范围；仅卸载当前仓库不得自动删除共享工具，无法确认其他仓库是否使用时不得声称工具已无引用。完整卸载须明确包含共享工具；不得删除复用的外部工具，也不得将删除文件表述为退出 GitHub 或撤销授权。
 
 ## Open
 
 - **GIDD-007 — Git 与更新边界。** 需确定仓库内技能源码、`config.toml` 和本地数据各自的提交策略，以及技能更新如何保留配置和下载数据。不要把整个 `.agents/` 默认视为应提交或应忽略。首次空基线已建立；后续修订通过 Issue 关联分支和 PR 审阅。
-- **GIDD-008 — 首次诊断与引导待定。** 候选方案是在 Windows 用系统 PowerShell 提供无 Bun/Node 前提的基础 `doctor`，其他平台另选并验证系统 Shell；仅检查平台、Git、Bun/Node、gh、目标仓库及配置是否可用，依赖缺失时继续报告其他可检查项。诊断不安装工具、不启动登录、不修改配置；Agent 根据诊断引导用户，下载、校验、解压属于独立初始化操作。完整配置及 GitHub 身份检查与 JavaScript 的职责划分、诊断输出格式、网络检查范围、安装临时目录及凭据存储位置在实现前确定。不得让安装 Bun 的 JavaScript 以“Bun 已安装”为唯一启动前提，也不得把依赖缺失导致的未检查报告为检查通过。
+- **GIDD-008 — 后续初始化边界。** Windows 基础诊断入口已确定为 `skills/gidd/scripts/windows/doctor.ps1`，使用系统 PowerShell 且不依赖 Bun/Node；协议与检查范围见 `skills/gidd/references/doctor.md`。其他平台另选并验证系统 Shell；仅检查平台、Git、Bun/Node、gh、目标仓库及配置是否可用，依赖缺失时继续报告其他可检查项。诊断不安装工具、不启动登录、不修改配置；Agent 根据诊断引导用户，下载、校验、解压属于独立初始化操作。完整配置及 GitHub 身份检查与 JavaScript 的职责划分、诊断输出格式、网络检查范围、安装临时目录及凭据存储位置在实现前确定。不得让安装 Bun 的 JavaScript 以“Bun 已安装”为唯一启动前提，也不得把依赖缺失导致的未检查报告为检查通过。
 
 ## Maintainer Notes
 
-- 当前只有目录、空文件占位、本规则及 MIT 许可证，尚未实现可安装运行的 GIDD。空 package.json、runtimes.json 和 SKILL.md 仅表达规划位置，不是有效清单或可安装技能。
+- 当前实现 Windows x64 / Windows PowerShell 5.1 基础 doctor 和对应技能说明；自动下载、配置写入、登录及 Issue/PR 业务脚本尚未实现。空 package.json、runtimes.json 及其余空脚本仅表达规划位置，不是有效清单或业务实现。
 - GIDD 自有代码和技能文档采用根 LICENSE 的 MIT 许可证；第三方下载工具保留各自许可证。结构整理由 Issue #1 跟踪，Windows doctor 由 Issue #2 跟踪。
 - 已用 Windows 便携 gh 2.98.0 验证：抑制浏览器启动、展示 URL 和一次性代码、用户自行授权后，登录成功且 API 返回预期账号；临时凭据已清理。Linux 无 GUI 流程尚未实测。
