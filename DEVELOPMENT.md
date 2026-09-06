@@ -15,11 +15,24 @@
 
 `.setup` 优先复用 PATH 中的 Bun（至少 1.2.15），否则使用 PowerShell 安装 `skills/gidd/assets/runtimes.json` 固定的 Bun 版本。下载、哈希、锁及中断恢复复用已有内部函数，不安装 gh。可传绝对离线归档目录，需包含 `bun-windows-x64.zip` 和 `bun-1.2.15-LICENSE.md`。现有 Node 不替代开发测试所需的 Bun；产品运行时选择仍保持 Node/Bun 任一种可用即可。
 
-`.dev/` 是本次 checkout 的可丢弃开发数据，已精确加入 `.gitignore`。它不属于用户级 `gidd.tools/`，不保存仓库启用配置，也不随技能发布。开发 Bun 存在 `.dev/tools/bun/`，来源和清理说明存在 `.dev/INSTALLATION.md`。确认安装和测试均已退出后可以删除 `.dev/` 重新准备；不能据此删除外部 PATH 中的 Bun 或用户级技能工具。
+`.dev/` 是本次 checkout 的可丢弃开发数据，已精确加入 `.gitignore`。它不属于用户级 `gidd.tools/`，不保存仓库启用配置，也不随技能发布。开发 Bun 存在 `.dev/bun/`，来源和清理说明存在 `.dev/INSTALLATION.md`。确认安装和测试均已退出后可以删除 `.dev/` 重新准备；不能据此删除外部 PATH 中的 Bun 或用户级技能工具。
 
 `dev.cmd` 仅在子进程范围隔离 PowerShell 模块路径，防止从 PowerShell 7 启动 PowerShell 5.1 时继承不兼容模块；不修改系统 PATH、Git 配置、登录或用户级技能目录。
 
-安装锁位于 `.dev/tools/.cache/install.lock`；下载包和解压中间态位于 `.dev/tools/.cache/bun/` 的 `download.part` 与 `payload/`。安装成功后清理 Bun 子目录，保留缓存根和锁文件；中断后在下次显式重试时重建，不长期保留下载包，也不支持断点续传。安装期间不得删除缓存根或锁文件。旧布局 `.dev/tools/.install/` 与 `.dev/tools/.install.lock` 可在所有安装进程退出后清理，不要同时运行新旧安装器。
+安装锁位于 `.dev/.cache/install.lock`；下载包和解压中间态位于 `.dev/.cache/bun/` 的 `download.part` 与 `payload/`。安装成功后清理 Bun 子目录，保留缓存根和锁文件；中断后在下次显式重试时重建，不长期保留下载包，也不支持断点续传。安装期间不得删除缓存根或锁文件。
+
+开发目录与技能共享工具目录使用相同的扁平结构，分别管理各自的工具：
+
+```text
+<仓库>/.dev/                   <用户技能根>/gidd.tools/
+├── INSTALLATION.md             ├── INSTALLATION.md
+├── .cache/                     ├── .cache/
+│   └── install.lock            │   └── install.lock
+└── bun/                       ├── bun/
+                               └── gh/
+```
+
+目录按需建立；开发入口目前只准备 Bun，不安装 gh。旧版 `.dev/tools/` 不再作为开发工具查找位置；所有安装和测试退出后，可将其中完整的 `bun/` 移至尚不存在的 `.dev/bun/`，再运行 `.setup` 校验复用，或重新准备开发环境。确认无需保留后再清理旧目录，不要同时运行新旧入口。
 
 ## 测试
 

@@ -1,5 +1,5 @@
 import { test } from 'bun:test';
-import { cpSync } from 'node:fs';
+import { cpSync, statSync } from 'node:fs';
 import { adapter, assert, compile, existsSync, fixture, join, json, mkdirSync, ok, readFileSync, readdirSync, repo, run, snapshot, stub, write } from './support/helpers.mjs';
 
 test('PowerShell sources have UTF-8 BOM before parsing', () => {
@@ -41,13 +41,20 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     ok(invoke(['.setup'],{PATH:bin}));
     assert.equal(existsSync(join(checkout,'.dev')),false,'External Bun reuse must not create development data');
     assert.equal(json(ok(invoke(['.info'],{PATH:bin}))).bun.details.path,join(bin,'bun.exe'));
-    const localBun=join(checkout,'.dev/tools/bun/bun.exe');
+    const localBun=join(checkout,'.dev/bun/bun.exe');
     stub(join(bin,'bun.exe'),localBun,undefined,true);
-    const leftover=join(checkout,'.dev/tools/.cache/bun/download.part'); write(leftover,'leftover after publication');
+    const leftover=join(checkout,'.dev/.cache/bun/download.part'); write(leftover,'leftover after publication');
     ok(invoke(['.setup'])); assert.equal(existsSync(leftover),false,'Reuse must clean staging left after publication');
-    assert.equal(existsSync(join(checkout,'.dev/tools/.cache/install.lock')),true);
-    assert.equal(json(ok(invoke(['.info']))).bun.details.source,'checkout');
-    const occupied=join(checkout,'.dev/tools/bun/user.txt'); write(occupied,'keep');
+    assert.equal(existsSync(join(checkout,'.dev/.cache/install.lock')),true);
+    const localInfo=json(ok(invoke(['.info'])));
+    assert.equal(localInfo.bun.details.source,'checkout');
+    // PowerShell may expand the temporary directory's Windows 8.3 alias.
+    for (const [actual,expected] of [[localInfo.bun.details.path,localBun],[localInfo.tools_root,join(checkout,'.dev')]]) {
+      const a=statSync(actual,{bigint:true}), b=statSync(expected,{bigint:true});
+      assert.equal(a.dev,b.dev); assert.equal(a.ino,b.ino);
+    }
+    assert.equal(existsSync(join(checkout,'.dev/tools')),false,'Setup must use the flat development root');
+    const occupied=join(checkout,'.dev/bun/user.txt'); write(occupied,'keep');
     const result=invoke(['.setup']); assert.notEqual(result.status,0); assert.match(result.stderr,/occupied_or_invalid_target/);
     assert.equal(readFileSync(occupied,'utf8'),'keep');
   } finally { f.dispose(); }

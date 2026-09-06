@@ -9,7 +9,7 @@ GIDD repository development (Windows x64 / Windows PowerShell 5.1)
 Suites: all (default), doctor, setup, process, dev.
 No arguments show help. Help language: argument, GIDD_DEV_LANG, locale, then English.
 Only .setup and .test-live can download. .test never installs missing tools.
-Development downloads live in this checkout's ignored .dev/tools/ directory.
+Development downloads live in this checkout's ignored .dev/ directory.
 This does not enable GIDD or change user skills, PATH, Git settings or authentication.
 Product JavaScript must still work in both Node.js and Bun.
 See DEVELOPMENT.md for boundaries, test adapters and cleanup.

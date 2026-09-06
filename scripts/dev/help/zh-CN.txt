@@ -9,7 +9,7 @@ GIDD 仓库开发（Windows x64 / Windows PowerShell 5.1）
 测试组：all（默认）、doctor、setup、process、dev。
 无参数显示帮助。帮助语言按参数、GIDD_DEV_LANG、系统语言、英文的顺序选择。
 只有 .setup 和 .test-live 可以下载；.test 不会安装缺失工具。
-开发下载数据放在本次 checkout 已忽略的 .dev/tools/ 下。
+开发下载数据放在本次 checkout 已忽略的 .dev/ 下。
 本入口不启用 GIDD，不修改用户技能、PATH、Git 配置或登录状态。
 产品 JavaScript 仍须同时支持 Node.js 和 Bun。
 开发边界、测试适配和清理方式见 DEVELOPMENT.md。

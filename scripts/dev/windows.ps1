@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $codeRoot = Join-Path $repoRoot 'skills/gidd/scripts/windows'
-$toolsRoot = Join-Path $repoRoot '.dev/tools'
+$toolsRoot = Join-Path $repoRoot '.dev'
 $lock = $null
 try {
     if ($Extra.Count) { throw 'Unexpected arguments. Use dev.cmd .help.' }
@@ -52,7 +52,7 @@ try {
             $manifest = [IO.File]::ReadAllText((Join-Path $repoRoot 'skills/gidd/assets/runtimes.json')) | ConvertFrom-Json
             if ($manifest.schema -ne 'gidd.runtimes/v1' -or $manifest.platform -ne 'windows-x64') { throw 'invalid_runtime_manifest' }
             $lock = Open-GiddInstallLock $toolsRoot
-            $guide = "Development-only Bun for this checkout. Source and hashes: skills/gidd/assets/runtimes.json and tools/bun/install.json.`nTemporary downloads and extraction: tools/.cache/bun/ (removed after success or rebuilt on retry). Lock: tools/.cache/install.lock (retained).`nRemove .dev/ or its cache only when no setup or tests are running. External PATH tools and user-level GIDD tools are not owned here.`n"
+            $guide = "Development-only Bun for this checkout. Source and hashes: skills/gidd/assets/runtimes.json and bun/install.json.`nTemporary downloads and extraction: .cache/bun/ (removed after success or rebuilt on retry). Lock: .cache/install.lock (retained).`nRemove .dev/ or its cache only when no setup or tests are running. External PATH tools and user-level GIDD tools are not owned here.`n"
             Write-GiddDurableFile (Join-Path $repoRoot '.dev/INSTALLATION.md') ([Text.Encoding]::UTF8.GetBytes($guide))
             [void](Install-GiddTool $toolsRoot @($manifest.tools | Where-Object name -eq bun)[0] $Argument {
                 param($phase)
