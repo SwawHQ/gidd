@@ -1,0 +1,43 @@
+﻿function New-Check {
+    param([string]$Id, [string]$Status, [string]$Reason, [hashtable]$Details = @{})
+    return [ordered]@{ id = $Id; status = $Status; reason = $Reason; details = $Details }
+}
+
+function Find-Tool {
+    param([string]$Name, [version]$Minimum, [string]$Pattern, [string]$ManagedPath)
+    $candidates = @()
+    foreach ($command in @(Get-Command "$Name.exe" -CommandType Application -All -ErrorAction SilentlyContinue)) {
+        $candidates += @{ path = $command.Source; source = 'path' }
+    }
+    if ($ManagedPath -and (Test-Path -LiteralPath $ManagedPath)) {
+        $candidates += @{ path = $ManagedPath; source = 'gidd.tools' }
+    }
+    $attempts = @()
+    foreach ($candidate in $candidates) {
+        if (($candidate.source -eq 'gidd.tools' -or $candidate.path -eq $ManagedPath) -and
+            -not (Test-GiddManagedTool ([IO.Path]::GetDirectoryName($candidate.path)) $Name)) {
+            $attempts += @{ path = $candidate.path; source = $candidate.source; reason = 'managed_integrity_failed'; version = $null }
+            continue
+        }
+        $result = Invoke-GiddProcess $candidate.path @('--version')
+        $version = $null
+        $reason = $result.reason
+        if ($result.ok) {
+            if ($result.text -match $Pattern) {
+                $version = $Matches[1]
+                $reason = 'version_below_minimum'
+                if ([version]$version -ge $Minimum) {
+                    return New-Check "tool.$Name" 'ready' 'usable' @{
+                        path = $candidate.path; source = $candidate.source; version = $version
+                        minimum = $Minimum.ToString(); rejected = $attempts
+                    }
+                }
+            } else { $reason = 'unrecognized_version' }
+        }
+        $attempts += @{ path = $candidate.path; source = $candidate.source; reason = $reason; version = $version }
+    }
+    $status = if ($candidates.Count) { 'invalid' } else { 'missing' }
+    return New-Check "tool.$Name" $status 'no_usable_candidate' @{
+        minimum = $Minimum.ToString(); rejected = $attempts
+    }
+}

@@ -26,6 +26,15 @@ function New-Stub([string]$Destination, [string]$Mode) {
     [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($Destination))
     Copy-Item -LiteralPath (Join-Path $fixture 'stub.exe') -Destination $Destination
     [IO.File]::WriteAllText(($Destination + '.mode'), $Mode)
+    if ($Destination -like '*gidd.tools*') {
+        $directory = [IO.Path]::GetDirectoryName($Destination)
+        $name = [IO.Path]::GetFileNameWithoutExtension($Destination)
+        $files = @(Get-ChildItem -LiteralPath $directory -File | Where-Object Name -ne 'install.json' | ForEach-Object {
+            @{ name=$_.Name; length=$_.Length; sha256=(Get-FileHash $_.FullName).Hash.ToLowerInvariant() }
+        })
+        $record = @{ schema='gidd.install/v1'; name=$name; platform='windows-x64'; version='1.2.15'; archive_sha256=('0'*64); files=$files }
+        [IO.File]::WriteAllText((Join-Path $directory 'install.json'),($record | ConvertTo-Json -Depth 5))
+    }
 }
 function Snapshot {
     return ((Get-ChildItem -LiteralPath $fixture -Recurse -Force | Sort-Object FullName | ForEach-Object {
