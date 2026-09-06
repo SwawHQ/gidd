@@ -30,11 +30,11 @@ RepositoryPath 是必需参数，明确目标仓库。先读取目标仓库的�
     └── install.json
 ```
 
-config.toml 的工具内联表指定版本和下载根；默认缺失工具下载最新稳定 Bun/gh，解析规则见 [configuration.md](configuration.md)。安装前显示确切版本与完整下载 URL，官方校验信息缺失时报错；镜像归档仍对照官方 SHA-256。`assets/runtimes.json` 保留 Bun 1.2.15、gh 2.98.0 的离线基线。安装清单 `gidd.install/v1` 保存实际文件的名称、长度和 SHA-256，以及工具名、平台、版本和归档来源。第三方工具保持其原许可证，不套用 GIDD 的 MIT。
+config.toml 的工具内联表指定版本和下载根；默认缺失工具下载最新稳定 Bun/gh，解析规则见 [configuration.md](configuration.md)。安装前显示确切版本与完整下载 URL，官方校验信息缺失时报错；镜像归档仍对照官方 SHA-256。`assets/runtimes.json` 保留 Bun 1.2.15、gh 2.98.0 的校验信息。安装清单 `gidd.install/v1` 保存实际文件的名称、长度和 SHA-256，以及工具名、平台、版本和归档来源。第三方工具保持其原许可证，不套用 GIDD 的 MIT。
 
 `scripts/windows/setup-tools/` 按 `_filesystem.ps1`（锁和受控路径）、`releases.ps1`（版本与官方校验元数据）、`download.ps1`（下载与归档）、`install.ps1`（发布事务）拆分。真实共用的配置、探测与完整性代码位于相邻 `lib/`。
 
-实际工具根直接包含 `.cache/`、`bun/`、`node/`、`gh/`，按需建立。源码仓库开发入口读取同一配置，同时准备 Bun 和 Node；技能入口只复用已有 Node，不额外下载 Node。配置相同时两入口共用工具和安装锁，配置的实际路径不同则分别管理。
+实际工具根直接包含 `.cache/`、`bun/`、`node/`、`gh/`，按需建立。源码仓库开发入口读取同一配置，可分别准备 Bun、Node 或 gh；技能入口只复用已有 Node，不额外下载 Node。配置相同时两入口共用工具和安装锁，配置的实际路径不同则分别管理。
 
 ## 中断恢复
 
@@ -50,9 +50,9 @@ Bun 与 gh 各自发布：Bun 完成而 gh 失败时，保留已完成的 Bun，
 
 安装清单与 executable 同目录，SHA-256 提供完整性检查，不是对可同时修改两者的本机用户的安全隔离。它不保存 GitHub 凭据或仓库配置。
 
-## 离线输入与输出
+## 输出
 
-可选 `-ArchiveDirectory 'D:\downloads'` 从指定目录读取预先下载的官方文件，不联网。首次离线安装须将 Bun/gh 版本固定为内置基线 1.2.15/2.98.0，通过清单中的 SHA-256；所需文件名为 `bun-windows-x64.zip`、`gh_2.98.0_windows_amd64.zip`，Bun 另需 `bun-1.2.15-LICENSE.md`。lts/latest 或未内置版本缺少离线元数据时明确报错。已满足要求的工具继续复用而不读归档；此参数不改变正式安装位置。不接受任意清单或跳过校验开关。
+缺失工具按配置联网下载并校验；已有可用工具直接复用。入口不接受本地安装包目录、任意清单或跳过校验开关。
 
 stdout 是 `gidd.setup-tools/v1` JSON；成功退出 0，`status=ready`，`tools` 列出 `installed` 或 `reused` 及实际路径。失败退出 1，`status=error`，`reason` 提供原因，`tools` 保留已完成项；stderr 显示进度与错误。`install_locked_or_unwritable` 需要确认另一个安装是否在运行；`occupied_or_invalid_target` 需要检查该正式目录，不要直接删除。
 

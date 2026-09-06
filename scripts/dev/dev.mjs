@@ -9,8 +9,9 @@ if (process.platform !== 'win32') {
   process.exit(1);
 }
 if (extra.length || !['.test', '.test-live'].includes(command) ||
+    (command === '.test-live' && argument) ||
     (command === '.test' && argument && argument !== 'all' && !suites.includes(argument))) {
-  console.error('Use dev.cmd .test [all|doctor|setup|process|dev|config|github] or .test-live [archive-directory].');
+  console.error('Use dev.cmd .test [all|doctor|setup|process|dev|config|github] or .test-live.');
   process.exit(1);
 }
 const files = command === '.test-live' ? ['tests/live.test.mjs'] :
@@ -31,7 +32,6 @@ for (const file of files) {
     cwd: root, stdio: 'inherit', env: {
       ...env,
       GIDD_LIVE_TEST: command === '.test-live' ? '1' : '',
-      GIDD_ARCHIVE_DIRECTORY: command === '.test-live' ? argument : '',
     },
   });
   if (result.error) console.error(result.error.message);
@@ -44,7 +44,7 @@ const failures = results.filter(result => !result.passed);
 console.log(`\nSuite summary: ${results.length - failures.length} passed, ${failures.length} failed (${((performance.now() - started) / 1000).toFixed(2)}s)`);
 const quote = value => `'${value.replaceAll("'", "''")}'`;
 for (const { file, seconds } of failures) {
-  const rerun = command === '.test-live' ? `.test-live${argument ? ' ' + quote(argument) : ''}` :
+  const rerun = command === '.test-live' ? '.test-live' :
     `.test-${process.versions.bun ? 'bun' : 'node'} ${file.split('/').at(-1).replace('.test.mjs', '')}`;
   console.log(`FAIL ${file} (${seconds}s)\nRerun (PowerShell): & ${quote(fileURLToPath(new URL('../../dev.cmd', import.meta.url)))} ${rerun}`);
 }

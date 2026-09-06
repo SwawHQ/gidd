@@ -1,5 +1,5 @@
 ﻿function Install-GiddTool {
-    param([string]$ToolsRoot, $Definition, [string]$ArchiveDirectory = '', [scriptblock]$OnPhase = {})
+    param([string]$ToolsRoot, $Definition, [scriptblock]$OnPhase = {})
     $name = $Definition.name
     if ($name -notin @('bun','gh','node')) { throw 'invalid_tool_name' }
     $target = Join-Path $ToolsRoot $name
@@ -17,15 +17,13 @@
     Assert-GiddPlainPath $payload
     [void][IO.Directory]::CreateDirectory($payload)
     $archive = Join-Path $stage 'download.part'
-    $local = if ($ArchiveDirectory) { Join-Path $ArchiveDirectory $Definition.archive } else { '' }
     [Console]::Error.WriteLine("GIDD download: $name $($Definition.version) $($Definition.url)")
-    Receive-GiddFile $Definition.url $archive $Definition.sha256 $local
+    Receive-GiddFile $Definition.url $archive $Definition.sha256
     & $OnPhase 'downloaded'
     Expand-GiddPayload $archive $payload $Definition
     foreach ($file in $Definition.supplements) {
         if ($file.name -notmatch '^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$') { throw 'invalid_supplement_name' }
-        $local = if ($ArchiveDirectory) { Join-Path $ArchiveDirectory "$name-$($Definition.version)-$($file.name)" } else { '' }
-        Receive-GiddFile $file.url (Join-Path $payload $file.name) $file.sha256 $local
+        Receive-GiddFile $file.url (Join-Path $payload $file.name) $file.sha256
     }
     & $OnPhase 'extracted'
     $probe = Invoke-GiddProcess (Join-Path $payload "$name.exe") @('--version')

@@ -44,7 +44,7 @@ try {
             $settings = @{ version=$request.version;source=$request.source }
             $pinned = if ($request.pinnedPath) { [IO.File]::ReadAllText($request.pinnedPath) | ConvertFrom-Json } else { $null }
             if ($null -eq $request.responses) {
-                Resolve-GiddRelease $request.name $settings $pinned $request.archiveDirectory | ConvertTo-Json -Depth 10 -Compress
+                Resolve-GiddRelease $request.name $settings $pinned | ConvertTo-Json -Depth 10 -Compress
                 break
             }
             $read = { param($url)
@@ -52,7 +52,7 @@ try {
                 if (-not $property) { throw "unexpected_metadata_request:$url" }
                 return [string]$property.Value
             }
-            Resolve-GiddRelease $request.name $settings $pinned $request.archiveDirectory $read | ConvertTo-Json -Depth 10 -Compress
+            Resolve-GiddRelease $request.name $settings $pinned $read | ConvertTo-Json -Depth 10 -Compress
         }
         'validate' { Test-GiddManagedTool $request.root $request.name | ConvertTo-Json -Compress }
         'stage' { Remove-GiddStage $request.root $request.name }
@@ -62,12 +62,27 @@ try {
         }
         'install' {
             $definition = [IO.File]::ReadAllText($request.definitionPath) | ConvertFrom-Json
+            if ($request.fixtureDirectory) {
+                # Test-only transport: all copying, limits, hashes and installation
+                # still use production code. Public installers always use HTTPS.
+                $fixtureDownloads = @{}
+                $fixtureDownloads[$definition.url] = Join-Path $request.fixtureDirectory $definition.archive
+                foreach ($file in $definition.supplements) {
+                    $fixtureDownloads[$file.url] = Join-Path $request.fixtureDirectory "$($definition.name)-$($definition.version)-$($file.name)"
+                }
+                function Open-GiddDownload {
+                    param([string]$Url)
+                    if (-not $fixtureDownloads.ContainsKey($Url)) { throw "unexpected_download:$Url" }
+                    Assert-GiddPlainPath $fixtureDownloads[$Url]
+                    return @{ response=$null; stream=[IO.File]::OpenRead($fixtureDownloads[$Url]) }
+                }
+            }
             $lock = Open-GiddInstallLock $request.root
             if ($request.stopAt -eq 'locked') {
                 [IO.File]::WriteAllText(($RequestPath + '.locked'),'locked')
                 Start-Sleep -Seconds 30
             }
-            Install-GiddTool $request.root $definition $request.archiveDirectory {
+            Install-GiddTool $request.root $definition {
                 param($phase)
                 if ($phase -eq $request.stopAt) { [Diagnostics.Process]::GetCurrentProcess().Kill() }
             } | ConvertTo-Json -Compress

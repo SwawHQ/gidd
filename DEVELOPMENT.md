@@ -32,13 +32,13 @@
 
 脚本相对路径以调用者当前目录解析，stdin/stdout/stderr 透传，返回脚本退出码。启动器收到的参数通过数据编码转发，避免 PowerShell 再次解释 runtime 的 `-e`、`--help` 或脚本参数；参数仍须遵守调用 Shell 的转义规则。例如 PowerShell 调用 `.cmd` 时要明确传递空参数，可用 `.\dev.cmd --% node script.mjs ""`。复杂内联代码建议保存为脚本文件。终端中可省略扩展名写 `dev bun ...`；PowerShell 在当前目录下仍需 `.\dev bun ...`。
 
-`.setup` 同时准备 Bun 和 Node，分别优先复用 PATH 中满足最低版本的运行时（Bun 1.2.15、Node 24.0.0），否则复用配置目录中校验有效的工具。固定版本还须精确匹配；缺失时使用 PowerShell 按配置解析版本、校验并下载。`.info` 分别报告两个运行时、配置要求和下载来源，仅当二者均可用时退出 0。
+`.setup bun`、`.setup node`、`.setup gh` 分别只准备指定工具；不指定工具的 `.setup` 保留同时准备 Bun 和 Node 的行为。分别优先复用 PATH 中满足最低版本的工具（Bun 1.2.15、Node 24.0.0、gh 2.98.0），否则复用配置目录中校验有效的工具。固定版本还须精确匹配；缺失时使用 PowerShell 按配置解析版本、校验并下载。`.info` 分别报告两个运行时、配置要求和下载来源，仅当二者均可用时退出 0。
 
-默认 Node 使用最新 LTS、Bun 使用最新稳定版，只在需要下载时解析；已有可用版本继续复用，诊断与测试不检查更新。`skills/gidd/assets/runtimes.json` 和 `scripts/dev/runtimes.json` 保留 Bun/gh 与开发 Node 的固定离线基线。版本解析、官方校验信息、下载、SHA-256 校验、独占锁、版本验证及中断恢复共用技能脚本，不通过 Bun 安装 Node，也不通过 Node 安装 Bun。已有工具目录版本冲突时保留并报错，自动升级/回滚命令尚未实现。
+默认 Node 使用最新 LTS、Bun 使用最新稳定版，只在需要下载时解析；已有可用版本继续复用，诊断与测试不检查更新。`skills/gidd/assets/runtimes.json` 和 `scripts/dev/runtimes.json` 保留 Bun/gh 与开发 Node 的已验证版本校验信息。版本解析、官方校验信息、下载、SHA-256 校验、独占锁、版本验证及中断恢复共用技能脚本，不通过 Bun 安装 Node，也不通过 Node 安装 Bun。已有工具目录版本冲突时保留并报错，自动升级/回滚命令尚未实现。
 
-便携 Node 只提取 `node.exe` 和完整的上游 `LICENSE`，不附带 npm；当前测试没有 npm 依赖。开发入口不安装 gh，已安装 skill 的初始化仍只需 Bun/Node 任一种可用，不会因开发清单额外下载 Node。
+便携 Node 只提取 `node.exe` 和完整的上游 `LICENSE`，不附带 npm；当前测试没有 npm 依赖。开发入口可用 `.setup gh` 准备 gh；已安装 skill 的工具初始化仍只需 Bun/Node 任一种可用，不会因开发清单额外下载 Node。
 
-可用 `.setup D:\downloads` 指定绝对离线归档目录；首次离线安装须在配置中固定内置基线 Bun 1.2.15、Node 24.20.0，并提供 `bun-windows-x64.zip`、`bun-1.2.15-LICENSE.md`、`node-v24.20.0-win-x64.zip`。其他版本或 lts/latest 缺少离线元数据时明确报错。已可用且满足配置的运行时不读取归档、不联网。
+安装只需 `.setup bun`、`.setup node` 或 `.setup gh`，不接受本地安装包目录。缺少工具时按配置联网下载并校验；已可用且满足配置的工具直接复用，不联网。实际安装位置由 `tools.directory` 决定。
 
 ## 配置与本地目录
 
@@ -65,7 +65,7 @@ gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 │   └── install.lock
 ├── bun/
 ├── node/
-└── gh/                               # 仅技能入口按需准备
+└── gh/                               # 技能入口或 dev .setup gh 按需准备
 ```
 
 目录按需建立，复用外部工具不会仅因配置存在而建立下载目录。配置显式展示版本策略和下载根；镜像须保留上游布局，版本及校验信息仍从官方来源取得。安装时展示确切版本与完整下载 URL，install.json 保存实际来源和校验值。下载、解压暂存在 `<工具根>/.cache/<工具>/download.part` 与 `payload/`，成功后删除对应工具子目录，保留缓存根与锁文件。中断后显式重试重建暂存，不长期保留压缩包或提供断点续传。
@@ -79,10 +79,13 @@ gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 ## 显式 GitHub 授权
 
 ```powershell
+.\dev.cmd .setup gh
 .\dev.cmd .auth octocat
 ```
 
-账号必填，开发快捷入口使用 github.com；其他主机使用技能的 `scripts/windows/authorize.ps1 -Hostname`。需要现成的 gh 2.98.0+ 和 Bun/Node 任一种；`.auth` 不下载工具，`.setup` 仍只准备开发运行时，缺少 gh 时通过技能 `setup-tools.ps1 -RepositoryPath <仓库绝对路径>` 显式准备。
+账号必填，开发快捷入口使用 github.com；其他主机使用技能的 `scripts/windows/authorize.ps1 -Hostname`。需要 gh 2.98.0+ 和 Bun/Node 任一种；`.auth` 不下载工具，缺少 gh 时运行 `.setup gh`，缺少运行时时运行 `.setup bun` 或 `.setup node`。
+
+`.setup gh` 不要求已安装 Bun/Node。优先复用 PATH 或配置目录内满足版本要求的 gh，否则共用技能的版本解析、下载、校验和安装代码，保存到配置工具根的 `gh/`（本仓库为 `.devv/gh/`）。它遵守 `tools.gh` 的版本与来源，并要求至少 2.98.0；已有目录损坏或版本冲突时保留并报错，不自动升级覆盖。该命令不发起登录，不修改系统 PATH。
 
 入口先核验并复用匹配身份；否则在需要授权时显示本次 URL 和代码，等待用户在网页授权，最后验证实际账号。等待时保留进程，成功、失败、取消或超时后退出，不启动常驻服务。凭据由 gh 管理，可继承调用环境选定的 GH_CONFIG_DIR；不更改 Git 凭据助手或启用仓库。当前账号不匹配时明确报错，不自动切换。详见 [设备授权协议与凭据边界](skills/gidd/references/authorization.md)。
 
@@ -104,9 +107,8 @@ gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 
 ```powershell
 .\dev.cmd .test-live
-.\dev.cmd .test-live D:\downloads
 ```
 
-该命令分别在 Bun、Node 下验证官方 Bun/gh/Node 下载、完整性、版本、doctor 识别和离线复用。无目录参数时解析最新稳定 Bun/gh 和 Node LTS，联网下载到隔离临时目录；有目录参数时固定内置基线、读取预下载官方文件并校验固定 SHA-256，除上述开发归档外还需 `gh_2.98.0_windows_amd64.zip`。测试后清理隔离目录，不接触真实用户安装与登录。直接执行测试默认跳过联网测试；Bun 1.2.15 不应直接用 `bun test` 批量运行这些文件，请使用开发入口以确保每个文件都实际执行。
+该命令分别在 Bun、Node 下验证官方 Bun/gh/Node 下载、完整性、版本、doctor 识别和已有工具复用。它解析最新稳定 Bun/gh 和 Node LTS，联网下载到隔离临时目录；不接受本地安装包目录。测试后清理隔离目录，不接触真实用户安装与登录。普通 `.test` 通过测试专用的模拟下载响应验证文件读取、哈希、解压和恢复，不联网；本地 fixture 输入只存在于 `tests/support/`。直接执行测试默认跳过联网测试；Bun 1.2.15 不应直接用 `bun test` 批量运行这些文件，请使用开发入口以确保每个文件都实际执行。
 
 后续平台增加薄启动入口与平台适配，复用 JavaScript 用例；未提供 `dev.sh` / `dev.mac.sh`，不将 Windows 特有测试的跳过当作其他平台验证通过。产品 JavaScript 仍须仅使用两种运行时共有的标准 API，并在两者中验证同一功能。

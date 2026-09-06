@@ -32,7 +32,7 @@ Node 支持 `lts`（默认）、`latest` 或确切的 `x.y.z`；Bun、gh 支持 
 
 已有受管目录不自动覆盖：版本冲突或文件损坏时报错并保留。改变固定版本不等于已完成升级；自动升级/回滚命令尚未实现。需要更换版本时可先配置另一个专用目录安装验证，旧目录按实际引用另行清理。
 
-显式 `-ArchiveDirectory` 保持离线：已安装且满足要求的工具直接复用；首次离线安装只支持 runtimes.json 中保留校验信息的确切版本，须在配置中固定该版本。`lts/latest` 或其他未内置版本缺少离线元数据时返回 offline_release_metadata_unavailable，不偷偷联网。内置清单用于离线基线，不再决定默认下载版本。
+安装只支持按配置联网下载或复用已有工具，不接受本地安装包目录。已安装且满足要求的工具直接复用，不联网。内置清单保留已验证确切版本的校验信息，不决定默认下载版本。
 
 ## 路径含义
 
@@ -60,7 +60,7 @@ Windows 启动解析由 `scripts/windows/lib/_configuration.ps1` 完成，不依
 
 ## 发布、提交与清理
 
-版本策略和下载来源在仓库实例中，已解析版本和校验值在实际工具的 install.json 中。`assets/runtimes.json`（Bun/gh）与源码仓库的 `scripts/dev/runtimes.json`（开发 Node）保留已验证版本的离线安装基线；平台资产名称与提取规则由 releases.ps1 适配。每个实际工具根内的 INSTALLATION.md 说明来源与清理边界，不记录技能安装模式。
+版本策略和下载来源在仓库实例中，已解析版本和校验值在实际工具的 install.json 中。`assets/runtimes.json`（Bun/gh）与源码仓库的 `scripts/dev/runtimes.json`（开发 Node）保留已验证版本的校验信息；平台资产名称与提取规则由 releases.ps1 适配。每个实际工具根内的 INSTALLATION.md 说明来源与清理边界，不记录技能安装模式。
 
 本源码仓库实例使用 `directory = ".devv"`，精确忽略 `/.devv/`。实例只含可移植的相对目录，可随源码审阅；不把整个 `.agents/` 默认视为应提交或应忽略。其他仓库自行决定实例提交策略，不提交下载工具、缓存、凭据或不适合共享的机器绝对路径。
 

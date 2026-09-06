@@ -39,6 +39,7 @@ test('test command executes every suite and propagates failures', { timeout: 120
     assert.match(selected.stdout,/Suite summary: 1 passed, 0 failed/);
     assert.doesNotMatch(selected.stdout,/Rerun \(PowerShell\):/);
     assert.notEqual(run(process.execPath,[runner,'.test','unknown']).status,0);
+    assert.notEqual(run(process.execPath,[runner,'.test-live',f.root]).status,0);
   } finally { f.dispose(); }
 });
 
@@ -57,7 +58,7 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     assert.match(ok(invoke([],{GIDD_DEV_LANG:'zh-CN'})).stdout,/仓库开发/);
     assert.match(ok(invoke(['.help','en'],{GIDD_DEV_LANG:'zh-CN'})).stdout,/repository development/);
     assert.match(ok(invoke([],{LC_ALL:'zh_CN.UTF-8'})).stdout,/仓库开发/);
-    for (const args of [['.help','invalid'],['.help','en','extra'],['.unknown'],['.info','extra'],['.test','unknown'],['.setup','relative-path'],['.test']]) {
+    for (const args of [['.help','invalid'],['.help','en','extra'],['.unknown'],['.info','extra'],['.test','unknown'],['.setup','relative-path'],['.test-live',`"${f.root}"`],['.test']]) {
       assert.notEqual(invoke(args).status,0,`Must reject: ${args.join(' ')}`);
     }
     const info=invoke(['.info']); assert.equal(info.status,1); assert.equal(json(info).bun.status,'missing');
@@ -115,6 +116,44 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     write(config,'invalid = true');
     assert.notEqual(invoke(['.setup']).status,0); assert.notEqual(invoke(['.info']).status,0);
     assert.match(ok(invoke(['.help','en'])).stdout,/repository development/);
+  } finally { f.dispose(); }
+});
+
+test('dev.cmd .setup selects one tool, reuses gh and rejects local package inputs', () => {
+  const f = fixture();
+  try {
+    const checkout = join(f.root, 'repo with spaces');
+    for (const path of ['dev.cmd','scripts/dev','skills/gidd/scripts/windows','skills/gidd/assets']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
+    const invoke = (args = '', path = '', tool = 'gh') => run(cmd, ['/d','/s','/c', `""${join(checkout,'dev.cmd')}" .setup ${tool} ${args}"`], { windowsVerbatimArguments:true, env:{PATH:path} });
+    assert.notEqual(invoke('relative-path').status, 0);
+    assert.notEqual(invoke('', '', 'unknown').status, 0);
+    assert.notEqual(invoke('one two').status, 0);
+    assert.notEqual(invoke(`"${f.root}"`).status, 0);
+    const exe = compile(f.root), bin = join(f.root,'bin');
+    stub(exe, join(bin,'gh.exe'));
+    assert.match(ok(invoke('',bin)).stdout, /gh 2\.98\.0:/);
+    assert.equal(existsSync(join(checkout,'.dev')), false, 'PATH reuse must not create tool storage');
+    for (const name of ['bun','node']) {
+      const selectedBin = join(f.root,name);
+      stub(exe,join(selectedBin,`${name}.exe`));
+      const selected = ok(invoke('',selectedBin,name));
+      assert.match(selected.stdout,new RegExp(`^${name} `));
+      assert.equal(existsSync(join(checkout,'.dev')),false,'A selected runtime must not install other missing tools');
+    }
+    const config = join(checkout,'.agents/skills/gidd/config.toml');
+    const configText = 'schema_version = 1\n[tools]\ndirectory = ".chosen-tools"\ngh = { version = "2.98.0", source = "https://github.com/cli/cli/releases" }\n';
+    write(config,configText);
+    const tools = join(checkout,'.chosen-tools');
+    stub(exe,join(tools,'gh/gh.exe'),undefined,true);
+    assert.match(ok(invoke()).stdout, /gh 2\.98\.0:/);
+    assert.equal(existsSync(join(tools,'gh/gh.exe')), true);
+    for (const name of ['bun','node','.cache/gh']) assert.equal(existsSync(join(tools,name)), false);
+    assert.equal(readFileSync(config,'utf8'),configText);
+    ok(invoke());
+    write(config,configText.replace('2.98.0','2.99.0'));
+    assert.match(invoke().stderr,/occupied_or_version_conflicting_target:gh/);
+    assert.equal(JSON.parse(readFileSync(join(tools,'gh/install.json'),'utf8')).version,'2.98.0');
   } finally { f.dispose(); }
 });
 

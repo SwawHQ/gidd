@@ -31,6 +31,6 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <技能�
 
 登录开始后的失败或账号不匹配可能发生在 gh 已保存凭据之后，因此结果标记 `credentials_may_have_changed=true`。Agent 应报告实际结果；不擅自 logout、删除凭据或回滚账号。成功仅确认 GitHub API 身份，Git 传输和 commit 作者仍通过 [身份检查](identity.md) 分别报告，不声称已能 push，也不启用仓库。
 
-离线用例使用模拟 gh，不读取真实登录。已用真实 gh 2.98.0 在 Node/Bun 下验证设备信息输出和取消，未在本轮重新完成浏览器授权后的真实凭据保存；该部分由 fixture 验证，人工完整流程需另行实际验收。
+离线用例使用模拟 gh，不读取真实登录。已用真实 gh 2.98.0 在 Node/Bun 下验证设备信息输出和取消；维护者已在本仓库运行 `dev.cmd .auth <预期账号>` 并确认通过。该人工结果由维护者提供，具体凭据存储后端仍以 gh 的实际结果为准。
 
 依据：[gh auth login](https://cli.github.com/manual/gh_auth_login)、[gh 2.98 非交互授权实现](https://github.com/cli/cli/blob/v2.98.0/internal/authflow/flow.go)、[GitHub 设备流程](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow)。

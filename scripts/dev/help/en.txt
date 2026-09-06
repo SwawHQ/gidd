@@ -2,11 +2,14 @@ GIDD repository development (Windows x64 / Windows PowerShell 5.1)
 
   dev.cmd .help [en|zh]          Show help without Bun/Node or downloads.
   dev.cmd .info                  Report development Bun and Node separately.
-  dev.cmd .setup [archive-dir]   Prepare both runtimes; reuse or install configured versions.
+  dev.cmd .setup bun            Prepare only Bun; reuse or install the configured version.
+  dev.cmd .setup node           Prepare only Node; reuse or install the configured version.
+  dev.cmd .setup gh             Prepare only gh 2.98.0+; no runtime required, no login.
+  dev.cmd .setup                Prepare both Bun and Node for development tests.
   dev.cmd .test [suite]          Run the same offline tests under Bun and Node.
   dev.cmd .test-bun [suite]      Run only Bun tests.
   dev.cmd .test-node [suite]     Run only Node tests.
-  dev.cmd .test-live [archive-dir]  Test official Bun/gh/Node archives and reuse under both runtimes.
+  dev.cmd .test-live            Test official downloads, installation and reuse under both runtimes.
   dev.cmd .auth <account>        Explicit GitHub.com authorization; wait for the device code flow.
   dev.cmd bun [args...]          Run the configured portable Bun, without PATH fallback.
   dev.cmd node [args...]         Run the configured portable Node, without PATH fallback.
@@ -22,7 +25,7 @@ bun/node forward caller cwd, arguments and stdio; the invoked command controls i
 Portable and sys modes never fall back to each other; both honor configured versions.
 Tool storage, versions and download roots follow .agents/skills/gidd/config.toml.
 Defaults for missing downloads: Node LTS, stable Bun; existing usable tools are reused.
-Offline first installs require exact bundled versions; see DEVELOPMENT.md.
+Setup downloads configured tools or reuses existing ones; local package directories are not accepted.
 Portable Node includes the runtime and license, without npm; tests have no npm dependencies.
 .auth can save gh credentials; it never opens a browser or configures Git credential helpers.
 Tests never log in. No command enables GIDD or changes user skills or system PATH.
