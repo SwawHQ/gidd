@@ -29,6 +29,8 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\script
 
 共享工具须先通过同目录 `install.json` 的文件集合、长度、SHA-256 检查，再运行版本查询；缺少清单或文件损坏时报告 `managed_integrity_failed`，不执行该候选。此校验不适用于外部管理的普通 PATH 工具。若将 GIDD 的同一工具路径加入 PATH，仍需通过共享工具完整性检查。
 
+进程退出和 stdout/stderr 读取共用同一个 5 秒期限；父进程退出后，后代仍持有输出管道时也会返回 `process_timeout`，不会重新开始计时或无限等待。辅助函数不负责终止所有后代进程。
+
 | 工具 | 基础版本门槛 | PATH 后的候选 |
 | --- | --- | --- |
 | Git | 2.0 | 无 |

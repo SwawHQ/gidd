@@ -1,5 +1,5 @@
 ﻿function Invoke-GiddProcess {
-    param([string]$Executable, [string[]]$Arguments, [int]$TimeoutSeconds = 5)
+    param([string]$Executable, [string[]]$Arguments, [ValidateRange(1, 3600)][int]$TimeoutSeconds = 5)
 
     # Shared by diagnosis and installation; not a diagnostic domain.
 
@@ -25,13 +25,24 @@
     }
     $process = New-Object System.Diagnostics.Process
     $process.StartInfo = $start
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $budgetMs = $TimeoutSeconds * 1000
     try {
         [void]$process.Start()
         $process.StandardInput.Close()
         $stdout = $process.StandardOutput.ReadToEndAsync()
         $stderr = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-            $process.Kill()
+        $remainingMs = [int][Math]::Max(0, $budgetMs - $timer.ElapsedMilliseconds)
+        $exited = $process.WaitForExit($remainingMs)
+        $drained = $false
+        if ($exited) {
+            # Descendants may retain the pipes after their parent exits. Both EOFs
+            # must arrive within the original deadline, not a fresh timeout.
+            $remainingMs = [int][Math]::Max(0, $budgetMs - $timer.ElapsedMilliseconds)
+            $drained = [Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($stdout, $stderr), $remainingMs)
+        }
+        if (-not $exited -or -not $drained) {
+            if (-not $process.HasExited) { $process.Kill() }
             return @{ ok = $false; reason = 'process_timeout'; text = '' }
         }
         # Do not expose arbitrary stderr, which may contain private URLs or credentials.
