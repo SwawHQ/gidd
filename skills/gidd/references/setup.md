@@ -30,9 +30,9 @@ RepositoryPath 是必需参数，明确目标仓库。先读取目标仓库的�
     └── install.json
 ```
 
-`assets/runtimes.json` 固定版本、上游 HTTPS URL、归档 SHA-256、选取文件及额外许可材料。首版为 Bun 1.2.15、gh 2.98.0，不会查询或安装 latest。安装清单 `gidd.install/v1` 保存实际文件的名称、长度和 SHA-256，以及工具名、平台、版本和归档来源。第三方工具保持其原许可证，不套用 GIDD 的 MIT。
+config.toml 的工具内联表指定版本和下载根；默认缺失工具下载最新稳定 Bun/gh，解析规则见 [configuration.md](configuration.md)。安装前显示确切版本与完整下载 URL，官方校验信息缺失时报错；镜像归档仍对照官方 SHA-256。`assets/runtimes.json` 保留 Bun 1.2.15、gh 2.98.0 的离线基线。安装清单 `gidd.install/v1` 保存实际文件的名称、长度和 SHA-256，以及工具名、平台、版本和归档来源。第三方工具保持其原许可证，不套用 GIDD 的 MIT。
 
-`scripts/windows/setup-tools/` 按 `_filesystem.ps1`（锁和受控路径）、`download.ps1`（下载与归档）、`install.ps1`（发布事务）拆分。真实共用的探测与完整性代码位于相邻 `lib/`。
+`scripts/windows/setup-tools/` 按 `_filesystem.ps1`（锁和受控路径）、`releases.ps1`（版本与官方校验元数据）、`download.ps1`（下载与归档）、`install.ps1`（发布事务）拆分。真实共用的配置、探测与完整性代码位于相邻 `lib/`。
 
 实际工具根直接包含 `.cache/`、`bun/`、`node/`、`gh/`，按需建立。源码仓库开发入口读取同一配置，同时准备 Bun 和 Node；技能入口只复用已有 Node，不额外下载 Node。配置相同时两入口共用工具和安装锁，配置的实际路径不同则分别管理。
 
@@ -42,7 +42,7 @@ RepositoryPath 是必需参数，明确目标仓库。先读取目标仓库的�
 2. 丢弃对应 `.cache/bun/` 或 `.cache/gh/` 的未完成暂存，再下载到 `download.part`。文件 SHA-256 与受管清单不符时停止，不执行下载内容。网络等待有 30 秒连接/空闲超时，下载最大 256 MiB；失败后由用户或 Agent 显式重试，不无限循环。
 3. 仅提取清单列出的文件，拒绝危险 ZIP 路径、重复或缺失的必需条目。可执行文件版本、所有文件哈希和安装清单均通过后，刷盘并同卷重命名整个 payload 到尚不存在的正式目录。
 4. 中断发生在发布之前：正式目录不存在，下次重建暂存。发生在发布之后：重新校验正式目录，确认完整后复用并清理残留暂存，不再下载。
-5. 正式目录损坏或不明归属时返回冲突，保留原文件；首版不提供自动升级或破坏性修复。`.cache/` 是专用安装缓存区，用户不要向其中保存文件。自动清理只删除对应工具子目录，保留 `.cache/` 与 `install.lock`；安装运行期间不得删除缓存根或锁文件。重试时扫描暂存树并拒绝 reparse point，避免清理越界。
+5. 正式目录损坏、不明归属或不满足配置版本时返回冲突，保留原文件；不提供自动升级/回滚或破坏性修复。固定版本改变不会自动替换已有目录。`.cache/` 是专用安装缓存区，用户不要向其中保存文件。自动清理只删除对应工具子目录，保留 `.cache/` 与 `install.lock`；安装运行期间不得删除缓存根或锁文件。重试时扫描暂存树并拒绝 reparse point，避免清理越界。
 
 下载包在成功后删除，中断重试重新下载，不提供断点续传。旧版本的 `.install/` 和 `.install.lock` 不参与新布局；确认所有安装进程退出后可清理这些遗留路径，切勿同时运行新旧安装器。
 
@@ -52,7 +52,7 @@ Bun 与 gh 各自发布：Bun 完成而 gh 失败时，保留已完成的 Bun，
 
 ## 离线输入与输出
 
-可选 `-ArchiveDirectory 'D:\downloads'` 从指定目录读取预先下载的官方文件，仍必须通过相同的固定 SHA-256。所需文件名：`bun-windows-x64.zip`、`gh_2.98.0_windows_amd64.zip`，Bun 另需 `bun-1.2.15-LICENSE.md`。文件只在需要安装对应工具时读取；此参数不改变正式安装位置。官方 URL 与哈希均在 `assets/runtimes.json`，不接受任意清单或跳过校验开关。
+可选 `-ArchiveDirectory 'D:\downloads'` 从指定目录读取预先下载的官方文件，不联网。首次离线安装须将 Bun/gh 版本固定为内置基线 1.2.15/2.98.0，通过清单中的 SHA-256；所需文件名为 `bun-windows-x64.zip`、`gh_2.98.0_windows_amd64.zip`，Bun 另需 `bun-1.2.15-LICENSE.md`。lts/latest 或未内置版本缺少离线元数据时明确报错。已满足要求的工具继续复用而不读归档；此参数不改变正式安装位置。不接受任意清单或跳过校验开关。
 
 stdout 是 `gidd.setup-tools/v1` JSON；成功退出 0，`status=ready`，`tools` 列出 `installed` 或 `reused` 及实际路径。失败退出 1，`status=error`，`reason` 提供原因，`tools` 保留已完成项；stderr 显示进度与错误。`install_locked_or_unwritable` 需要确认另一个安装是否在运行；`occupied_or_invalid_target` 需要检查该正式目录，不要直接删除。
 

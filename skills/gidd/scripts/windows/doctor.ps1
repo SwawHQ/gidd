@@ -39,7 +39,8 @@ try {
     if ($configurationError) {
         $checks.Add((New-Check 'tools.storage' 'invalid' $configurationError @{ managed_tools_checked = $false }))
     } else { $checks.Add((New-Check 'tools.storage' 'ready' 'resolved' $storage)) }
-    $toolChecks = @(Get-DoctorToolChecks -ToolsRoot $toolsRoot)
+    $toolSettings = if ($storage) { $storage.tools } else { $null }
+    $toolChecks = @(Get-DoctorToolChecks -ToolsRoot $toolsRoot -Settings $toolSettings)
     foreach ($check in $toolChecks) { $checks.Add($check) }
     $git = @($toolChecks | Where-Object { $_.id -eq 'tool.git' })[0]
     $repositoryChecks = @(Get-DoctorRepositoryChecks -Target $target -Git $git)

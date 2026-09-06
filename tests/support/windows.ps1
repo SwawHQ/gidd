@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 $lock = $null
 try {
     $request = [IO.File]::ReadAllText($RequestPath) | ConvertFrom-Json
-    foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','setup-tools/_filesystem.ps1','setup-tools/download.ps1','setup-tools/install.ps1')) {
+    foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','setup-tools/_filesystem.ps1','setup-tools/download.ps1','setup-tools/releases.ps1','setup-tools/install.ps1')) {
         $source = Join-Path $request.codeRoot $file
         $bytes = [IO.File]::ReadAllBytes($source)
         if ($bytes.Length -lt 3 -or $bytes[0] -ne 239 -or $bytes[1] -ne 187 -or $bytes[2] -ne 191) { throw "Missing BOM: $source" }
@@ -40,6 +40,20 @@ try {
         }
         'find' { Find-Tool $request.name ([version]$request.minimum) $request.pattern $request.managedPath | ConvertTo-Json -Depth 8 -Compress }
         'configuration' { Resolve-GiddToolStorage $request.repositoryRoot $request.defaultDirectory $request.userProfilePath | ConvertTo-Json -Depth 8 -Compress }
+        'release' {
+            $settings = @{ version=$request.version;source=$request.source }
+            $pinned = if ($request.pinnedPath) { [IO.File]::ReadAllText($request.pinnedPath) | ConvertFrom-Json } else { $null }
+            if ($null -eq $request.responses) {
+                Resolve-GiddRelease $request.name $settings $pinned $request.archiveDirectory | ConvertTo-Json -Depth 10 -Compress
+                break
+            }
+            $read = { param($url)
+                $property = $request.responses.PSObject.Properties[$url]
+                if (-not $property) { throw "unexpected_metadata_request:$url" }
+                return [string]$property.Value
+            }
+            Resolve-GiddRelease $request.name $settings $pinned $request.archiveDirectory $read | ConvertTo-Json -Depth 10 -Compress
+        }
         'validate' { Test-GiddManagedTool $request.root $request.name | ConvertTo-Json -Compress }
         'stage' { Remove-GiddStage $request.root $request.name }
         'guide' {

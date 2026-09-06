@@ -15,7 +15,7 @@ function Get-DevRuntime {
     param([string]$Name)
     $minimum = if ($Name -eq 'bun') { [version]'1.2.15' } else { [version]'24.0.0' }
     $pattern = if ($Name -eq 'bun') { '^(\d+\.\d+\.\d+)$' } else { '^v(\d+\.\d+\.\d+)$' }
-    $check = Find-Tool $Name $minimum $pattern (Join-Path $toolsRoot "$Name/$Name.exe")
+    $check = Find-Tool $Name $minimum $pattern (Join-Path $toolsRoot "$Name/$Name.exe") $storage.tools[$Name].version
     return $check
 }
 function Test-DevManagedRuntime {
@@ -61,7 +61,7 @@ try {
     if ($Command -eq '.setup') {
         $needsLocal = @('bun','node') | Where-Object { $checks[$_].status -ne 'ready' -or (Test-DevManagedRuntime $checks[$_] $_) }
         if ($needsLocal) {
-            foreach ($file in @('setup-tools/_filesystem.ps1','setup-tools/download.ps1','setup-tools/install.ps1')) { . (Join-Path $codeRoot $file) }
+            foreach ($file in @('setup-tools/_filesystem.ps1','setup-tools/download.ps1','setup-tools/releases.ps1','setup-tools/install.ps1')) { . (Join-Path $codeRoot $file) }
             $manifest = [IO.File]::ReadAllText((Join-Path $repoRoot 'skills/gidd/assets/runtimes.json')) | ConvertFrom-Json
             $devManifest = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'runtimes.json')) | ConvertFrom-Json
             foreach ($item in @($manifest,$devManifest)) {
@@ -71,8 +71,14 @@ try {
             Write-GiddInstallationGuide $toolsRoot
             foreach ($name in @('bun','node')) {
                 $check = Get-DevRuntime $name
-                if ($check.status -ne 'ready' -or (Test-DevManagedRuntime $check $name)) {
-                    $definition = @(@($manifest.tools) + @($devManifest.tools) | Where-Object name -eq $name)[0]
+                if ($check.status -eq 'ready') {
+                    if (Test-DevManagedRuntime $check $name) { Remove-GiddStage $toolsRoot $name }
+                } else {
+                    if (Test-Path -LiteralPath (Join-Path $toolsRoot $name)) { throw "occupied_or_version_conflicting_target:$name" }
+                    $pinned = @(@($manifest.tools) + @($devManifest.tools) | Where-Object name -eq $name)[0]
+                    $definition = Resolve-GiddRelease $name $storage.tools[$name] $pinned $Argument
+                    $minimum = if ($name -eq 'node') { [version]'24.0.0' } else { [version]'1.2.15' }
+                    if ([version]$definition.version -lt $minimum) { throw "configured_version_below_minimum:$name" }
                     [void](Install-GiddTool $toolsRoot $definition $Argument {
                         param($phase)
                         [Console]::Error.WriteLine("Development ${name}: $phase")

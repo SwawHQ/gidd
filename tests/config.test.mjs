@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { createHash } from 'node:crypto';
 import { statSync, symlinkSync, unlinkSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { adapter, assert, code, compile, existsSync, findGit, fixture, hash, join, json, mkdirSync, ok, ps, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
@@ -79,5 +80,87 @@ test('configured setup reuses Node/gh without knowing a skill installation direc
     assert.equal(diagnosis.checks.find(x=>x.id==='repository.config.validation').status,'ready');
     assert.equal(diagnosis.checks.find(x=>x.id==='github.identity').status,'not_checked');
     write(path,configText('../outside')); assert.notEqual(invoke().status,0);
+  } finally { f.dispose(); }
+});
+
+test('inline tool configuration validates versions and visible sources without network or writes', { timeout: 120000 }, () => {
+  const f=fixture();
+  try {
+    const path=join(f.root,'.agents/skills/gidd/config.toml');
+    const resolve=() => adapter(f.root,{action:'configuration',repositoryRoot:f.root,defaultDirectory:'.dev',userProfilePath:f.root},{env:{PATH:''}});
+    const line='node = { version = "lts", source = "https://nodejs.org/dist" }';
+    for (const input of [line, line+' # comment with {braces}', 'node = { source = \'https://nodejs.org/dist/\', version = \'24.20.0\' } # comment']) {
+      write(path,configText()+input+'\n'); const before=hash(path);
+      const storage=json(ok(resolve()));
+      assert.equal(storage.tools.node.source,'https://nodejs.org/dist');
+      assert.equal(storage.tools.bun.version,'latest');
+      assert.equal(hash(path),before);
+    }
+    for (const invalid of [
+      line+'\n'+line, line.replace('"lts"','"canary"'), line.replace('"lts"','"24"'),
+      line.replace('"lts"','"024.1.0"'), line.replace('"lts"','"24.0.0-beta"'),
+      line.replace('https:','http:'), line.replace('nodejs.org','user:secret@nodejs.org'),
+      line.replace('/dist','/dist?token=secret'), line.replace('/dist','/dist#fragment'),
+      line.replace('version =','Version ='), line.replace('source =','url ='),
+      'node = {}', 'node = { version = "lts" }', line.replace(' }',', }'),
+      line.replace(' }',', version = "latest" }'), line.replace('"lts"','true'),
+      line.replace('node =','bun ='), line.replace('node =','gh ='),
+    ]) {
+      write(path,configText()+invalid+'\n'); assert.notEqual(resolve().status,0,invalid);
+    }
+    assert.equal(existsSync(join(f.root,'.devv')),false);
+  } finally { f.dispose(); }
+});
+
+test('release resolution selects stable versions, verifies upstream hashes and preserves mirror paths', { timeout: 120000 }, () => {
+  const f=fixture();
+  try {
+    const sha='a'.repeat(64), source='https://mirror.example/releases';
+    const resolve=(name,version,responses={},extra={}) => adapter(f.root,{action:'release',name,version,source,pinnedPath:'',archiveDirectory:'',responses,...extra});
+    const nodeIndex='https://nodejs.org/dist/index.json';
+    const nodeChecks='https://nodejs.org/dist/v24.2.0/SHASUMS256.txt';
+    const index=JSON.stringify([
+      {version:'v26.0.0',lts:false,files:['win-x64-zip']},
+      {version:'v24.1.0',lts:'Test',files:['win-x64-zip']},
+      {version:'v24.2.0',lts:'Test',files:['win-x64-zip']},
+      {version:'v24.3.0',lts:'Test',files:['linux-x64']},
+    ]);
+    const responses={[nodeIndex]:index,[nodeChecks]:sha+'  node-v24.2.0-win-x64.zip\n'};
+    const node=json(ok(resolve('node','lts',responses)));
+    assert.equal(node.version,'24.2.0'); assert.equal(node.sha256,sha);
+    assert.equal(node.url,source+'/v24.2.0/node-v24.2.0-win-x64.zip');
+    assert.equal(node.files[0].entry,'node-v24.2.0-win-x64/node.exe');
+    assert.equal(json(ok(resolve('node','24.2.0',{[nodeChecks]:responses[nodeChecks]}))).version,'24.2.0');
+    const latestChecks='https://nodejs.org/dist/v26.0.0/SHASUMS256.txt';
+    assert.equal(json(ok(resolve('node','latest',{[nodeIndex]:index,[latestChecks]:sha+' *node-v26.0.0-win-x64.zip'}))).version,'26.0.0');
+    for (const text of ['','bad hash',responses[nodeChecks]+responses[nodeChecks]]) {
+      assert.match(resolve('node','lts',{...responses,[nodeChecks]:text}).stderr,/release_checksum/);
+    }
+    assert.notEqual(resolve('node','lts',{[nodeIndex]:'not JSON'}).status,0);
+    for (const name of ['bun','gh']) {
+      const version=name==='bun'?'1.4.0':'2.100.0', tag=name==='bun'?`bun-v${version}`:`v${version}`;
+      const repoPath=name==='bun'?'oven-sh/bun':'cli/cli';
+      const endpoint=`https://api.github.com/repos/${repoPath}/releases/latest`;
+      const archive=name==='bun'?'bun-windows-x64.zip':`gh_${version}_windows_amd64.zip`;
+      const checks=`https://github.com/${repoPath}/releases/download/${tag}/${name==='bun'?'SHASUMS256.txt':`gh_${version}_checksums.txt`}`;
+      const release={tag_name:tag,draft:false,prerelease:false};
+      const data={[endpoint]:JSON.stringify(release),[checks]:sha+'  '+archive};
+      const license='Test upstream license\n';
+      if (name==='bun') data[`https://raw.githubusercontent.com/oven-sh/bun/${tag}/LICENSE.md`]=license;
+      const result=json(ok(resolve(name,'latest',data)));
+      assert.equal(result.version,version); assert.equal(result.url,`${source}/download/${tag}/${archive}`);
+      assert.equal(result.sha256,sha);
+      if (name==='bun') assert.equal(result.supplements[0].sha256,createHash('sha256').update(license).digest('hex'));
+      for (const bad of [{...release,prerelease:true},{...release,draft:true},{...release,tag_name:'canary'}]) {
+        assert.match(resolve(name,'latest',{...data,[endpoint]:JSON.stringify(bad)}).stderr,/invalid_stable_release/);
+      }
+    }
+    const pinned=JSON.parse(readFileSync(join(repo,'skills/gidd/assets/runtimes.json'),'utf8')).tools[0];
+    const pinnedPath=join(f.root,'pinned.json'); write(pinnedPath,JSON.stringify(pinned));
+    const original=hash(pinnedPath);
+    const offline=json(ok(resolve('bun',pinned.version,{}, {pinnedPath,archiveDirectory:join(f.root,'missing')})));
+    assert.equal(offline.sha256,pinned.sha256); assert.equal(offline.url,`${source}/download/bun-v${pinned.version}/${pinned.archive}`);
+    assert.equal(hash(pinnedPath),original);
+    assert.match(resolve('bun','latest',{}, {pinnedPath,archiveDirectory:join(f.root,'missing')}).stderr,/offline_release_metadata_unavailable/);
   } finally { f.dispose(); }
 });

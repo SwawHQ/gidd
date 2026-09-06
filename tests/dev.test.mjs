@@ -81,7 +81,7 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     }
     assert.equal(existsSync(join(checkout,'.dev/tools')),false,'Setup must use the flat development root');
     const occupied=join(checkout,'.dev/bun/user.txt'); write(occupied,'keep');
-    const result=invoke(['.setup']); assert.notEqual(result.status,0); assert.match(result.stderr,/occupied_or_invalid_target/);
+    const result=invoke(['.setup']); assert.notEqual(result.status,0); assert.match(result.stderr,/occupied_or_version_conflicting_target/);
     assert.equal(readFileSync(occupied,'utf8'),'keep');
     const config=join(checkout,'.agents/skills/gidd/config.toml');
     const configuredRoot=join(checkout,'.devv');
@@ -95,6 +95,13 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     assert.equal(existsSync(join(configuredRoot,'INSTALLATION.md')),true);
     assert.equal(readFileSync(occupied,'utf8'),'keep','Switching config must preserve old storage');
     assert.match(readFileSync(config,'utf8'),/^# retain this comment/);
+    const configuredText=readFileSync(config,'utf8');
+    write(config,configuredText+'node = { version = "24.0.1", source = "https://nodejs.org/dist" }\n');
+    const mismatch=json(invoke(['.info']));
+    assert.equal(mismatch.node.status,'invalid');
+    assert.ok(mismatch.node.details.rejected.some(x=>x.reason==='configured_version_mismatch'));
+    assert.match(invoke(['.setup']).stderr,/occupied_or_version_conflicting_target:node/);
+    assert.equal(readFileSync(join(configuredRoot,'node/install.json'),'utf8').includes('24.0.0'),true);
     write(config,'invalid = true');
     assert.notEqual(invoke(['.setup']).status,0); assert.notEqual(invoke(['.info']).status,0);
     assert.match(ok(invoke(['.help','en'])).stdout,/repository development/);

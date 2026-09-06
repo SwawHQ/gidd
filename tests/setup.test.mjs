@@ -112,6 +112,9 @@ test('setup: Node archive version, integrity and offline reuse', { timeout: 1200
     assert.equal(existsSync(join(root,'.cache/node')),false);
     assert.equal(json(ok(adapter(f.root,installSpec(root,path,join(f.root,'missing'))))).action,'reused');
     write(path,JSON.stringify({...definition,version:'24.1.0'}));
+    const installedHash=hash(join(root,'node/node.exe'));
+    assert.match(adapter(f.root,installSpec(root,path,f.root)).stderr,/installed_version_conflict/);
+    assert.equal(hash(join(root,'node/node.exe')),installedHash);
     assert.match(adapter(f.root,installSpec(join(f.root,'wrong-version'),path,f.root)).stderr,/installed_version_mismatch/);
     write(join(root,'node/node.exe'),'corrupt');
     assert.match(adapter(f.root,installSpec(root,path,f.root)).stderr,/occupied_or_invalid_target/);

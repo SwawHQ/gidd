@@ -25,7 +25,7 @@ RepositoryPath 是必需的绝对路径。Agent 根据用户指定项目传入�
 
 ## 工具选择
 
-依次检查 PATH 中的同名 `.exe`，失败后尝试 GIDD 共享工具。仅执行 `--version`，每个子进程最多等待 5 秒，stdin 关闭。首版不运行 `.cmd` 包装器，不修改 PATH。
+依次检查 PATH 中的同名 `.exe`，失败后尝试配置解析出的受管工具目录。固定版本必须精确匹配，否则该候选报告 configured_version_mismatch；lts/latest 只用于需要下载时解析，doctor 不联网查询最新版本或 LTS 状态。仅执行 `--version`，每个子进程最多等待 5 秒，stdin 关闭。首版不运行 `.cmd` 包装器，不修改 PATH。
 
 共享工具须先通过同目录 `install.json` 的文件集合、长度、SHA-256 检查，再运行版本查询；缺少清单或文件损坏时报告 `managed_integrity_failed`，不执行该候选。此校验不适用于外部管理的普通 PATH 工具。若将 GIDD 的同一工具路径加入 PATH，仍需通过共享工具完整性检查。
 

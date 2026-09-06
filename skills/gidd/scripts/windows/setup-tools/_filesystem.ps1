@@ -51,8 +51,12 @@ It is independent of the skill installation directory and may be shared by repos
 It is not a skill: do not add SKILL.md or repository config.toml here.
 
 - bun/, node/ and gh/ (as needed): published files, upstream licenses and install.json.
-- Pinned sources: skills/gidd/assets/runtimes.json (Bun/gh), scripts/dev/runtimes.json
-  (development Node). Each install.json also records the archive source and hashes.
+- Repository config.toml selects version policies and visible download roots.
+  Floating versions resolve only when downloading a missing tool; existing usable tools are reused.
+- Official release metadata supplies versions and hashes, including for mirrored archives.
+  install.json records the exact archive source and hashes actually installed.
+- Bundled offline baselines: skills/gidd/assets/runtimes.json (Bun/gh), scripts/dev/runtimes.json
+  (development Node). Other first-time offline versions are not yet supported.
 - Development Node includes node.exe and LICENSE, without npm.
 - install.json: tool version, upstream source and file hashes; do not edit it.
 - .cache/<tool>/: temporary downloads and extraction; removed after success

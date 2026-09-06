@@ -4,3 +4,8 @@ schema_version = 1
 [tools]
 # 相对于本仓库根目录，开发入口与技能工具初始化共用该位置。
 directory = ".devv"
+# 下载来源可核对或改为镜像；安装时展示确切版本和完整地址，并校验文件。
+# lts/latest 只在需要下载安装时解析，已有可用工具继续复用。
+node = { version = "lts", source = "https://nodejs.org/dist" }
+bun = { version = "latest", source = "https://github.com/oven-sh/bun/releases" }
+gh = { version = "latest", source = "https://github.com/cli/cli/releases" }

@@ -17,13 +17,13 @@
 
 ## 开发运行时
 
-`.setup` 同时准备 Bun 和 Node，分别优先复用 PATH 中满足最低版本的运行时（Bun 1.2.15、Node 24.0.0），否则复用配置目录中校验有效的工具，缺失时使用 PowerShell 下载固定版本。`.info` 分别报告两个运行时，仅当二者均可用时退出 0。
+`.setup` 同时准备 Bun 和 Node，分别优先复用 PATH 中满足最低版本的运行时（Bun 1.2.15、Node 24.0.0），否则复用配置目录中校验有效的工具。固定版本还须精确匹配；缺失时使用 PowerShell 按配置解析版本、校验并下载。`.info` 分别报告两个运行时、配置要求和下载来源，仅当二者均可用时退出 0。
 
-Bun 固定清单沿用 `skills/gidd/assets/runtimes.json`；开发 Node 24.20.0 清单单独放在 `scripts/dev/runtimes.json`。Node Windows x64 ZIP 来自 [Node 官方发布目录](https://nodejs.org/dist/v24.20.0/)，SHA-256 对照该版本的 [SHASUMS256.txt](https://nodejs.org/dist/v24.20.0/SHASUMS256.txt) 固定。安装复用技能脚本的下载、SHA-256 校验、独占锁、版本验证及中断恢复函数，不通过 Bun 安装 Node，也不通过 Node 安装 Bun。
+默认 Node 使用最新 LTS、Bun 使用最新稳定版，只在需要下载时解析；已有可用版本继续复用，诊断与测试不检查更新。`skills/gidd/assets/runtimes.json` 和 `scripts/dev/runtimes.json` 保留 Bun/gh 与开发 Node 的固定离线基线。版本解析、官方校验信息、下载、SHA-256 校验、独占锁、版本验证及中断恢复共用技能脚本，不通过 Bun 安装 Node，也不通过 Node 安装 Bun。已有工具目录版本冲突时保留并报错，自动升级/回滚命令尚未实现。
 
 便携 Node 只提取 `node.exe` 和完整的上游 `LICENSE`，不附带 npm；当前测试没有 npm 依赖。开发入口不安装 gh，已安装 skill 的初始化仍只需 Bun/Node 任一种可用，不会因开发清单额外下载 Node。
 
-可用 `.setup D:\downloads` 指定绝对离线归档目录，需为缺失工具提供 `bun-windows-x64.zip`、`bun-1.2.15-LICENSE.md`、`node-v24.20.0-win-x64.zip`。已可用的运行时不读取归档。
+可用 `.setup D:\downloads` 指定绝对离线归档目录；首次离线安装须在配置中固定内置基线 Bun 1.2.15、Node 24.20.0，并提供 `bun-windows-x64.zip`、`bun-1.2.15-LICENSE.md`、`node-v24.20.0-win-x64.zip`。其他版本或 lts/latest 缺少离线元数据时明确报错。已可用且满足配置的运行时不读取归档、不联网。
 
 ## 配置与本地目录
 
@@ -35,6 +35,9 @@ Bun 固定清单沿用 `skills/gidd/assets/runtimes.json`；开发 Node 24.20.0 
 schema_version = 1
 [tools]
 directory = ".devv"
+node = { version = "lts", source = "https://nodejs.org/dist" }
+bun = { version = "latest", source = "https://github.com/oven-sh/bun/releases" }
+gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 ```
 
 因此本仓库工具根是 `.devv/`，`.info` 的 `storage` 会报告配置路径、原始 directory 和实际位置。没有配置时开发入口默认 `.dev/`，技能入口默认 `~/.agents/skills/gidd.tools/`；有配置时不做多层继承，错误配置也不回退。`tools.directory` 支持仓库相对路径、以 `~/` 开头的家目录路径和 Windows 本地盘绝对路径。技能安装位置由 Agent 处理，工具入口不需要用户技能根或安装模式参数。
@@ -50,7 +53,7 @@ directory = ".devv"
 └── gh/                               # 仅技能入口按需准备
 ```
 
-目录按需建立，复用外部工具不会仅因配置存在而建立下载目录。URL、版本和 SHA-256 继续由发布清单管理。下载、解压暂存在 `<工具根>/.cache/<工具>/download.part` 与 `payload/`，成功后删除对应工具子目录，保留缓存根与锁文件。中断后显式重试重建暂存，不长期保留压缩包或提供断点续传。
+目录按需建立，复用外部工具不会仅因配置存在而建立下载目录。配置显式展示版本策略和下载根；镜像须保留上游布局，版本及校验信息仍从官方来源取得。安装时展示确切版本与完整下载 URL，install.json 保存实际来源和校验值。下载、解压暂存在 `<工具根>/.cache/<工具>/download.part` 与 `payload/`，成功后删除对应工具子目录，保留缓存根与锁文件。中断后显式重试重建暂存，不长期保留压缩包或提供断点续传。
 
 本仓库精确忽略 `/.dev/` 与 `/.devv/`，没有忽略整个 `.agents/`；当前实例只含可移植的相对目录，不保存凭据，也不表示启用 GIDD。更改 directory 时，应同时为新的下载目录设置精确忽略规则，配置读取器不会修改 Git 忽略规则。
 
@@ -75,6 +78,6 @@ directory = ".devv"
 .\dev.cmd .test-live D:\downloads
 ```
 
-该命令分别在 Bun、Node 下验证官方 Bun/gh/Node 下载、完整性、版本、doctor 识别和离线复用。无目录参数时联网下载到隔离临时目录；有目录参数时读取预下载官方文件并校验固定 SHA-256，除上述开发归档外还需 `gh_2.98.0_windows_amd64.zip`。测试后清理隔离目录，不接触真实用户安装与登录。直接执行测试默认跳过联网测试；Bun 1.2.15 不应直接用 `bun test` 批量运行这些文件，请使用开发入口以确保每个文件都实际执行。
+该命令分别在 Bun、Node 下验证官方 Bun/gh/Node 下载、完整性、版本、doctor 识别和离线复用。无目录参数时解析最新稳定 Bun/gh 和 Node LTS，联网下载到隔离临时目录；有目录参数时固定内置基线、读取预下载官方文件并校验固定 SHA-256，除上述开发归档外还需 `gh_2.98.0_windows_amd64.zip`。测试后清理隔离目录，不接触真实用户安装与登录。直接执行测试默认跳过联网测试；Bun 1.2.15 不应直接用 `bun test` 批量运行这些文件，请使用开发入口以确保每个文件都实际执行。
 
 后续平台增加薄启动入口与平台适配，复用 JavaScript 用例；未提供 `dev.sh` / `dev.mac.sh`，不将 Windows 特有测试的跳过当作其他平台验证通过。产品 JavaScript 仍须仅使用两种运行时共有的标准 API，并在两者中验证同一功能。

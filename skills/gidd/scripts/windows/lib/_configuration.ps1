@@ -13,6 +13,31 @@
     return $target
 }
 
+function Get-GiddDefaultTools {
+    return @{
+        node = @{ version = 'lts'; source = 'https://nodejs.org/dist' }
+        bun = @{ version = 'latest'; source = 'https://github.com/oven-sh/bun/releases' }
+        gh = @{ version = 'latest'; source = 'https://github.com/cli/cli/releases' }
+    }
+}
+
+function ConvertFrom-GiddConfigString {
+    param([string]$Literal)
+    if ($Literal.StartsWith("'")) { return $Literal.Substring(1,$Literal.Length-2) }
+    return [regex]::Replace($Literal.Substring(1,$Literal.Length-2), '\\(["\\])', '$1')
+}
+
+function Assert-GiddToolSettings {
+    param([string]$Name, $Settings)
+    if ($Settings.version -cnotmatch '^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$' -and
+        $Settings.version -cne 'latest' -and -not ($Name -eq 'node' -and $Settings.version -ceq 'lts')) { throw "config_invalid_version:$Name" }
+    $uri = $null
+    if (-not [uri]::TryCreate($Settings.source,[UriKind]::Absolute,[ref]$uri) -or
+        $uri.Scheme -ne 'https' -or -not $uri.Host -or $uri.UserInfo -or $uri.Query -or $uri.Fragment -or
+        $Settings.source -match '[\s\\]' -or $Settings.source -cnotmatch '^https://') { throw "config_invalid_source:$Name" }
+    $Settings.source = $Settings.source.TrimEnd('/')
+}
+
 function Read-GiddToolConfiguration {
     param([string]$Path)
     Assert-GiddPlainPath $Path
@@ -22,6 +47,8 @@ function Read-GiddToolConfiguration {
     try { $text = $utf8.GetString([IO.File]::ReadAllBytes($Path)).TrimStart([char]0xFEFF) }
     catch { throw 'config_invalid_utf8' }
     $values = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::Ordinal)
+    $tools = Get-GiddDefaultTools
+    $stringPattern = '(?:"(?:[^"\\]|\\["\\])*"|''[^'']*'')'
     $inTools = $false; $lineNumber = 0
     foreach ($line in ($text -split "`n")) {
         $lineNumber++
@@ -42,13 +69,31 @@ function Read-GiddToolConfiguration {
             $value = if ($Matches.ContainsKey(2)) { [regex]::Replace($Matches[2], '\\(["\\])', '$1') } else { $Matches[3] }
             $values.Add($key,$value); continue
         }
+        if ($inTools -and $line -cmatch '^[ \t]*(node|bun|gh)[ \t]*=[ \t]*\{(.*?)\}[ \t]*(?:#.*)?$') {
+            $name = $Matches[1]; $remaining = $Matches[2].Trim()
+            if ($values.ContainsKey($name)) { throw "config_duplicate_key:$name" }
+            $values.Add($name,'inline')
+            $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+            while ($remaining) {
+                if ($remaining -cnotmatch ('^(version|source)[ \t]*=[ \t]*(' + $stringPattern + ')[ \t]*(.*)$')) { throw "config_invalid_tool_table:$name" }
+                $key = $Matches[1]; $literal = $Matches[2]; $tail = $Matches[3]
+                if (-not $seen.Add($key)) { throw "config_duplicate_tool_field:${name}:$key" }
+                $tools[$name][$key] = ConvertFrom-GiddConfigString $literal
+                if (-not $tail) { break }
+                if (-not $tail.StartsWith(',') -or -not $tail.Substring(1).Trim()) { throw "config_invalid_tool_table:$name" }
+                $remaining = $tail.Substring(1).Trim()
+            }
+            if (-not $seen.Contains('version') -or -not $seen.Contains('source')) { throw "config_missing_tool_field:$name" }
+            Assert-GiddToolSettings $name $tools[$name]
+            continue
+        }
         # This bootstrap reader intentionally supports only the documented storage schema.
         throw "config_unsupported_syntax_or_field:$lineNumber"
     }
     foreach ($key in @('schema_version','directory')) {
         if (-not $values.ContainsKey($key)) { throw "config_missing_key:$key" }
     }
-    return @{ directory = $values['directory'] }
+    return @{ directory = $values['directory']; tools = $tools }
 }
 
 function Resolve-GiddToolStorage {
@@ -56,7 +101,7 @@ function Resolve-GiddToolStorage {
         [string]$UserProfilePath = [Environment]::GetFolderPath('UserProfile'))
     $configPath = if ($RepositoryRoot) { Join-Path $RepositoryRoot '.agents/skills/gidd/config.toml' } else { $null }
     $configured = $false
-    $settings = @{ directory = $DefaultDirectory }
+    $settings = @{ directory = $DefaultDirectory; tools = (Get-GiddDefaultTools) }
     if ($configPath) {
         Assert-GiddPlainPath $configPath
         if (Test-Path -LiteralPath $configPath) { $settings = Read-GiddToolConfiguration $configPath; $configured = $true }
@@ -97,5 +142,5 @@ function Resolve-GiddToolStorage {
             }
         }
     }
-    return @{ tools_root = $root; directory = $directory; config_path = $configPath; configured = $configured }
+    return @{ tools_root = $root; directory = $directory; config_path = $configPath; configured = $configured; tools = $settings.tools }
 }

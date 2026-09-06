@@ -6,6 +6,8 @@
     Assert-GiddPlainPath $target
     if (Test-Path -LiteralPath $target) {
         if (-not (Test-GiddManagedTool $target $name)) { throw "occupied_or_invalid_target:$name" }
+        $existing = [IO.File]::ReadAllText((Join-Path $target 'install.json')) | ConvertFrom-Json
+        if ($existing.version -ne $Definition.version) { throw "installed_version_conflict:${name}:$($existing.version):$($Definition.version)" }
         Remove-GiddStage $ToolsRoot $name
         return @{ name = $name; action = 'reused'; path = (Join-Path $target "$name.exe") }
     }
@@ -16,6 +18,7 @@
     [void][IO.Directory]::CreateDirectory($payload)
     $archive = Join-Path $stage 'download.part'
     $local = if ($ArchiveDirectory) { Join-Path $ArchiveDirectory $Definition.archive } else { '' }
+    [Console]::Error.WriteLine("GIDD download: $name $($Definition.version) $($Definition.url)")
     Receive-GiddFile $Definition.url $archive $Definition.sha256 $local
     & $OnPhase 'downloaded'
     Expand-GiddPayload $archive $payload $Definition
@@ -35,6 +38,7 @@
     })
     $record = @{ schema = 'gidd.install/v1'; name = $name; platform = 'windows-x64'; version = $Definition.version
         source = $Definition.url; archive_sha256 = $Definition.sha256; files = $files }
+    if ($Definition.PSObject.Properties['metadata_sources']) { $record.metadata_sources = $Definition.metadata_sources }
     Write-GiddDurableFile (Join-Path $payload 'install.json') ([Text.Encoding]::UTF8.GetBytes(($record | ConvertTo-Json -Depth 6)))
     if (-not (Test-GiddManagedTool $payload $name)) { throw 'staged_integrity_failed' }
     & $OnPhase 'verified'
