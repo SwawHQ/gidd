@@ -28,6 +28,8 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\script
 
 依次检查 PATH 中的同名 `.exe`，失败后尝试 GIDD 共享工具。仅执行 `--version`，每个子进程最多等待 5 秒，stdin 关闭。首版不运行 `.cmd` 包装器，不修改 PATH。
 
+进程退出和 stdout/stderr 读取共用同一个 5 秒期限；父进程退出后，后代仍持有输出管道时也会返回 `process_timeout`，不会重新开始计时或无限等待。辅助函数不负责终止所有后代进程。
+
 | 工具 | 基础版本门槛 | PATH 后的候选 |
 | --- | --- | --- |
 | Git | 2.0 | 无 |
