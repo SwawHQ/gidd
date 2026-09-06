@@ -32,6 +32,8 @@
 
 ## Maintainer Notes
 
-- 当前实现 Windows x64 / Windows PowerShell 5.1 基础 doctor 与便携 Bun/gh 工具初始化，包含完整性校验、独占锁和中断后重试；配置写入、登录及 Issue/PR 业务脚本尚未实现。空 package.json 及其余空 JavaScript 脚本仅表达规划位置，不是有效清单或业务实现。
+- 仓库开发入口为根 `dev.cmd`，用法见 `DEVELOPMENT.md`。`scripts/dev/` 和 `tests/` 属于仓库开发工具；开发测试由 Bun 执行 JavaScript 用例，Windows 辅助仅保留被测 PowerShell 接口与 fixture 构造。`.dev/` 是当前 checkout 独立的本地开发数据，精确忽略且不随技能发布，不是用户级 `gidd.tools/`；产品脚本的 Node/Bun 双运行时约束不变。
+
+- 当前实现 Windows x64 / Windows PowerShell 5.1 基础 doctor 与便携 Bun/gh 工具初始化，包含完整性校验、独占锁和中断后重试；配置写入、登录及 Issue/PR 业务脚本尚未实现。根 package.json 用于仓库开发测试；其余空 JavaScript 产品脚本仅表达规划位置，不是业务实现。
 - GIDD 自有代码和技能文档采用根 LICENSE 的 MIT 许可证；第三方下载工具保留各自许可证。结构整理由 Issue #1 跟踪，Windows doctor 由 Issue #2 跟踪。
 - 已用 Windows 便携 gh 2.98.0 验证：抑制浏览器启动、展示 URL 和一次性代码、用户自行授权后，登录成功且 API 返回预期账号；临时凭据已清理。Linux 无 GUI 流程尚未实测。

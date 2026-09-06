@@ -1,0 +1,15 @@
+GIDD repository development (Windows x64 / Windows PowerShell 5.1)
+
+  dev.cmd .help [en|zh]          Show help without Bun or downloads.
+  dev.cmd .info                  Report the available development Bun.
+  dev.cmd .setup [archive-dir]   Reuse Bun or install the pinned, verified Bun.
+  dev.cmd .test [suite]          Run offline JavaScript tests with Bun.
+  dev.cmd .test-live [archive-dir]  Test official downloads, or verified offline archives.
+
+Suites: all (default), doctor, setup, process, dev.
+No arguments show help. Help language: argument, GIDD_DEV_LANG, locale, then English.
+Only .setup and .test-live can download. .test never installs missing tools.
+Development downloads live in this checkout's ignored .dev/tools/ directory.
+This does not enable GIDD or change user skills, PATH, Git settings or authentication.
+Product JavaScript must still work in both Node.js and Bun.
+See DEVELOPMENT.md for boundaries, test adapters and cleanup.

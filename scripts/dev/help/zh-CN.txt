@@ -1,0 +1,15 @@
+GIDD 仓库开发（Windows x64 / Windows PowerShell 5.1）
+
+  dev.cmd .help [zh|en]          显示帮助，不需要 Bun，不下载。
+  dev.cmd .info                  报告可用的开发 Bun。
+  dev.cmd .setup [归档目录]      复用 Bun，或安装固定版本并校验。
+  dev.cmd .test [测试组]         用 Bun 执行离线 JavaScript 测试。
+  dev.cmd .test-live [归档目录]  验证官方在线下载，或已下载的官方归档。
+
+测试组：all（默认）、doctor、setup、process、dev。
+无参数显示帮助。帮助语言按参数、GIDD_DEV_LANG、系统语言、英文的顺序选择。
+只有 .setup 和 .test-live 可以下载；.test 不会安装缺失工具。
+开发下载数据放在本次 checkout 已忽略的 .dev/tools/ 下。
+本入口不启用 GIDD，不修改用户技能、PATH、Git 配置或登录状态。
+产品 JavaScript 仍须同时支持 Node.js 和 Bun。
+开发边界、测试适配和清理方式见 DEVELOPMENT.md。

@@ -1,0 +1,9 @@
+{
+  "name": "gidd-dev",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun scripts/dev/dev.mjs .test",
+    "test:live": "bun scripts/dev/dev.mjs .test-live"
+  }
+}
