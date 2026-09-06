@@ -89,7 +89,7 @@ test('setup: install, integrity, interrupted publication, locks, preservation an
       for (const existing of [false,true]) {
         if (existing) mkdirSync(join(skills,'gidd.tools'),{recursive:true});
         write(join(f.root,'.agents/skills/gidd/config.toml'),`schema_version = 1\n[tools]\ndirectory = ${JSON.stringify(join(skills,'gidd.tools').replaceAll('\\','/'))}\n`);
-        const report=json(ok(ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root,'-ArchiveDirectory',join(f.root,'missing')],{env:{PATH:external}})));
+        const report=json(ok(ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root],{env:{PATH:external}})));
         assert.equal(report.status,'ready'); assert.equal(report.tools.length,2);
         for (const name of [runtime,'gh']) {
           const matches=report.tools.filter(tool=>tool.name===name); assert.equal(matches.length,1);
@@ -101,7 +101,7 @@ test('setup: install, integrity, interrupted publication, locks, preservation an
   } finally { f.dispose(); }
 });
 
-test('setup: Node archive version, integrity and offline reuse', { timeout: 120000 }, () => {
+test('setup: Node archive version, integrity and reuse without downloads', { timeout: 120000 }, () => {
   const f=fixture();
   try {
     const exe=compile(f.root), archive=join(f.root,'node.zip'), root=join(f.root,'.dev');

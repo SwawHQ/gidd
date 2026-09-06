@@ -1,5 +1,5 @@
 ﻿[CmdletBinding()]
-param([string]$RepositoryPath, [string]$ArchiveDirectory = '')
+param([string]$RepositoryPath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
@@ -11,10 +11,6 @@ try {
     . (Join-Path $PSScriptRoot 'doctor/platform.ps1')
     . (Join-Path $PSScriptRoot 'doctor/tools.ps1')
     if ((Get-DoctorPlatformCheck).status -ne 'ready') { throw 'unsupported_platform' }
-    foreach ($path in @($ArchiveDirectory | Where-Object { $_ })) {
-        if ($path -notmatch '^[A-Za-z]:[\\/]') { throw 'absolute_local_path_required' }
-        Assert-GiddPlainPath $path
-    }
     $repositoryRoot = Get-GiddRepositoryRoot $RepositoryPath
     $storage = Resolve-GiddToolStorage $repositoryRoot
     $toolsRoot = $storage.tools_root
@@ -54,10 +50,10 @@ try {
                 $results.Add(@{ name = $reusedName; action = 'reused'; path = $check.details.path })
             } else {
                 if (Test-Path -LiteralPath (Join-Path $toolsRoot $definition.name)) { throw "occupied_or_version_conflicting_target:$($definition.name)" }
-                $resolved = Resolve-GiddRelease $definition.name $storage.tools[$definition.name] $definition $ArchiveDirectory
+                $resolved = Resolve-GiddRelease $definition.name $storage.tools[$definition.name] $definition
                 $minimum = if ($definition.name -eq 'bun') { [version]'1.2' } else { [version]'2.0' }
                 if ([version]$resolved.version -lt $minimum) { throw "configured_version_below_minimum:$($definition.name)" }
-                $result = Install-GiddTool $toolsRoot $resolved $ArchiveDirectory {
+                $result = Install-GiddTool $toolsRoot $resolved {
                     param($phase)
                     [Console]::Error.WriteLine("GIDD install: $phase")
                 }

@@ -1,23 +1,14 @@
 ﻿function Receive-GiddFile {
-    param([string]$Url, [string]$Destination, [string]$ExpectedHash, [string]$LocalFile = '')
+    param([string]$Url, [string]$Destination, [string]$ExpectedHash)
     if ($ExpectedHash -notmatch '^[a-f0-9]{64}$') { throw 'invalid_expected_hash' }
+    if (([uri]$Url).Scheme -ne 'https') { throw 'https_required' }
     Assert-GiddPlainPath $Destination
     $output = [IO.File]::Open($Destination, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
     $inputStream = $null; $response = $null
     try {
-        if ($LocalFile) {
-            Assert-GiddPlainPath $LocalFile
-            $inputStream = [IO.File]::OpenRead($LocalFile)
-        } else {
-            if (([uri]$Url).Scheme -ne 'https') { throw 'https_required' }
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            $request = [Net.HttpWebRequest]::Create($Url)
-            $request.Timeout = 30000; $request.ReadWriteTimeout = 30000
-            $request.UserAgent = 'GIDD-bootstrap'
-            $response = $request.GetResponse()
-            if ($response.ResponseUri.Scheme -ne 'https') { throw 'https_redirect_required' }
-            $inputStream = $response.GetResponseStream()
-        }
+        $download = Open-GiddDownload $Url
+        $response = $download.response
+        $inputStream = $download.stream
         $buffer = New-Object byte[] 65536
         $total = 0L
         while (($count = $inputStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
@@ -32,6 +23,19 @@
         $output.Dispose()
     }
     if ((Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash -ne $ExpectedHash) { throw 'download_hash_mismatch' }
+}
+
+function Open-GiddDownload {
+    param([string]$Url)
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $request = [Net.HttpWebRequest]::Create($Url)
+    $request.Timeout = 30000; $request.ReadWriteTimeout = 30000
+    $request.UserAgent = 'GIDD-bootstrap'
+    $response = $request.GetResponse()
+    try {
+        if ($response.ResponseUri.Scheme -ne 'https') { throw 'https_redirect_required' }
+        return @{ response=$response; stream=$response.GetResponseStream() }
+    } catch { $response.Dispose(); throw }
 }
 
 function Expand-GiddPayload {

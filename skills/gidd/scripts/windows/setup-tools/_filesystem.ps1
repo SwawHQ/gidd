@@ -55,8 +55,8 @@ It is not a skill: do not add SKILL.md or repository config.toml here.
   Floating versions resolve only when downloading a missing tool; existing usable tools are reused.
 - Official release metadata supplies versions and hashes, including for mirrored archives.
   install.json records the exact archive source and hashes actually installed.
-- Bundled offline baselines: skills/gidd/assets/runtimes.json (Bun/gh), scripts/dev/runtimes.json
-  (development Node). Other first-time offline versions are not yet supported.
+- Verified release hashes: skills/gidd/assets/runtimes.json (Bun/gh), scripts/dev/runtimes.json
+  (development Node). Missing tools are downloaded; local package inputs are not supported.
 - Development Node includes node.exe and LICENSE, without npm.
 - install.json: tool version, upstream source and file hashes; do not edit it.
 - .cache/<tool>/: temporary downloads and extraction; removed after success

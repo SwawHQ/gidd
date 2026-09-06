@@ -68,7 +68,8 @@ test('configured setup reuses Node/gh without knowing a skill installation direc
     const path=join(f.root,'.agents/skills/gidd/config.toml'), tools=join(f.root,'.devv');
     write(path,configText()); const before=hash(path), exe=compile(f.root);
     stub(exe,join(tools,'node/node.exe'),undefined,true); stub(exe,join(tools,'gh/gh.exe'),undefined,true);
-    const invoke=() => ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root,'-ArchiveDirectory',join(f.root,'missing')],{env:{PATH:''}});
+    const invoke=() => ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root],{env:{PATH:''}});
+    assert.notEqual(ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root,'-ArchiveDirectory',f.root],{env:{PATH:''}}).status,0);
     const report=json(ok(invoke())); samePath(report.tools_root,tools);
     assert.deepEqual(report.tools.map(x=>x.name),['node','gh']); assert.ok(report.tools.every(x=>x.action==='reused'));
     assert.equal(existsSync(join(tools,'bun')),false); assert.equal(hash(path),before);
@@ -116,7 +117,7 @@ test('release resolution selects stable versions, verifies upstream hashes and p
   const f=fixture();
   try {
     const sha='a'.repeat(64), source='https://mirror.example/releases';
-    const resolve=(name,version,responses={},extra={}) => adapter(f.root,{action:'release',name,version,source,pinnedPath:'',archiveDirectory:'',responses,...extra});
+    const resolve=(name,version,responses={},extra={}) => adapter(f.root,{action:'release',name,version,source,pinnedPath:'',responses,...extra});
     const nodeIndex='https://nodejs.org/dist/index.json';
     const nodeChecks='https://nodejs.org/dist/v24.2.0/SHASUMS256.txt';
     const index=JSON.stringify([
@@ -158,9 +159,9 @@ test('release resolution selects stable versions, verifies upstream hashes and p
     const pinned=JSON.parse(readFileSync(join(repo,'skills/gidd/assets/runtimes.json'),'utf8')).tools[0];
     const pinnedPath=join(f.root,'pinned.json'); write(pinnedPath,JSON.stringify(pinned));
     const original=hash(pinnedPath);
-    const offline=json(ok(resolve('bun',pinned.version,{}, {pinnedPath,archiveDirectory:join(f.root,'missing')})));
-    assert.equal(offline.sha256,pinned.sha256); assert.equal(offline.url,`${source}/download/bun-v${pinned.version}/${pinned.archive}`);
+    const verified=json(ok(resolve('bun',pinned.version,{}, {pinnedPath})));
+    assert.equal(verified.sha256,pinned.sha256); assert.equal(verified.url,`${source}/download/bun-v${pinned.version}/${pinned.archive}`);
     assert.equal(hash(pinnedPath),original);
-    assert.match(resolve('bun','latest',{}, {pinnedPath,archiveDirectory:join(f.root,'missing')}).stderr,/offline_release_metadata_unavailable/);
+    assert.match(resolve('bun','latest',{}, {pinnedPath}).stderr,/unexpected_metadata_request/);
   } finally { f.dispose(); }
 });

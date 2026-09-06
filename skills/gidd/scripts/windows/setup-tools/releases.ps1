@@ -38,13 +38,13 @@ function Get-GiddChecksum {
 }
 
 function Resolve-GiddRelease {
-    param([string]$Name, $Settings, $PinnedDefinition = $null, [string]$ArchiveDirectory = '',
+    param([string]$Name, $Settings, $PinnedDefinition = $null,
         [scriptblock]$ReadText = { param($url) Read-GiddReleaseText $url })
     if ($Name -notin @('node','bun','gh')) { throw 'invalid_tool_name' }
     Assert-GiddToolSettings $Name $Settings
     $version = $Settings.version
     $source = $Settings.source
-    # Bundled exact versions retain independently pinned hashes and offline installation.
+    # Bundled exact versions retain independently verified hashes.
     if ($PinnedDefinition -and $version -eq $PinnedDefinition.version) {
         $definition = $PinnedDefinition | ConvertTo-Json -Depth 10 | ConvertFrom-Json
         $tag = if ($Name -eq 'bun') { "bun-v$version" } else { "v$version" }
@@ -52,7 +52,6 @@ function Resolve-GiddRelease {
             else { "$source/download/$tag/$($definition.archive)" }
         return $definition
     }
-    if ($ArchiveDirectory) { throw "offline_release_metadata_unavailable:${Name}:$version" }
     $metadata = @()
     if ($Name -eq 'node') {
         if ($version -in @('latest','lts')) {

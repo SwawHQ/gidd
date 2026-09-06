@@ -107,8 +107,8 @@ export function findGit() {
   const result = ok(run(join(windowsRoot, 'System32/where.exe'), ['git.exe']));
   return result.stdout.trim().split(/\r?\n/)[0];
 }
-export function installSpec(root, definitionPath, archiveDirectory, stopAt = '') {
-  return { action: 'install', root, definitionPath, archiveDirectory, stopAt };
+export function installSpec(root, definitionPath, fixtureDirectory = '', stopAt = '') {
+  return { action: 'install', root, definitionPath, fixtureDirectory, stopAt };
 }
 export function makeZip(root, destination, entries) { ok(adapter(root, { action: 'zip', destination, entries })); }
 export { assert, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, join, dirname, lstatSync };
