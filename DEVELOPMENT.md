@@ -19,6 +19,8 @@
 
 `dev.cmd` 仅在子进程范围隔离 PowerShell 模块路径，防止从 PowerShell 7 启动 PowerShell 5.1 时继承不兼容模块；不修改系统 PATH、Git 配置、登录或用户级技能目录。
 
+安装锁位于 `.dev/tools/.cache/install.lock`；下载包和解压中间态位于 `.dev/tools/.cache/bun/` 的 `download.part` 与 `payload/`。安装成功后清理 Bun 子目录，保留缓存根和锁文件；中断后在下次显式重试时重建，不长期保留下载包，也不支持断点续传。安装期间不得删除缓存根或锁文件。旧布局 `.dev/tools/.install/` 与 `.dev/tools/.install.lock` 可在所有安装进程退出后清理，不要同时运行新旧安装器。
+
 ## 测试
 
 默认 `.test` 使用 Bun 内置测试运行器执行 `tests/*.test.mjs` 中的离线测试，可指定 `doctor`、`setup`、`process` 或 `dev`。它不会安装 Bun，也不会联网。`bun run test` 使用相同入口。

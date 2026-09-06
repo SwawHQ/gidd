@@ -43,8 +43,9 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     assert.equal(json(ok(invoke(['.info'],{PATH:bin}))).bun.details.path,join(bin,'bun.exe'));
     const localBun=join(checkout,'.dev/tools/bun/bun.exe');
     stub(join(bin,'bun.exe'),localBun,undefined,true);
-    const leftover=join(checkout,'.dev/tools/.install/bun/download.part'); write(leftover,'leftover after publication');
+    const leftover=join(checkout,'.dev/tools/.cache/bun/download.part'); write(leftover,'leftover after publication');
     ok(invoke(['.setup'])); assert.equal(existsSync(leftover),false,'Reuse must clean staging left after publication');
+    assert.equal(existsSync(join(checkout,'.dev/tools/.cache/install.lock')),true);
     assert.equal(json(ok(invoke(['.info']))).bun.details.source,'checkout');
     const occupied=join(checkout,'.dev/tools/bun/user.txt'); write(occupied,'keep');
     const result=invoke(['.setup']); assert.notEqual(result.status,0); assert.match(result.stderr,/occupied_or_invalid_target/);

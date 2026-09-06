@@ -10,7 +10,7 @@
         return @{ name = $name; action = 'reused'; path = (Join-Path $target "$name.exe") }
     }
     Remove-GiddStage $ToolsRoot $name
-    $stage = Join-Path $ToolsRoot ".install/$name"
+    $stage = Join-Path $ToolsRoot ".cache/$name"
     $payload = Join-Path $stage 'payload'
     Assert-GiddPlainPath $payload
     [void][IO.Directory]::CreateDirectory($payload)

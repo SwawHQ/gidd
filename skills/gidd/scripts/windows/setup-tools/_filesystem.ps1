@@ -8,8 +8,8 @@
 function Remove-GiddStage {
     param([string]$ToolsRoot, [string]$Name)
     if ($Name -notin @('bun','gh')) { throw 'invalid_tool_name' }
-    $stage = [IO.Path]::GetFullPath((Join-Path $ToolsRoot ".install/$Name"))
-    $expected = [IO.Path]::GetFullPath($ToolsRoot).TrimEnd('\') + '\.install\' + $Name
+    $stage = [IO.Path]::GetFullPath((Join-Path $ToolsRoot ".cache/$Name"))
+    $expected = [IO.Path]::GetFullPath($ToolsRoot).TrimEnd('\') + '\.cache\' + $Name
     if ($stage -ne $expected) { throw 'stage_outside_root' }
     Assert-GiddPlainPath $stage
     if (-not (Test-Path -LiteralPath $stage)) { return }
@@ -29,7 +29,10 @@ function Open-GiddInstallLock {
     param([string]$ToolsRoot)
     Assert-GiddPlainPath $ToolsRoot
     [void][IO.Directory]::CreateDirectory($ToolsRoot)
-    $lockPath = Join-Path $ToolsRoot '.install.lock'
+    $cacheRoot = Join-Path $ToolsRoot '.cache'
+    Assert-GiddPlainPath $cacheRoot
+    [void][IO.Directory]::CreateDirectory($cacheRoot)
+    $lockPath = Join-Path $ToolsRoot '.cache/install.lock'
     Assert-GiddPlainPath $lockPath
     try { return [IO.File]::Open($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
     catch [IO.IOException] { throw 'install_locked_or_unwritable' }
@@ -48,13 +51,14 @@ It is not a skill: do not add SKILL.md or repository config.toml here.
 
 - bun/ and gh/: published tool files, upstream license materials and install.json.
 - install.json: tool version, upstream source and file hashes; do not edit it.
-- .install/: disposable installer staging; cleaned on the next explicit setup.
-- .install.lock: OS file lock; its presence alone does not mean installation is running.
+- .cache/bun/ and .cache/gh/: temporary downloads and extraction; removed after success
+  or rebuilt on the next explicit retry. Download archives are not retained.
+- .cache/install.lock: OS file lock; its presence alone does not mean installation is running.
 
 Run setup-tools.ps1 again after an interruption. The installer verifies completed
 directories and never overwrites an occupied final directory. A corrupt or unknown
 final directory requires explicit review; keep it until its ownership is clear.
-Do not delete a lock file while an installer is running.
+Do not delete .cache/ or its lock file while an installer is running.
 
 When uninstalling, distinguish one repository from all shared tools. Remove this
 whole directory only when removal of shared GIDD tools is intended and no installer

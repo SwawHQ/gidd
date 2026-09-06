@@ -16,6 +16,9 @@ test('setup: install, integrity, interrupted publication, locks, preservation an
     write(join(tools,'INSTALLATION.md'),'old guide'); ok(adapter(f.root,{action:'guide',root:tools}));
     assert.ok(readFileSync(join(tools,'INSTALLATION.md'),'utf8').startsWith('# GIDD-managed tools'));
     assert.equal(json(ok(install(tools))).action,'installed'); assert.equal(valid(tools),true);
+    assert.equal(existsSync(join(tools,'.cache/bun')),false,'Successful install must remove downloads and extraction');
+    assert.equal(existsSync(join(tools,'.cache/install.lock')),true,'Stage cleanup must preserve the lock file');
+    assert.equal(existsSync(join(tools,'.install.lock')),false,'Fresh installs must not create the legacy root lock');
     const recordPath=join(tools,'bun/install.json'), recordHash=hash(recordPath), recordText=readFileSync(recordPath,'utf8');
     assert.equal(json(ok(install(tools,definitionPath,join(f.root,'missing')))).action,'reused'); assert.equal(hash(recordPath),recordHash);
     const managedBin=join(tools,'bun'), managedExe=join(managedBin,'bun.exe');
@@ -35,18 +38,19 @@ test('setup: install, integrity, interrupted publication, locks, preservation an
       const root=join(f.root,`kill-${phase}/gidd.tools`);
       const killed=await startAdapter(f.root,installSpec(root,definitionPath,f.root,phase)).result;
       assert.notEqual(killed.status,0); assert.equal(existsSync(join(root,'bun')),phase==='published');
-      ok(install(root)); assert.equal(valid(root),true); assert.equal(existsSync(join(root,'.install/bun')),false);
+      ok(install(root)); assert.equal(valid(root),true); assert.equal(existsSync(join(root,'.cache/bun')),false);
     }
     const concurrent=join(f.root,'concurrent/gidd.tools');
     const owner=startAdapter(f.root,installSpec(concurrent,definitionPath,f.root,'locked'));
     try {
       await until(()=>existsSync(owner.marker));
+      assert.equal(existsSync(join(concurrent,'.cache/install.lock')),true);
       const other=await startAdapter(f.root,installSpec(concurrent,definitionPath,f.root)).result;
       assert.notEqual(other.status,0); assert.match(other.stderr,/install_locked/);
     } finally { owner.child.kill(); await owner.result; }
     ok(install(concurrent));
     const partial=join(f.root,'partial/gidd.tools');
-    write(join(partial,'.install/bun/download.part'),'truncated download'); write(join(partial,'.install/bun/payload/bun.exe'),'partial extraction');
+    write(join(partial,'.cache/bun/download.part'),'truncated download'); write(join(partial,'.cache/bun/payload/bun.exe'),'partial extraction');
     ok(install(partial)); assert.equal(valid(partial),true);
     write(managedExe,'corrupted'); const corruptHash=hash(managedExe);
     assert.notEqual(install(tools).status,0); assert.equal(hash(managedExe),corruptHash);
@@ -67,13 +71,17 @@ test('setup: install, integrity, interrupted publication, locks, preservation an
       assert.notEqual(install(root,path).status,0); assert.equal(existsSync(join(root,'bun')),false);
     }
     const outside=join(f.root,'outside'); write(join(outside,'keep.txt'),'keep');
-    const linked=join(f.root,'linked'), stage=join(f.root,'junction-stage/gidd.tools/.install/bun');
+    const linked=join(f.root,'linked'), stage=join(f.root,'junction-stage/gidd.tools/.cache/bun');
+    const cacheTools=join(f.root,'junction-cache/gidd.tools'), cache=join(cacheTools,'.cache');
+    mkdirSync(cacheTools,{recursive:true}); symlinkSync(outside,cache,'junction');
     mkdirSync(dirname(stage),{recursive:true}); symlinkSync(outside,linked,'junction'); symlinkSync(outside,stage,'junction');
     try {
       assert.notEqual(install(join(linked,'gidd.tools')).status,0);
+      assert.notEqual(install(cacheTools).status,0,'Lock creation must reject a redirected cache directory');
+      assert.equal(existsSync(join(outside,'install.lock')),false);
       assert.notEqual(adapter(f.root,{action:'stage',root:join(f.root,'junction-stage/gidd.tools'),name:'bun'}).status,0);
       assert.equal(readFileSync(join(outside,'keep.txt'),'utf8'),'keep');
-    } finally { unlinkSync(linked); unlinkSync(stage); }
+    } finally { unlinkSync(linked); unlinkSync(stage); unlinkSync(cache); }
     const external=join(f.root,'external'); stub(exe,join(external,'node.exe')); stub(exe,join(external,'gh.exe'));
     for (const runtime of ['node','bun']) {
       if (runtime==='bun') stub(exe,join(external,'bun.exe'));
