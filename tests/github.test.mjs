@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { copyFileSync, cpSync, mkdirSync } from 'node:fs';
 import { checkIdentity, runCommand } from '../skills/gidd/scripts/github.mjs';
 import { authorize } from '../skills/gidd/scripts/auth.mjs';
-import { adapter, assert, compile, dirname, existsSync, fixture, findGit, join, json, ok, ps, readFileSync, repo, run, snapshot, write } from './support/helpers.mjs';
+import { adapter, assert, compile, dirname, existsSync, fixture, findGit, join, json, ok, ps, readFileSync, repo, run, snapshot, stub, write } from './support/helpers.mjs';
 
 const options = { repository: repo, gh: join(repo, 'fixture-gh.exe'), git: findGit(), account: 'octocat' };
 const success = text => ({ ok: true, reason: 'process_exit', text });
@@ -200,6 +200,30 @@ test('authorization cancels or times out a pending login without marking it succ
       assert.ok(performance.now() - started < 2000);
       assert.equal(existsSync(gh + '.logged'), false);
     }
+  } finally { f.dispose(); }
+});
+
+test('authorization bootstrap skips old PATH gh and honors configured versions', { timeout: 15000 }, () => {
+  const f = fixture();
+  try {
+    const executable = compile(f.root, 'auth-gh.cs'), oldBin = join(f.root, 'old-bin');
+    const oldGh = join(oldBin, 'gh.exe'), managedGh = join(f.root, 'tools/gh/gh.exe');
+    stub(executable, oldGh, 'old');
+    const config = join(f.root, '.agents/skills/gidd/config.toml');
+    const configText = 'schema_version = 1\n[tools]\ndirectory = "tools"\n';
+    write(config, configText);
+    const env = { PATH: [oldBin, dirname(process.execPath)].join(';'), GH_CONFIG_DIR: join(f.root, 'credentials'),
+      GH_TOKEN: '', GITHUB_TOKEN: '', GH_ENTERPRISE_TOKEN: '', GITHUB_ENTERPRISE_TOKEN: '' };
+    const invoke = () => ps(join(repo, 'skills/gidd/scripts/windows/authorize.ps1'), ['-RepositoryPath', f.root, '-Account', 'Octocat'], { env });
+    assert.equal(json(invoke()).reason, 'gh_unavailable');
+    assert.equal(existsSync(join(f.root,'tools')), false, 'Missing compatible gh must not trigger installation');
+    stub(executable, managedGh, 'success', true);
+    write(config, configText + 'gh = { version = "2.99.0", source = "https://github.com/cli/cli/releases" }\n');
+    assert.equal(json(invoke()).reason, 'gh_unavailable', 'The version floor must not bypass exact configuration');
+    write(config, configText);
+    assert.equal(json(ok(invoke())).reason, 'authenticated');
+    assert.equal(existsSync(managedGh + '.started'), true);
+    assert.equal(existsSync(oldGh + '.started'), false);
   } finally { f.dispose(); }
 });
 

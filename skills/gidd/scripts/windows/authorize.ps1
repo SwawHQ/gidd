@@ -12,7 +12,7 @@ try {
     if ((Get-DoctorPlatformCheck).status -ne 'ready') { throw 'unsupported_platform' }
     $target = Get-GiddRepositoryRoot $RepositoryPath
     $storage = Resolve-GiddToolStorage $target
-    $checks = @(Get-DoctorToolChecks $storage.tools_root $storage.tools)
+    $checks = @(Get-DoctorToolChecks $storage.tools_root $storage.tools -GhMinimum '2.98.0')
     $runtime = @($checks | Where-Object id -eq 'runtime')[0]
     $gh = @($checks | Where-Object id -eq 'tool.gh')[0]
     if ($runtime.status -ne 'ready') { throw 'runtime_unavailable' }
