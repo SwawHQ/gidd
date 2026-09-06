@@ -44,7 +44,8 @@ try {
             $check = @($checks | Where-Object id -eq $id)[0]
             if ($check.status -eq 'ready') {
                 Remove-GiddStage $toolsRoot $definition.name
-                $results.Add(@{ name = $definition.name; action = 'reused'; path = $check.details.path })
+                $reusedName = if ($id -eq 'runtime') { $check.details.selected -replace '^tool\.', '' } else { $definition.name }
+                $results.Add(@{ name = $reusedName; action = 'reused'; path = $check.details.path })
             } else {
                 $result = Install-GiddTool $toolsRoot $definition $ArchiveDirectory {
                     param($phase)
@@ -54,7 +55,7 @@ try {
             }
         }
     } else {
-        $results.Add(@{ name = 'bun'; action = 'reused'; path = $runtime.details.path })
+        $results.Add(@{ name = ($runtime.details.selected -replace '^tool\.', ''); action = 'reused'; path = $runtime.details.path })
         $results.Add(@{ name = 'gh'; action = 'reused'; path = $gh.details.path })
     }
     $final = @(Get-DoctorToolChecks $toolsRoot)

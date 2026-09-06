@@ -5,6 +5,7 @@
 
 function Find-Tool {
     param([string]$Name, [version]$Minimum, [string]$Pattern, [string]$ManagedPath)
+    $managedFullPath = if ($ManagedPath) { [IO.Path]::GetFullPath($ManagedPath) } else { '' }
     $candidates = @()
     foreach ($command in @(Get-Command "$Name.exe" -CommandType Application -All -ErrorAction SilentlyContinue)) {
         $candidates += @{ path = $command.Source; source = 'path' }
@@ -14,7 +15,9 @@ function Find-Tool {
     }
     $attempts = @()
     foreach ($candidate in $candidates) {
-        if (($candidate.source -eq 'gidd.tools' -or $candidate.path -eq $ManagedPath) -and
+        $isManaged = $candidate.source -eq 'gidd.tools' -or ($managedFullPath -and
+            [string]::Equals([IO.Path]::GetFullPath($candidate.path), $managedFullPath, [StringComparison]::OrdinalIgnoreCase))
+        if ($isManaged -and
             -not (Test-GiddManagedTool ([IO.Path]::GetDirectoryName($candidate.path)) $Name)) {
             $attempts += @{ path = $candidate.path; source = $candidate.source; reason = 'managed_integrity_failed'; version = $null }
             continue
