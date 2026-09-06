@@ -17,6 +17,21 @@
 
 ## 开发运行时
 
+可以通过入口显式选择运行时执行命令或脚本，无需手写 `.devv/` 路径：
+
+```powershell
+.\dev.cmd bun --version
+.\dev.cmd node --version
+.\dev.cmd bun scripts/example.mjs
+.\dev.cmd node -e "console.log(process.version)"
+.\dev.cmd sys bun scripts/example.mjs
+.\dev.cmd sys node --version
+```
+
+`bun` / `node` 默认只使用配置工具目录中的对应便携版本；`sys bun` / `sys node` 则只搜索 PATH。两种模式互不回退，缺失、损坏或版本不匹配时明确报错，两者都遵守配置版本要求。入口只识别命令前缀，后续参数（包括 `--system`、`--help` 等）全部交给运行时或脚本。只检查选定运行时，入口不安装工具、不修改系统 PATH；运行中的用户命令可以自行联网或写文件。当前 `.setup` / `.info` / `.test` 保留原有 PATH 优先策略，`.setup` 复用 PATH 时不会额外创建便携副本。可用 `[sys] bun/node --version` 确认此次显式调用的版本。
+
+脚本相对路径以调用者当前目录解析，stdin/stdout/stderr 透传，返回脚本退出码。启动器收到的参数通过数据编码转发，避免 PowerShell 再次解释 runtime 的 `-e`、`--help` 或脚本参数；参数仍须遵守调用 Shell 的转义规则。例如 PowerShell 调用 `.cmd` 时要明确传递空参数，可用 `.\dev.cmd --% node script.mjs ""`。复杂内联代码建议保存为脚本文件。终端中可省略扩展名写 `dev bun ...`；PowerShell 在当前目录下仍需 `.\dev bun ...`。
+
 `.setup` 同时准备 Bun 和 Node，分别优先复用 PATH 中满足最低版本的运行时（Bun 1.2.15、Node 24.0.0），否则复用配置目录中校验有效的工具。固定版本还须精确匹配；缺失时使用 PowerShell 按配置解析版本、校验并下载。`.info` 分别报告两个运行时、配置要求和下载来源，仅当二者均可用时退出 0。
 
 默认 Node 使用最新 LTS、Bun 使用最新稳定版，只在需要下载时解析；已有可用版本继续复用，诊断与测试不检查更新。`skills/gidd/assets/runtimes.json` 和 `scripts/dev/runtimes.json` 保留 Bun/gh 与开发 Node 的固定离线基线。版本解析、官方校验信息、下载、SHA-256 校验、独占锁、版本验证及中断恢复共用技能脚本，不通过 Bun 安装 Node，也不通过 Node 安装 Bun。已有工具目录版本冲突时保留并报错，自动升级/回滚命令尚未实现。
@@ -62,6 +77,8 @@ gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 `dev.cmd` 仅在子进程范围隔离 PowerShell 模块路径，防止从 PowerShell 7 启动 PowerShell 5.1 时继承不兼容模块；不修改系统 PATH、Git 配置、登录或用户级技能目录。
 
 ## 测试
+
+日常修改先用 `.test <测试组>` 验证受影响部分，提交前执行完整 `.test`。每组显示 PASS/FAIL 和耗时，结束后汇总失败文件及可复制的 PowerShell 复跑命令；双运行时执行结束后显示各运行时结果与总耗时。汇总按测试文件计数，不替代运行器输出的用例断言详情。一组失败不会阻止后续组或另一运行时执行。本地测试无需等待 GitHub CI。
 
 默认 `.test` 先检查 Bun 和 Node 均可用，再依次使用二者执行同一套 `tests/*.test.mjs` 离线用例；任一运行失败，命令整体失败。支持测试组 `all`（默认）、`doctor`、`setup`、`process`、`dev`、`config`。缺少任一运行时就明确报错，不安装、不联网，也不把未执行的运行时算作通过。`.test-bun` 和 `.test-node` 只检查并运行指定运行时，适合定位问题，不能替代双运行时验收。
 

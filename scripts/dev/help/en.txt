@@ -7,14 +7,22 @@ GIDD repository development (Windows x64 / Windows PowerShell 5.1)
   dev.cmd .test-bun [suite]      Run only Bun tests.
   dev.cmd .test-node [suite]     Run only Node tests.
   dev.cmd .test-live [archive-dir]  Test official Bun/gh/Node archives and reuse under both runtimes.
+  dev.cmd bun [args...]          Run the configured portable Bun, without PATH fallback.
+  dev.cmd node [args...]         Run the configured portable Node, without PATH fallback.
+  dev.cmd sys bun [args...]  Run Bun from PATH only.
+  dev.cmd sys node [args...] Run Node from PATH only.
 
 Suites: all (default), doctor, setup, process, dev, config.
+Each suite reports its result and duration; failures include PowerShell rerun commands.
+Use a focused suite while editing, then run .test before submitting changes.
 No arguments show help. Help language: argument, GIDD_DEV_LANG, locale, then English.
-Only .setup and .test-live can download. .test never installs missing tools.
+Only .setup and .test-live perform GIDD-managed downloads. .test never installs tools.
+bun/node forward caller cwd, arguments and stdio; the invoked command controls its own effects.
+Portable and sys modes never fall back to each other; both honor configured versions.
 Tool storage, versions and download roots follow .agents/skills/gidd/config.toml.
 Defaults for missing downloads: Node LTS, stable Bun; existing usable tools are reused.
 Offline first installs require exact bundled versions; see DEVELOPMENT.md.
 Portable Node includes the runtime and license, without npm; tests have no npm dependencies.
-This does not enable GIDD or change user skills, PATH, Git settings or authentication.
+Tests never log in. No command enables GIDD or changes user skills or system PATH.
 Product JavaScript must still work in both Node.js and Bun.
 See DEVELOPMENT.md for boundaries, test adapters and cleanup.

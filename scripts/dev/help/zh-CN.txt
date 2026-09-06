@@ -7,14 +7,22 @@ GIDD 仓库开发（Windows x64 / Windows PowerShell 5.1）
   dev.cmd .test-bun [测试组]     只运行 Bun 测试。
   dev.cmd .test-node [测试组]    只运行 Node 测试。
   dev.cmd .test-live [归档目录]  两种运行时验证官方 Bun/gh/Node 归档及复用。
+  dev.cmd bun [参数...]         只使用配置目录中的便携 Bun，不回退到 PATH。
+  dev.cmd node [参数...]        只使用配置目录中的便携 Node，不回退到 PATH。
+  dev.cmd sys bun [参数...] 只使用 PATH 中的 Bun。
+  dev.cmd sys node [参数...] 只使用 PATH 中的 Node。
 
 测试组：all（默认）、doctor、setup、process、dev、config。
+每组显示结果和耗时，失败汇总附带 PowerShell 复跑命令。
+开发中按组验证，提交前运行完整 .test。
 无参数显示帮助。帮助语言按参数、GIDD_DEV_LANG、系统语言、英文的顺序选择。
-只有 .setup 和 .test-live 可以下载；.test 不会安装缺失工具。
+只有 .setup 和 .test-live 执行 GIDD 管理的下载；.test 不安装工具。
+bun/node 保留调用目录、参数和输入输出；具体命令可以有自己的网络和写入行为。
+便携与 sys 模式互不回退，两者均遵守配置中的版本要求。
 工具目录、版本与下载来源读取 .agents/skills/gidd/config.toml。
 缺失时默认下载 Node LTS、Bun 稳定版；已有可用工具继续复用。
 首次离线安装须固定内置基线版本，详见 DEVELOPMENT.md。
 Node 仅包含运行时和许可证，不附带 npm；当前测试无 npm 依赖。
-本入口不启用 GIDD，不修改用户技能、PATH、Git 配置或登录状态。
+测试不发起登录；所有入口均不启用 GIDD，不修改用户技能或系统 PATH。
 产品 JavaScript 仍须同时支持 Node.js 和 Bun。
 开发边界、测试适配和清理方式见 DEVELOPMENT.md。

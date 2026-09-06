@@ -1,8 +1,9 @@
-﻿param(
-    [string]$Command = '.help',
-    [string]$Argument = '',
-    [Parameter(ValueFromRemainingArguments = $true)][string[]]$Extra = @()
-)
+﻿# Keep runtime flags literal; PowerShell named-parameter binding would consume them.
+$Command = if ($args.Count) { [string]$args[0] } else { '.help' }
+$Argument = if ($args.Count -gt 1) { [string]$args[1] } else { '' }
+$Extra = @(); $runtimeArguments = @()
+if ($args.Count -gt 2) { $Extra = @($args[2..($args.Count - 1)]) }
+if ($args.Count -gt 1) { $runtimeArguments = @($args[1..($args.Count - 1)]) }
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
@@ -12,10 +13,15 @@ $toolsRoot = $null
 $storage = $null
 $lock = $null
 function Get-DevRuntime {
-    param([string]$Name)
+    param([string]$Name, [ValidateSet('auto','managed','system')][string]$Source = 'auto')
     $minimum = if ($Name -eq 'bun') { [version]'1.2.15' } else { [version]'24.0.0' }
     $pattern = if ($Name -eq 'bun') { '^(\d+\.\d+\.\d+)$' } else { '^v(\d+\.\d+\.\d+)$' }
-    $check = Find-Tool $Name $minimum $pattern (Join-Path $toolsRoot "$Name/$Name.exe") $storage.tools[$Name].version
+    $savedPath = $env:PATH
+    try {
+        if ($Source -eq 'managed') { $env:PATH = '' }
+        $managedPath = if ($Source -eq 'system') { '' } else { Join-Path $toolsRoot "$Name/$Name.exe" }
+        $check = Find-Tool $Name $minimum $pattern $managedPath $storage.tools[$Name].version
+    } finally { $env:PATH = $savedPath }
     return $check
 }
 function Test-DevManagedRuntime {
@@ -24,7 +30,14 @@ function Test-DevManagedRuntime {
         [IO.Path]::GetFullPath($Check.details.path), (Join-Path $toolsRoot "$Name/$Name.exe"), [StringComparison]::OrdinalIgnoreCase)
 }
 try {
-    if ($Extra.Count) { throw 'Unexpected arguments. Use dev.cmd .help.' }
+    $runtimeSource = 'managed'
+    if ($Command -eq 'sys') {
+        if ($Argument -notin @('bun','node')) { throw 'Use dev.cmd sys bun ... or dev.cmd sys node ...' }
+        $Command = $Argument
+        $runtimeSource = 'system'
+        $runtimeArguments = @($Extra)
+    }
+    if ($Extra.Count -and $Command -notin @('bun','node')) { throw 'Unexpected arguments. Use dev.cmd .help.' }
     if ($Command -in @('.help','--help','-h','/?')) {
         $language = $null
         foreach ($choice in @($Argument, $env:GIDD_DEV_LANG)) {
@@ -42,7 +55,7 @@ try {
         [Console]::WriteLine([IO.File]::ReadAllText((Join-Path $PSScriptRoot "help/$language.txt")))
         exit 0
     }
-    if ($Command -notin @('.info','.setup','.test','.test-bun','.test-node','.test-live')) { throw 'Unknown command. Use dev.cmd .help.' }
+    if ($Command -notin @('.info','.setup','.test','.test-bun','.test-node','.test-live','bun','node')) { throw 'Unknown command. Use dev.cmd .help.' }
     if ($Command -eq '.info' -and $Argument) { throw '.info takes no arguments.' }
     if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev','config')) { throw 'Unknown test suite.' }
     foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','doctor/platform.ps1')) { . (Join-Path $codeRoot $file) }
@@ -53,6 +66,15 @@ try {
     }
     $storage = Resolve-GiddToolStorage $repoRoot '.dev'
     $toolsRoot = $storage.tools_root
+    if ($Command -in @('bun','node')) {
+        $name = $Command.ToLowerInvariant()
+        $runtime = Get-DevRuntime $name -Source $runtimeSource
+        if ($runtime.status -ne 'ready') { throw "$runtimeSource $name unavailable or invalid. Portable and PATH modes do not fall back to each other. Use dev.cmd .help." }
+        # Transfer argv as data, avoiding a second PowerShell native quoting pass.
+        $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $runtimeArguments -Compress)))
+        & $runtime.details.path (Join-Path $PSScriptRoot 'runtime.mjs') $payload
+        exit $LASTEXITCODE
+    }
     $checks = @{ bun = (Get-DevRuntime 'bun'); node = (Get-DevRuntime 'node') }
     if ($Command -eq '.info') {
         @{ schema='gidd.dev/v1'; bun=$checks.bun; node=$checks.node; tools_root=$toolsRoot; storage=$storage } | ConvertTo-Json -Depth 8
@@ -97,13 +119,23 @@ try {
     }
     $testCommand = if ($Command -eq '.test-live') { '.test-live' } else { '.test' }
     $testExit = 0
+    $testWatch = [Diagnostics.Stopwatch]::StartNew()
+    $runtimeResults = @()
     Push-Location -LiteralPath $repoRoot
     try {
         foreach ($name in $runtimes) {
+            $runtimeWatch = [Diagnostics.Stopwatch]::StartNew()
             & $checks[$name].details.path (Join-Path $PSScriptRoot 'dev.mjs') $testCommand $Argument
-            if ($LASTEXITCODE -ne 0) { $testExit = 1 }
+            $runtimeExit = $LASTEXITCODE
+            $runtimeWatch.Stop()
+            if ($runtimeExit -ne 0) { $testExit = 1 }
+            $resultLabel = if ($runtimeExit -eq 0) { 'PASS' } else { 'FAIL' }
+            $runtimeResults += ('{0} {1} {2} ({3:F2}s)' -f $resultLabel, $name, $checks[$name].details.version, $runtimeWatch.Elapsed.TotalSeconds)
         }
     } finally { Pop-Location }
+    [Console]::WriteLine("`nRuntime summary:")
+    foreach ($line in $runtimeResults) { [Console]::WriteLine($line) }
+    [Console]::WriteLine(('Total: {0:F2}s; exit {1}' -f $testWatch.Elapsed.TotalSeconds, $testExit))
     exit $testExit
 } catch {
     [Console]::Error.WriteLine($_.Exception.Message)

@@ -16,10 +16,13 @@ if (extra.length || !['.test', '.test-live'].includes(command) ||
 const files = command === '.test-live' ? ['tests/live.test.mjs'] :
   (argument && argument !== 'all' ? [argument] : suites).map(suite => `tests/${suite}.test.mjs`);
 console.log(`Runtime: ${process.versions.bun ? 'Bun ' + process.versions.bun : 'Node ' + process.versions.node}`);
-let failed = false;
+const started = performance.now();
+const results = [];
 // Bun 1.2.15 caches node:test registration against the first loaded test file.
 // A fresh process per file ensures every suite runs and isolates test state.
 for (const file of files) {
+  console.log(`\nRunning ${file}`);
+  const suiteStarted = performance.now();
   const runnerArgs = process.versions.bun ? ['test', file, '--timeout', '60000'] : ['--test', file];
   const env = { ...process.env };
   // A parent node:test worker's context suppresses a nested --test runner.
@@ -32,6 +35,17 @@ for (const file of files) {
     },
   });
   if (result.error) console.error(result.error.message);
-  if (result.status !== 0) failed = true;
+  const passed = !result.error && result.status === 0;
+  const seconds = ((performance.now() - suiteStarted) / 1000).toFixed(2);
+  results.push({ file, passed, seconds });
+  console.log(`${passed ? 'PASS' : 'FAIL'} ${file} (${seconds}s)`);
 }
-process.exit(failed ? 1 : 0);
+const failures = results.filter(result => !result.passed);
+console.log(`\nSuite summary: ${results.length - failures.length} passed, ${failures.length} failed (${((performance.now() - started) / 1000).toFixed(2)}s)`);
+const quote = value => `'${value.replaceAll("'", "''")}'`;
+for (const { file, seconds } of failures) {
+  const rerun = command === '.test-live' ? `.test-live${argument ? ' ' + quote(argument) : ''}` :
+    `.test-${process.versions.bun ? 'bun' : 'node'} ${file.split('/').at(-1).replace('.test.mjs', '')}`;
+  console.log(`FAIL ${file} (${seconds}s)\nRerun (PowerShell): & ${quote(fileURLToPath(new URL('../../dev.cmd', import.meta.url)))} ${rerun}`);
+}
+process.exit(failures.length ? 1 : 0);

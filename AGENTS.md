@@ -32,6 +32,10 @@
 
 ## Maintainer Notes
 
+- 开发前先看 `dev.cmd .help zh` 和 `DEVELOPMENT.md`。运行命令/脚本使用 `dev.cmd bun ...` 或 `dev.cmd node ...`，默认只用配置目录中的便携版本；显式 `dev.cmd sys bun ...` / `dev.cmd sys node ...` 只搜索 PATH，两种模式互不回退。不手写 `.devv/` 或开发者机器的运行时路径。日常验证用 `dev.cmd .test <测试组>`；提交前用完整 `.test` 做 Node/Bun 双运行时验收。统一技能公开 JavaScript 入口由 Issue #12 跟踪，本批不混入入口重构。
+
+- 本地测试结果、耗时与复跑提示由 Issue #10 跟踪。
+
 - 仓库开发入口为根 `dev.cmd`，用法见 `DEVELOPMENT.md`。`scripts/dev/` 和 `tests/` 属于仓库开发工具；`.setup` 准备 Bun 和 Node，`.test` 分别在两种运行时执行同一套 JavaScript 用例，Windows 辅助仅保留被测 PowerShell 接口与 fixture 构造。开发 Node 离线基线清单位于 `scripts/dev/runtimes.json`，仅提取运行时和许可证，不附带 npm。工具目录由固定位置的仓库配置解析；无配置时开发默认 `.dev/`，本仓库实例选择 `.devv/`，二者均精确忽略且不随技能发布。工具位置读取 `tools.directory`，下载版本与来源读取工具内联表，不需要 Agent 技能安装模式或用户技能根参数；产品脚本的 Node/Bun 双运行时约束不变，技能工具初始化仍只要求其中一种运行时可用。
 
 - 当前实现 Windows x64 / Windows PowerShell 5.1 基础 doctor 与便携 Bun/gh 工具初始化，包含完整性校验、独占锁和中断后重试；工具配置读取、缺失工具的稳定版本解析与官方 SHA-256 校验已实现；浮动版本不自动升级已有工具，固定版本冲突时保留并报错。自动升级/回滚、自动配置写入、启用记录、登录及 Issue/PR 业务脚本尚未实现。根 package.json 用于仓库开发测试；其余空 JavaScript 产品脚本仅表达规划位置，不是业务实现。
