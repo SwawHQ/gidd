@@ -1,5 +1,5 @@
 # Copy to <repository>/.agents/skills/gidd/config.toml.
-# This config selects tool storage only; it does not enable GIDD or authenticate GitHub.
+# Repository settings; this file does not enable GIDD or authenticate GitHub.
 schema_version = 1
 
 [tools]
@@ -18,3 +18,10 @@ gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 # directory = "D:/tools/gidd"
 # Skill installation is managed by the Agent, independently of this tools path.
 # Custom mirrors must preserve the upstream download layout; hashes come from upstream.
+
+[github]
+# Expected identity and Git remote; these are not credentials or commit author settings.
+hostname = "github.com"
+# Set explicitly before identity/auth: gidd.cmd config set github.account YOUR_LOGIN
+# account = "YOUR_LOGIN"
+remote = "origin"

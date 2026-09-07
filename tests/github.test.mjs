@@ -7,6 +7,7 @@ import { adapter, assert, compile, dirname, existsSync, fixture, findGit, join, 
 const options = { repository: repo, gh: join(repo, 'fixture-gh.exe'), git: findGit(), account: 'octocat' };
 const success = text => ({ ok: true, reason: 'process_exit', text });
 const byId = (report, id) => report.checks.find(check => check.id === id);
+const githubConfig = '\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "origin"\n';
 function scenario(overrides = {}) {
   const calls = [];
   return { calls, execute: async (exe, args, settings) => {
@@ -94,6 +95,7 @@ test('CLI reads real Git author and remains read-only in an isolated repository'
     ok(run(git, ['-C', f.root, 'config', 'user.name', 'Fixture Author']));
     ok(run(git, ['-C', f.root, 'config', 'user.email', 'fixture@example.test']));
     ok(run(git, ['-C', f.root, 'remote', 'add', 'origin', 'git@github.com:owner/repo.git']));
+    write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n[tools]\ndirectory = ".fixture-tools"\n' + githubConfig);
     const before = snapshot(f.root);
     const result = run(process.execPath, [join(repo, 'skills/gidd/scripts/github.mjs'), '--repository', f.root, '--git', git]);
     assert.equal(result.status, 1);
@@ -112,7 +114,7 @@ test('CLI reads real Git author and remains read-only in an isolated repository'
     assert.equal(bootstrap.status, 2);
     assert.equal(json(bootstrap).reason, 'bootstrap_failed_run_offline_doctor');
     assert.deepEqual(snapshot(f.root), configured);
-    write(join(f.root, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\ndirectory = ".fixture-tools"\n');
+    write(join(f.root, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\ndirectory = ".fixture-tools"\n' + githubConfig);
     const valid = snapshot(f.root);
     const bootstrapped = ps(join(repo, 'skills/gidd/scripts/windows/check-identity.ps1'), ['-RepositoryPath', f.root],
       { env: { PATH: [dirname(process.execPath), dirname(git)].join(';') } });
@@ -211,19 +213,42 @@ test('authorization bootstrap skips old PATH gh and honors configured versions',
     stub(executable, oldGh, 'old');
     const config = join(f.root, '.agents/skills/gidd/config.toml');
     const configText = 'schema_version = 1\n[tools]\ndirectory = "tools"\n';
-    write(config, configText);
+    write(config, configText + githubConfig);
     const env = { PATH: [oldBin, dirname(process.execPath)].join(';'), GH_CONFIG_DIR: join(f.root, 'credentials'),
       GH_TOKEN: '', GITHUB_TOKEN: '', GH_ENTERPRISE_TOKEN: '', GITHUB_ENTERPRISE_TOKEN: '' };
-    const invoke = () => ps(join(repo, 'skills/gidd/scripts/windows/authorize.ps1'), ['-RepositoryPath', f.root, '-Account', 'Octocat'], { env });
+    const invoke = () => ps(join(repo, 'skills/gidd/scripts/windows/authorize.ps1'), ['-RepositoryPath', f.root], { env });
     assert.equal(json(invoke()).reason, 'gh_unavailable');
     assert.equal(existsSync(join(f.root,'tools')), false, 'Missing compatible gh must not trigger installation');
     stub(executable, managedGh, 'success', true);
-    write(config, configText + 'gh = { version = "2.99.0", source = "https://github.com/cli/cli/releases" }\n');
+    write(config, configText + 'gh = { version = "2.99.0", source = "https://github.com/cli/cli/releases" }\n' + githubConfig);
     assert.equal(json(invoke()).reason, 'gh_unavailable', 'The version floor must not bypass exact configuration');
-    write(config, configText);
+    write(config, configText + githubConfig);
     assert.equal(json(ok(invoke())).reason, 'authenticated');
     assert.equal(existsSync(managedGh + '.started'), true);
     assert.equal(existsSync(oldGh + '.started'), false);
+  } finally { f.dispose(); }
+});
+
+test('dev.cmd .auth requires identity config and respects configured storage', { timeout: 15000 }, () => {
+  const f = fixture();
+  try {
+    const checkout = join(f.root,'checkout');
+    for (const path of ['dev.cmd','scripts/dev','skills/gidd/scripts']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    const compiled = compile(f.root,'auth-gh.cs');
+    const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
+    for (const directory of ['.dev','.configured-tools']) {
+      if (directory !== '.dev') write(join(checkout,'.agents/skills/gidd/config.toml'),`schema_version = 1\n[tools]\ndirectory = "${directory}"\n` + githubConfig);
+      stub(compiled,join(checkout,directory,'gh/gh.exe'),'existing',true);
+      const before = snapshot(checkout);
+      const result = run(cmd,['/d','/s','/c',`""${join(checkout,'dev.cmd')}" .auth"`], {
+        windowsVerbatimArguments:true,
+        env:{PATH:dirname(process.execPath),GH_CONFIG_DIR:join(f.root,'credentials'),
+          GH_TOKEN:'',GITHUB_TOKEN:'',GH_ENTERPRISE_TOKEN:'',GITHUB_ENTERPRISE_TOKEN:''},
+      });
+      assert.equal(result.status,directory === '.dev' ? 2 : 0);
+      assert.equal(json(result).reason,directory === '.dev' ? 'config_missing' : 'already_authenticated');
+      assert.deepEqual(snapshot(checkout),before);
+    }
   } finally { f.dispose(); }
 });
 
@@ -232,17 +257,17 @@ test('dev.cmd .auth dispatches real JavaScript with one runtime and never instal
   try {
     const checkout = join(f.root, 'repo with spaces');
     for (const path of ['dev.cmd','scripts/dev','skills/gidd/scripts']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
-    write(join(checkout, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\ndirectory = ".fixture-tools"\n');
+    write(join(checkout, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\ndirectory = ".fixture-tools"\n' + githubConfig);
     const compiled = compile(f.root, 'auth-gh.cs'), gh = join(f.root, 'bin/gh.exe');
     mkdirSync(dirname(gh)); copyFileSync(compiled, gh); write(gh + '.mode', 'success');
     const env = { PATH: [dirname(process.execPath), dirname(gh)].join(';'), GH_CONFIG_DIR: join(f.root, 'credentials'),
       GH_TOKEN: '', GITHUB_TOKEN: '', GH_ENTERPRISE_TOKEN: '', GITHUB_ENTERPRISE_TOKEN: '' };
     const entry = join(checkout, 'dev.cmd'), cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
     const invoke = args => run(cmd, ['/d','/s','/c', `""${entry}" ${args}"`], { env, windowsVerbatimArguments: true });
-    const invalid = invoke('.auth');
+    const invalid = invoke('.auth Octocat');
     assert.notEqual(invalid.status, 0); assert.equal(existsSync(gh + '.started'), false);
     const before = snapshot(checkout);
-    const result = ok(invoke('.auth Octocat'));
+    const result = ok(invoke('.auth'));
     assert.equal(json(result).reason, 'authenticated');
     assert.deepEqual(JSON.parse(result.stderr.trim()), { schema: 'gidd.auth.event/v1', type: 'authorization_required', url: 'https://github.com/login/device', code: 'ABCD-EFGH' });
     assert.deepEqual(snapshot(checkout), before, 'Only gh credentials may change; no repository/tool writes');

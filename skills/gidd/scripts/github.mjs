@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { configurationHint, readGitHubConfiguration } from './config.mjs';
 
 // One deadline covers process exit AND pipe EOF (including inherited pipes).
 // Arbitrary command diagnostics can contain tokens or credential-bearing URLs.
@@ -153,18 +154,19 @@ async function main() {
   try {
     if (process.platform !== 'win32') throw new Error('unsupported_platform');
     const args = process.argv.slice(2), options = {};
-    const names = new Set(['repository', 'hostname', 'account', 'remote', 'git', 'gh']);
+    const names = new Set(['repository', 'git', 'gh']);
     for (let i = 0; i < args.length; i += 2) {
       const key = args[i].slice(2);
       if (!args[i].startsWith('--') || !names.has(key) || key in options || !args[i + 1]) throw new Error('invalid_arguments');
       options[key] = args[i + 1];
     }
-    const report = await checkIdentity(options);
+    const report = await checkIdentity({ ...options, ...readGitHubConfiguration(options.repository, ['hostname', 'account', 'remote']) });
     console.log(JSON.stringify(report, null, 2));
     process.exitCode = report.status === 'checks_passed' ? 0 : 1;
   } catch (error) {
     // Only validation errors from this module are public; never print process diagnostics.
-    const reason = /^(?:repository_must_be_absolute|invalid_hostname|invalid_account|invalid_remote_name|(?:git|gh)_must_be_absolute_executable|unsupported_platform|invalid_arguments)$/.test(error.message) ? error.message : 'identity_check_failed';
+    const reason = /^(?:config_[a-z_]+|repository_must_be_absolute|invalid_hostname|invalid_account|invalid_remote_name|(?:git|gh)_must_be_absolute_executable|unsupported_platform|invalid_arguments)$/.test(error.message) ? error.message : 'identity_check_failed';
+    const hint = configurationHint(reason); if (hint) console.error(hint);
     console.log(JSON.stringify({ schema: 'gidd.identity/v1', status: 'error', reason }));
     process.exitCode = 2;
   }

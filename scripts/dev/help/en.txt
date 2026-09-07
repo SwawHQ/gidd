@@ -10,13 +10,13 @@ GIDD repository development (Windows x64 / Windows PowerShell 5.1)
   dev.cmd .test-bun [suite]      Run only Bun tests.
   dev.cmd .test-node [suite]     Run only Node tests.
   dev.cmd .test-live            Test official downloads, installation and reuse under both runtimes.
-  dev.cmd .auth <account>        Explicit GitHub.com authorization; wait for the device code flow.
+  dev.cmd .auth                  Authorize the hostname/account in repository config.toml.
   dev.cmd bun [args...]          Run the configured portable Bun, without PATH fallback.
   dev.cmd node [args...]         Run the configured portable Node, without PATH fallback.
   dev.cmd sys bun [args...]  Run Bun from PATH only.
   dev.cmd sys node [args...] Run Node from PATH only.
 
-Suites: all (default), doctor, setup, process, dev, config, github.
+Suites: all (default), doctor, setup, process, dev, config, github, entry.
 Each suite reports its result and duration; failures include PowerShell rerun commands.
 Use a focused suite while editing, then run .test before submitting changes.
 No arguments show help. Help language: argument, GIDD_DEV_LANG, locale, then English.

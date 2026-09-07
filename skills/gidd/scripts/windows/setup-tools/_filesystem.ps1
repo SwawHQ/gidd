@@ -57,13 +57,14 @@ It is not a skill: do not add SKILL.md or repository config.toml here.
   install.json records the exact archive source and hashes actually installed.
 - Verified release hashes: skills/gidd/assets/runtimes.json (Bun/gh), scripts/dev/runtimes.json
   (development Node). Missing tools are downloaded; local package inputs are not supported.
-- Development Node includes node.exe and LICENSE, without npm.
+- Node includes node.exe and LICENSE, without npm.
 - install.json: tool version, upstream source and file hashes; do not edit it.
 - .cache/<tool>/: temporary downloads and extraction; removed after success
   or rebuilt on the next explicit retry. Download archives are not retained.
 - .cache/install.lock: OS file lock; its presence alone does not mean installation is running.
 
-Run setup-tools.ps1 again after an interruption. The installer verifies completed
+After an interruption, run the repository-installed skill's gidd.cmd setup
+again (optionally selecting bun, node or gh). The installer verifies completed
 directories and never overwrites an occupied final directory. A corrupt or unknown
 final directory requires explicit review; keep it until its ownership is clear.
 Do not delete .cache/ or its lock file while an installer is running.
