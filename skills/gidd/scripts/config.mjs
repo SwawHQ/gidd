@@ -240,7 +240,14 @@ export function configure(repository, action, key, value) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const args = process.argv.slice(2), options = {};
+    let args = process.argv.slice(2);
+    if (args[0] === '--encoded-arguments') {
+      if (args.length !== 2) throw new Error('config_invalid_arguments');
+      try { args = JSON.parse(Buffer.from(args[1], 'base64').toString('utf8')); }
+      catch { throw new Error('config_invalid_arguments'); }
+      if (!Array.isArray(args) || args.some(arg => typeof arg !== 'string')) throw new Error('config_invalid_arguments');
+    }
+    const options = {};
     for (let i = 0; i < args.length; i += 2) {
       const key = args[i].slice(2);
       if (!args[i].startsWith('--') || !['repository', 'action', 'key', 'value'].includes(key) || Object.hasOwn(options, key) || args[i + 1] === undefined) throw new Error('config_invalid_arguments');

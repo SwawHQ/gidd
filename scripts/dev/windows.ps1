@@ -1,9 +1,9 @@
-﻿# Keep runtime flags literal; PowerShell named-parameter binding would consume them.
+﻿# Runtime argv bypasses PowerShell; this script resolves tools and runs development operations.
 $Command = if ($args.Count) { [string]$args[0] } else { '.help' }
 $Argument = if ($args.Count -gt 1) { [string]$args[1] } else { '' }
-$Extra = @(); $runtimeArguments = @()
+$Extra = @()
 if ($args.Count -gt 2) { $Extra = @($args[2..($args.Count - 1)]) }
-if ($args.Count -gt 1) { $runtimeArguments = @($args[1..($args.Count - 1)]) }
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
@@ -31,11 +31,13 @@ function Test-DevManagedTool {
 }
 try {
     $runtimeSource = 'managed'
-    if ($Command -eq 'sys') {
-        if ($Argument -notin @('bun','node')) { throw 'Use dev.cmd sys bun ... or dev.cmd sys node ...' }
+    if ($Command -eq '.runtime-path') {
+        if ($Argument -notin @('bun','node') -or $Extra.Count -ne 1 -or $Extra[0] -notin @('managed','system')) {
+            throw 'Invalid internal runtime request.'
+        }
+        $runtimeSource = $Extra[0]
         $Command = $Argument
-        $runtimeSource = 'system'
-        $runtimeArguments = @($Extra)
+        $Argument = ''; $Extra = @()
     }
     if ($Command -eq '.setup') {
         if ($Argument -and $Argument -notin @('bun','node','gh')) { throw 'Use dev.cmd .setup bun, .setup node or .setup gh.' }
@@ -76,10 +78,8 @@ try {
         $name = $Command.ToLowerInvariant()
         $runtime = Get-DevTool $name -Source $runtimeSource
         if ($runtime.status -ne 'ready') { throw "$runtimeSource $name unavailable or invalid. Portable and PATH modes do not fall back to each other. Use dev.cmd .help." }
-        # Transfer argv as data, avoiding a second PowerShell native quoting pass.
-        $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $runtimeArguments -Compress)))
-        & $runtime.details.path (Join-Path $PSScriptRoot 'runtime.mjs') $payload
-        exit $LASTEXITCODE
+        [Console]::WriteLine($runtime.details.path)
+        exit 0
     }
     $setupTools = if ($Command -eq '.setup' -and $Argument) { @($Argument.ToLowerInvariant()) } else { @('bun','node') }
     $checks = @{}

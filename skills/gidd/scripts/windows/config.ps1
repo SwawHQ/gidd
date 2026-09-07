@@ -14,9 +14,11 @@ try {
     $checks = @(Get-DoctorToolChecks $storage.tools_root (Get-GiddDefaultTools))
     $runtime = @($checks | Where-Object id -eq 'runtime')[0]
     if ($runtime.status -ne 'ready') { throw 'runtime_unavailable' }
-    $arguments = @((Join-Path $PSScriptRoot '../config.mjs'), '--repository', $target, '--action', $Action)
+    $arguments = @('--repository', $target, '--action', $Action)
     if ($Action -eq 'set') { $arguments += @('--key', $Key, '--value', $Value) }
-    & $runtime.details.path @arguments
+    # PowerShell 5.1 native quoting can corrupt trailing backslashes in values.
+    $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $arguments -Compress)))
+    & $runtime.details.path (Join-Path $PSScriptRoot '../config.mjs') --encoded-arguments $payload
     exit $LASTEXITCODE
 } catch {
     $reason = if ($_.Exception.Message -match '^(runtime_unavailable|unsupported_platform|config_[a-z_]+(?::[a-z_.0-9]+)?)$') { $_.Exception.Message } else { 'config_bootstrap_failed' }

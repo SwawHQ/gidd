@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import { cpSync, statSync, readFileSync } from 'node:fs';
-import { assert, compile, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, repo, run, snapshot, stub, write } from './support/helpers.mjs';
+import { assert, compile, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, ps, repo, run, snapshot, stub, write } from './support/helpers.mjs';
+
+// Encode for the native Windows argv boundary, including terminal backslashes.
+const quote = value => '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';
 
 function installation(f) {
   const skill = join(f.root, 'installed skill & spaces'), target = join(f.root, '目标 repo & spaces');
@@ -8,7 +11,7 @@ function installation(f) {
   mkdirSync(target);
   write(join(target, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\ndirectory = "tools"\n');
   const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
-  const invoke = (args, env = {}) => run(cmd, ['/d','/s','/c', `""${join(skill, 'gidd.cmd')}" ${args.map(arg => `"${arg}"`).join(' ')}"`], {
+  const invoke = (args, env = {}) => run(cmd, ['/d','/s','/c', `""${join(skill, 'gidd.cmd')}" ${args.map(quote).join(' ')}"`], {
     cwd: skill, windowsVerbatimArguments: true, env: { PATH: '', GIDD_LANG: '', LC_ALL: 'en_US.UTF-8', ...env },
   });
   return { skill, target, invoke, args: ['--repository', target] };
@@ -189,6 +192,16 @@ test('config shell command creates and edits defaults; identity/auth reject miss
     }
     ok(s.invoke(['config','set','tools.directory','new tools',...s.args],env));
     assert.equal(existsSync(join(s.target,'new tools')),false);
+    for (const value of ['new tools\\', join(s.target, 'absolute tools') + '\\']) {
+      const changed = json(ok(s.invoke(['config','set','tools.directory',value,...s.args],env)));
+      assert.equal(changed.value,value);
+      assert.ok(readFileSync(config,'utf8').includes(`directory = ${JSON.stringify(value)}`));
+      assert.equal(existsSync(join(s.target, 'absolute tools')),false);
+    }
+    // Also exercise the shell-to-JavaScript boundary independently of gidd.cmd.
+    const direct = ps(join(s.skill,'scripts/windows/config.ps1'),
+      ['-RepositoryPath',s.target,'-Action','set','-Key','tools.directory','-Value','direct tools\\'],{env});
+    assert.equal(json(ok(direct)).value,'direct tools\\');
     ok(s.invoke(['config','show',...s.args],env));
   } finally { f.dispose(); }
 });
