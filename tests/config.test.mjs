@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import { statSync, symlinkSync, unlinkSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
-import { configure, editConfiguration, editGitHub, parseGitHub, readGitHubConfiguration } from '../skills/gidd/scripts/config.mjs';
+import { configure, editConfiguration, editGitHub, parseGitHub, readGitHubConfiguration } from '../.agents/skills/gidd/scripts/config.mjs';
 import { adapter, assert, code, compile, existsSync, findGit, fixture, hash, join, json, mkdirSync, ok, ps, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
 
 const configText = (directory='.devv') => `# preserved comment\nschema_version = 1\n[tools]\ndirectory = ${JSON.stringify(directory.replaceAll('\\','/'))} # inline comment\n`;
@@ -124,7 +124,7 @@ test('configuration: direct paths, home expansion, supported TOML, validation an
       assert.equal(hash(path),before,'Reading must preserve comments and formatting');
       assert.equal(existsSync(result.tools_root),false,'Resolving must not create storage');
     }
-    write(path,readFileSync(join(repo,'skills/gidd/assets/config.example.toml'),'utf8'));
+    write(path,readFileSync(join(repo,'.agents/skills/gidd/assets/config.example.toml'),'utf8'));
     samePath(json(ok(resolve())).tools_root,join(userProfilePath,'.agents/skills/gidd.tools'));
     for (const text of ['', configText().replace('= 1','= 2'), configText().replace('schema_version','Schema_version'), configText()+'directory="other"\n', configText()+'[tools]\n', configText()+'scope="repository"\n', configText()+'unexpected=true\n', configText().replace('[tools]','[other]'), configText().replace('".devv"','true'), configText().replace('".devv"','"bad\\npath"'), configText().replace('".devv"','"""multiline"""')]) {
       write(path,text); assert.notEqual(resolve().status,0,`Must reject unsupported config: ${text}`);
@@ -238,7 +238,7 @@ test('release resolution selects stable versions, verifies upstream hashes and p
         assert.match(resolve(name,'latest',{...data,[endpoint]:JSON.stringify(bad)}).stderr,/invalid_stable_release/);
       }
     }
-    const pinned=JSON.parse(readFileSync(join(repo,'skills/gidd/assets/runtimes.json'),'utf8')).tools[0];
+    const pinned=JSON.parse(readFileSync(join(repo,'.agents/skills/gidd/assets/runtimes.json'),'utf8')).tools[0];
     const pinnedPath=join(f.root,'pinned.json'); write(pinnedPath,JSON.stringify(pinned));
     const original=hash(pinnedPath);
     const verified=json(ok(resolve('bun',pinned.version,{}, {pinnedPath})));

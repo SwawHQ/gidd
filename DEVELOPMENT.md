@@ -2,9 +2,9 @@
 
 `dev.cmd` 管理 GIDD 源码仓库自身的开发环境。已验证目标为 Windows x64 和 Windows PowerShell 5.1；它不代表在这个仓库启用了 GIDD。
 
-技能发布入口为 `skills/gidd/gidd.cmd`，可先运行 `.\skills\gidd\gidd.cmd help zh`。产品用法见 [技能说明](skills/gidd/SKILL.md)；统一入口的开发验收使用 `.\dev.cmd .test entry`。帮助、诊断和工具准备使用系统 Shell，身份检查和授权由 Shell 启动共用 JavaScript。
+技能发布入口为 `.agents/skills/gidd/gidd.cmd`，可先运行 `.\.agents\skills\gidd\gidd.cmd help zh`。产品用法见 [技能说明](.agents/skills/gidd/SKILL.md)；统一入口的开发验收使用 `.\dev.cmd .test entry`。帮助、诊断和工具准备使用系统 Shell，身份检查和授权由 Shell 启动共用 JavaScript。
 
-`help`、`--help`、`-h` 等价。产品工具命令分别为 `setup bun`、`setup node`、`setup gh`。仓库安装在 `.agents/skills/gidd/` 时，入口从自身位置定位目标，支持 Git worktree；本项目 `skills/gidd/` 是发布源码，调用 doctor/setup/config/identity/auth 时须追加内部参数 `--repository <目标绝对路径>`。该参数仅供源码开发和测试指定目标，不属于公开用法，也不展示在 help 中。配置使用 `config show/set` 管理。完整技能安装、更新及共享工具目录迁移由 [Issue #14](https://github.com/SwawHQ/gidd/issues/14) 跟踪，工具配置与路径行为保持不变；配置增加可选的 github 表，执行身份检查或授权时相关字段必须齐备。
+`help`、`--help`、`-h` 等价。产品工具命令分别为 `setup bun`、`setup node`、`setup gh`。本项目的唯一技能源码位于 `.agents/skills/gidd/`，与仓库安装布局一致；入口从自身位置定位目标，支持 Git worktree，不依赖调用目录。可直接运行 `.\.agents\skills\gidd\gidd.cmd doctor` 或 `config show`。内部参数 `--repository <目标绝对路径>` 仅供开发和测试指定其他目标，普通调用无需追加，也不展示在 help 中。配置使用 `config show/set` 管理。完整技能安装、更新及共享工具目录迁移由 [Issue #14](https://github.com/SwawHQ/gidd/issues/14) 跟踪，工具配置与路径行为保持不变；配置增加可选的 github 表，执行身份检查或授权时相关字段必须齐备。
 
 ```powershell
 .\dev.cmd .help zh
@@ -38,7 +38,7 @@
 
 `.setup bun`、`.setup node`、`.setup gh` 分别只准备指定工具；不指定工具的 `.setup` 保留同时准备 Bun 和 Node 的行为。分别优先复用 PATH 中满足最低版本的工具（Bun 1.2.15、Node 24.0.0、gh 2.98.0），否则复用配置目录中校验有效的工具。固定版本还须精确匹配；缺失时使用 PowerShell 按配置解析版本、校验并下载。`.info` 分别报告两个运行时、配置要求和下载来源，仅当二者均可用时退出 0。
 
-默认 Node 使用最新 LTS、Bun 使用最新稳定版，只在需要下载时解析；已有可用版本继续复用，诊断与测试不检查更新。`skills/gidd/assets/runtimes.json` 和 `scripts/dev/runtimes.json` 保留 Bun/gh 与开发 Node 的已验证版本校验信息。版本解析、官方校验信息、下载、SHA-256 校验、独占锁、版本验证及中断恢复共用技能脚本，不通过 Bun 安装 Node，也不通过 Node 安装 Bun。已有工具目录版本冲突时保留并报错，自动升级/回滚命令尚未实现。
+默认 Node 使用最新 LTS、Bun 使用最新稳定版，只在需要下载时解析；已有可用版本继续复用，诊断与测试不检查更新。`.agents/skills/gidd/assets/runtimes.json` 和 `scripts/dev/runtimes.json` 保留 Bun/gh 与开发 Node 的已验证版本校验信息。版本解析、官方校验信息、下载、SHA-256 校验、独占锁、版本验证及中断恢复共用技能脚本，不通过 Bun 安装 Node，也不通过 Node 安装 Bun。已有工具目录版本冲突时保留并报错，自动升级/回滚命令尚未实现。
 
 Windows 上的 Bun 1.2.15 存在已复现的子进程兼容问题：启动不存在的程序后，后续 `spawnSync` 可能报告 `Out of memory`；脱离 GIDD 的最小示例也会触发。相同示例在 Bun 1.4.2 和 Node 上未复现，开发验收建议使用已验证的 Bun 1.4.2。`latest` 不会升级已有安装；升级前需确认实际使用的是 PATH 还是便携版本，便携版本应在安装器未运行时备份原 `bun/`，再执行 `.setup bun` 并确认选中的版本，最后运行完整 `.test`。
 
@@ -48,7 +48,7 @@ Windows 上的 Bun 1.2.15 存在已复现的子进程兼容问题：启动不存
 
 ## 配置与本地目录
 
-配置模板为 `skills/gidd/assets/config.example.toml`；实例固定在 `<仓库>/.agents/skills/gidd/config.toml`，格式、默认值和校验范围见 [工具存储配置](skills/gidd/references/configuration.md)。开发入口、doctor、技能工具初始化共用 `skills/gidd/scripts/windows/lib/_configuration.ps1` 解析，Windows 启动不依赖 Bun/Node 或额外模块。
+配置模板为 `.agents/skills/gidd/assets/config.example.toml`；实例固定在 `<仓库>/.agents/skills/gidd/config.toml`，格式、默认值和校验范围见 [工具存储配置](.agents/skills/gidd/references/configuration.md)。开发入口、doctor、技能工具初始化共用 `.agents/skills/gidd/scripts/windows/lib/_configuration.ps1` 解析，Windows 启动不依赖 Bun/Node 或额外模块。
 
 本仓库已实例化：
 
@@ -78,6 +78,8 @@ gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 
 本仓库精确忽略 `/.dev/` 与 `/.devv/`，没有忽略整个 `.agents/`；当前实例包含可移植的相对工具目录与预期 GitHub 身份，不保存凭据，也不表示启用 GIDD。更改 directory 时，应同时为新的下载目录设置精确忽略规则，配置读取器不会修改 Git 忽略规则。
 
+源码布局调整由 [Issue #16](https://github.com/SwawHQ/gidd/issues/16) 跟踪。`.agents/skills/gidd/config.toml` 虽与技能源码共处一处，仍是单独维护的本仓库实例。发布或复制技能时须排除该文件及 `config.toml.*` 锁/临时文件，保留目标已有配置；新配置以 `assets/config.example.toml` 为模板。测试通过 `copySkill()` 排除这些实例文件，再创建隔离配置，避免继承开发账号和工具路径。工具和下载缓存仍在 `.devv/`，不随技能复制；完整发布、安装及更新命令尚未实现。
+
 切换配置不会自动搬迁或删除旧工具。确认所有安装与测试退出、目标尚不存在后可显式迁移原目录，再用 `.setup` 验证完整性与复用。安装期间不得删除缓存根或锁文件。只清理明确拥有的工具目录；用户级存储可能由其他仓库共用，外部 PATH 工具不属于本项目。更多清理边界见配置文档。
 
 `dev.cmd` 仅在子进程范围隔离 PowerShell 模块路径，防止从 PowerShell 7 启动 PowerShell 5.1 时继承不兼容模块；不修改系统 PATH、Git 配置或用户级技能目录。显式 `.auth` 可以通过 gh 保存登录凭据。
@@ -89,11 +91,11 @@ gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 .\dev.cmd .auth
 ```
 
-先通过 `gidd.cmd config set github.hostname <主机>` 和 `config set github.account <账号>` 写入仓库配置；本源码入口须追加 `--repository <仓库绝对路径>`。`.auth` 不再接收账号参数，转发同一系统 Shell 分发器，仅使用配置中的主机和账号。需要 gh 2.98.0+ 和 Bun/Node 任一种；`.auth` 不下载工具，缺少 gh 时运行 `.setup gh`，缺少运行时时运行 `.setup bun` 或 `.setup node`。
+先通过 `.\.agents\skills\gidd\gidd.cmd config set github.hostname <主机>` 和 `config set github.account <账号>` 写入仓库配置。`.auth` 不再接收账号参数，转发同一系统 Shell 分发器，仅使用配置中的主机和账号。需要 gh 2.98.0+ 和 Bun/Node 任一种；`.auth` 不下载工具，缺少 gh 时运行 `.setup gh`，缺少运行时时运行 `.setup bun` 或 `.setup node`。
 
 `.setup gh` 不要求已安装 Bun/Node。优先复用 PATH 或配置目录内满足版本要求的 gh，否则共用技能的版本解析、下载、校验和安装代码，保存到配置工具根的 `gh/`（本仓库为 `.devv/gh/`）。它遵守 `tools.gh` 的版本与来源，并要求至少 2.98.0；已有目录损坏或版本冲突时保留并报错，不自动升级覆盖。该命令不发起登录，不修改系统 PATH。
 
-入口先核验并复用匹配身份；否则在需要授权时显示本次 URL 和代码，等待用户在网页授权，最后验证实际账号。等待时保留进程，成功、失败、取消或超时后退出，不启动常驻服务。凭据由 gh 管理，可继承调用环境选定的 GH_CONFIG_DIR；不更改 Git 凭据助手或启用仓库。当前账号不匹配时明确报错，不自动切换。详见 [设备授权协议与凭据边界](skills/gidd/references/authorization.md)。
+入口先核验并复用匹配身份；否则在需要授权时显示本次 URL 和代码，等待用户在网页授权，最后验证实际账号。等待时保留进程，成功、失败、取消或超时后退出，不启动常驻服务。凭据由 gh 管理，可继承调用环境选定的 GH_CONFIG_DIR；不更改 Git 凭据助手或启用仓库。当前账号不匹配时明确报错，不自动切换。详见 [设备授权协议与凭据边界](.agents/skills/gidd/references/authorization.md)。
 
 `.test github` 只执行离线 fixture，覆盖授权、复用、不匹配、超时、取消及入口调用；不会申请真实代码或修改真实登录。人工授权验证需单独运行 `.auth`，不能把普通测试通过当作真实授权完成。
 
@@ -107,7 +109,7 @@ gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 
 `bun run test` 使用相同的双运行时入口；`bun run test:bun`、`bun run test:node` 分别选择一种。已有 npm 时也可以使用相应的 `npm run` 命令，但便携安装不提供 npm。
 
-测试保留诊断只读、依赖缺失、PATH/受管工具选择、Node/Bun 复用、凭据脱敏、损坏目标保留、SHA/ZIP/版本拒绝、junction 拒绝、并发锁、强制终止恢复和共享超时期限等场景。`github` 组使用离线 fixture 验证 API 账号匹配、独立失败、凭据脱敏、进程超时和只读 Git 作者检查；不会触碰真实登录。产品身份检查用法见 [身份检查协议](skills/gidd/references/identity.md)，该入口需显式调用才会联网。其他空 JavaScript 文件仍是规划位置。
+测试保留诊断只读、依赖缺失、PATH/受管工具选择、Node/Bun 复用、凭据脱敏、损坏目标保留、SHA/ZIP/版本拒绝、junction 拒绝、并发锁、强制终止恢复和共享超时期限等场景。`github` 组使用离线 fixture 验证 API 账号匹配、独立失败、凭据脱敏、进程超时和只读 Git 作者检查；不会触碰真实登录。产品身份检查用法见 [身份检查协议](.agents/skills/gidd/references/identity.md)，该入口需显式调用才会联网。其他空 JavaScript 文件仍是规划位置。
 
 官方归档验证需要显式运行：
 

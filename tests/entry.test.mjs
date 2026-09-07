@@ -1,13 +1,14 @@
 import { test } from 'node:test';
-import { cpSync, statSync, readFileSync } from 'node:fs';
-import { assert, compile, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, ps, repo, run, snapshot, stub, write } from './support/helpers.mjs';
+import { statSync, readFileSync } from 'node:fs';
+import { assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, ps, run, snapshot, stub, write } from './support/helpers.mjs';
 
 // Encode for the native Windows argv boundary, including terminal backslashes.
 const quote = value => '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';
 
 function installation(f) {
   const skill = join(f.root, 'installed skill & spaces'), target = join(f.root, '目标 repo & spaces');
-  cpSync(join(repo, 'skills/gidd'), skill, { recursive: true });
+  copySkill(skill);
+  assert.equal(existsSync(join(skill, 'config.toml')), false, 'Installation must not inherit development configuration');
   mkdirSync(target);
   write(join(target, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\ndirectory = "tools"\n');
   const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
@@ -94,7 +95,7 @@ test('repository installation locates its own Git worktree independently of cwd'
     ok(run(git, ['-C',target,'worktree','add','-b','fixture',worktree]));
     const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
     const unbound = join(f.root,'user profile/.agents/skills/gidd');
-    cpSync(join(repo,'skills/gidd'),unbound,{recursive:true});
+    copySkill(unbound);
     const rejected = run(cmd, ['/d','/s','/c', `""${join(unbound,'gidd.cmd')}" doctor"`], {
       cwd: target, windowsVerbatimArguments: true, env: { PATH: dirname(git) },
     });
@@ -102,7 +103,7 @@ test('repository installation locates its own Git worktree independently of cwd'
     assert.equal(json(rejected).reason,'repository_required_for_unbound_entry');
     for (const root of [target,worktree]) {
       const skill = join(root,'.agents/skills/gidd');
-      cpSync(join(repo,'skills/gidd'),skill,{recursive:true});
+      copySkill(skill);
       write(join(skill,'config.toml'),'schema_version = 1\n[tools]\ndirectory = "tools"\n');
       const before = snapshot(root);
       const result = run(cmd, ['/d','/s','/c', `""${join(skill,'gidd.cmd')}" doctor"`], {

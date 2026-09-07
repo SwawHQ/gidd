@@ -1,14 +1,22 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const repo = fileURLToPath(new URL('../../', import.meta.url));
-export const code = join(repo, 'skills/gidd/scripts/windows');
+export const code = join(repo, '.agents/skills/gidd/scripts/windows');
 export const support = join(repo, 'tests/support');
+export function copySkill(destination) {
+  const source = join(repo, '.agents/skills/gidd');
+  const config = join(source, 'config.toml');
+  // Repository settings and in-flight editor files are not part of the skill.
+  cpSync(source, destination, { recursive: true,
+    filter: path => path !== config && !path.startsWith(config + '.'),
+  });
+}
 const windowsRoot = process.env.SystemRoot || process.env.SYSTEMROOT || 'C:\\Windows';
 export const shell = join(windowsRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');
 export function environment(overrides = {}) {

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import { copyFileSync, cpSync, mkdirSync } from 'node:fs';
-import { checkIdentity, runCommand } from '../skills/gidd/scripts/github.mjs';
-import { authorize } from '../skills/gidd/scripts/auth.mjs';
+import { checkIdentity, runCommand } from '../.agents/skills/gidd/scripts/github.mjs';
+import { authorize } from '../.agents/skills/gidd/scripts/auth.mjs';
 import { adapter, assert, compile, dirname, existsSync, fixture, findGit, join, json, ok, ps, readFileSync, repo, run, snapshot, stub, write } from './support/helpers.mjs';
 
 const options = { repository: repo, gh: join(repo, 'fixture-gh.exe'), git: findGit(), account: 'octocat' };
@@ -97,26 +97,26 @@ test('CLI reads real Git author and remains read-only in an isolated repository'
     ok(run(git, ['-C', f.root, 'remote', 'add', 'origin', 'git@github.com:owner/repo.git']));
     write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n[tools]\ndirectory = ".fixture-tools"\n' + githubConfig);
     const before = snapshot(f.root);
-    const result = run(process.execPath, [join(repo, 'skills/gidd/scripts/github.mjs'), '--repository', f.root, '--git', git]);
+    const result = run(process.execPath, [join(repo, '.agents/skills/gidd/scripts/github.mjs'), '--repository', f.root, '--git', git]);
     assert.equal(result.status, 1);
     const report = json(result);
     assert.equal(byId(report, 'github.api').status, 'missing');
     assert.equal(byId(report, 'git.author').details.name, 'Fixture Author');
     assert.equal(byId(report, 'git.remote_read').reason, 'https_remote_required');
     assert.deepEqual(snapshot(f.root), before);
-    const invalid = run(process.execPath, [join(repo, 'skills/gidd/scripts/github.mjs'), '--repository', '.']);
+    const invalid = run(process.execPath, [join(repo, '.agents/skills/gidd/scripts/github.mjs'), '--repository', '.']);
     assert.equal(invalid.status, 2);
     assert.equal(json(invalid).reason, 'repository_must_be_absolute');
     // Startup errors must produce JSON and never initialize tools or config.
     write(join(f.root, '.agents/skills/gidd/config.toml'), 'invalid = true');
     const configured = snapshot(f.root);
-    const bootstrap = ps(join(repo, 'skills/gidd/scripts/windows/check-identity.ps1'), ['-RepositoryPath', f.root]);
+    const bootstrap = ps(join(repo, '.agents/skills/gidd/scripts/windows/check-identity.ps1'), ['-RepositoryPath', f.root]);
     assert.equal(bootstrap.status, 2);
     assert.equal(json(bootstrap).reason, 'bootstrap_failed_run_offline_doctor');
     assert.deepEqual(snapshot(f.root), configured);
     write(join(f.root, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\ndirectory = ".fixture-tools"\n' + githubConfig);
     const valid = snapshot(f.root);
-    const bootstrapped = ps(join(repo, 'skills/gidd/scripts/windows/check-identity.ps1'), ['-RepositoryPath', f.root],
+    const bootstrapped = ps(join(repo, '.agents/skills/gidd/scripts/windows/check-identity.ps1'), ['-RepositoryPath', f.root],
       { env: { PATH: [dirname(process.execPath), dirname(git)].join(';') } });
     assert.equal(bootstrapped.status, 1, bootstrapped.stdout + bootstrapped.stderr);
     assert.equal(byId(json(bootstrapped), 'github.api').reason, 'gh_unavailable');
@@ -216,7 +216,7 @@ test('authorization bootstrap skips old PATH gh and honors configured versions',
     write(config, configText + githubConfig);
     const env = { PATH: [oldBin, dirname(process.execPath)].join(';'), GH_CONFIG_DIR: join(f.root, 'credentials'),
       GH_TOKEN: '', GITHUB_TOKEN: '', GH_ENTERPRISE_TOKEN: '', GITHUB_ENTERPRISE_TOKEN: '' };
-    const invoke = () => ps(join(repo, 'skills/gidd/scripts/windows/authorize.ps1'), ['-RepositoryPath', f.root], { env });
+    const invoke = () => ps(join(repo, '.agents/skills/gidd/scripts/windows/authorize.ps1'), ['-RepositoryPath', f.root], { env });
     assert.equal(json(invoke()).reason, 'gh_unavailable');
     assert.equal(existsSync(join(f.root,'tools')), false, 'Missing compatible gh must not trigger installation');
     stub(executable, managedGh, 'success', true);
@@ -233,7 +233,7 @@ test('dev.cmd .auth requires identity config and respects configured storage', {
   const f = fixture();
   try {
     const checkout = join(f.root,'checkout');
-    for (const path of ['dev.cmd','scripts/dev','skills/gidd/scripts']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
     const compiled = compile(f.root,'auth-gh.cs');
     const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
     for (const directory of ['.dev','.configured-tools']) {
@@ -256,7 +256,7 @@ test('dev.cmd .auth dispatches real JavaScript with one runtime and never instal
   const f = fixture();
   try {
     const checkout = join(f.root, 'repo with spaces');
-    for (const path of ['dev.cmd','scripts/dev','skills/gidd/scripts']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
+    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
     write(join(checkout, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\ndirectory = ".fixture-tools"\n' + githubConfig);
     const compiled = compile(f.root, 'auth-gh.cs'), gh = join(f.root, 'bin/gh.exe');
     mkdirSync(dirname(gh)); copyFileSync(compiled, gh); write(gh + '.mode', 'success');

@@ -8,7 +8,7 @@ live('official Bun/gh downloads, post-install doctor and reuse', { timeout: 3000
     const skills=join(f.root,'技能 tools');
     write(join(f.root,'.agents/skills/gidd/config.toml'),`schema_version = 1\n[tools]\ndirectory = ${JSON.stringify(join(skills,'gidd.tools').replaceAll('\\','/'))}\n`);
     const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
-    const invoke=tool => run(cmd,['/d','/s','/c',`""${join(repo,'skills/gidd/gidd.cmd')}" setup ${tool} --repository "${f.root}""`],
+    const invoke=tool => run(cmd,['/d','/s','/c',`""${join(repo,'.agents/skills/gidd/gidd.cmd')}" setup ${tool} --repository "${f.root}""`],
       {windowsVerbatimArguments:true,env:{PATH:''},timeout:300000});
     for (const tool of ['gh','bun']) {
       const report=json(ok(invoke(tool)));
@@ -30,7 +30,7 @@ live('official Node download and reuse through the public shell entry', { timeou
     const root=join(f.root,'tools');
     write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n[tools]\ndirectory = "tools"\n');
     const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
-    const invoke=() => run(cmd,['/d','/s','/c',`""${join(repo,'skills/gidd/gidd.cmd')}" setup node --repository "${f.root}""`],
+    const invoke=() => run(cmd,['/d','/s','/c',`""${join(repo,'.agents/skills/gidd/gidd.cmd')}" setup node --repository "${f.root}""`],
       {windowsVerbatimArguments:true,env:{PATH:''},timeout:300000});
     assert.deepEqual(json(ok(invoke())).tools.map(t=>[t.name,t.action]),[['node','installed']]);
     assert.equal(existsSync(join(root,'bun')),false);
