@@ -9,3 +9,8 @@ directory = ".devv"
 node = { version = "lts", source = "https://nodejs.org/dist" }
 bun = { version = "latest", source = "https://github.com/oven-sh/bun/releases" }
 gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
+
+[github]
+hostname = "github.com"
+account = "bornwhy"
+remote = "origin"

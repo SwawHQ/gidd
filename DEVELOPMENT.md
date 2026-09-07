@@ -2,6 +2,10 @@
 
 `dev.cmd` 管理 GIDD 源码仓库自身的开发环境。已验证目标为 Windows x64 和 Windows PowerShell 5.1；它不代表在这个仓库启用了 GIDD。
 
+技能发布入口为 `skills/gidd/gidd.cmd`，可先运行 `.\skills\gidd\gidd.cmd help zh`。产品用法见 [技能说明](skills/gidd/SKILL.md)；统一入口的开发验收使用 `.\dev.cmd .test entry`。帮助、诊断和工具准备使用系统 Shell，身份检查和授权由 Shell 启动共用 JavaScript。
+
+`help`、`--help`、`-h` 等价。产品工具命令分别为 `setup bun`、`setup node`、`setup gh`。仓库安装在 `.agents/skills/gidd/` 时，入口从自身位置定位目标，支持 Git worktree；本项目 `skills/gidd/` 是发布源码，调用 doctor/setup/config/identity/auth 时须追加内部参数 `--repository <目标绝对路径>`。该参数仅供源码开发和测试指定目标，不属于公开用法，也不展示在 help 中。配置使用 `config show/set` 管理。完整技能安装、更新及共享工具目录迁移由 [Issue #14](https://github.com/SwawHQ/gidd/issues/14) 跟踪，工具配置与路径行为保持不变；配置增加可选的 github 表，执行身份检查或授权时相关字段必须齐备。
+
 ```powershell
 .\dev.cmd .help zh
 .\dev.cmd .help en
@@ -72,7 +76,7 @@ gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 
 目录按需建立，复用外部工具不会仅因配置存在而建立下载目录。配置显式展示版本策略和下载根；镜像须保留上游布局，版本及校验信息仍从官方来源取得。安装时展示确切版本与完整下载 URL，install.json 保存实际来源和校验值。下载、解压暂存在 `<工具根>/.cache/<工具>/download.part` 与 `payload/`，成功后删除对应工具子目录，保留缓存根与锁文件。中断后显式重试重建暂存，不长期保留压缩包或提供断点续传。
 
-本仓库精确忽略 `/.dev/` 与 `/.devv/`，没有忽略整个 `.agents/`；当前实例只含可移植的相对目录，不保存凭据，也不表示启用 GIDD。更改 directory 时，应同时为新的下载目录设置精确忽略规则，配置读取器不会修改 Git 忽略规则。
+本仓库精确忽略 `/.dev/` 与 `/.devv/`，没有忽略整个 `.agents/`；当前实例包含可移植的相对工具目录与预期 GitHub 身份，不保存凭据，也不表示启用 GIDD。更改 directory 时，应同时为新的下载目录设置精确忽略规则，配置读取器不会修改 Git 忽略规则。
 
 切换配置不会自动搬迁或删除旧工具。确认所有安装与测试退出、目标尚不存在后可显式迁移原目录，再用 `.setup` 验证完整性与复用。安装期间不得删除缓存根或锁文件。只清理明确拥有的工具目录；用户级存储可能由其他仓库共用，外部 PATH 工具不属于本项目。更多清理边界见配置文档。
 
@@ -82,10 +86,10 @@ gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 
 ```powershell
 .\dev.cmd .setup gh
-.\dev.cmd .auth octocat
+.\dev.cmd .auth
 ```
 
-账号必填，开发快捷入口使用 github.com；其他主机使用技能的 `scripts/windows/authorize.ps1 -Hostname`。需要 gh 2.98.0+ 和 Bun/Node 任一种；`.auth` 不下载工具，缺少 gh 时运行 `.setup gh`，缺少运行时时运行 `.setup bun` 或 `.setup node`。
+先通过 `gidd.cmd config set github.hostname <主机>` 和 `config set github.account <账号>` 写入仓库配置；本源码入口须追加 `--repository <仓库绝对路径>`。`.auth` 不再接收账号参数，转发同一系统 Shell 分发器，仅使用配置中的主机和账号。需要 gh 2.98.0+ 和 Bun/Node 任一种；`.auth` 不下载工具，缺少 gh 时运行 `.setup gh`，缺少运行时时运行 `.setup bun` 或 `.setup node`。
 
 `.setup gh` 不要求已安装 Bun/Node。优先复用 PATH 或配置目录内满足版本要求的 gh，否则共用技能的版本解析、下载、校验和安装代码，保存到配置工具根的 `gh/`（本仓库为 `.devv/gh/`）。它遵守 `tools.gh` 的版本与来源，并要求至少 2.98.0；已有目录损坏或版本冲突时保留并报错，不自动升级覆盖。该命令不发起登录，不修改系统 PATH。
 
@@ -97,7 +101,7 @@ gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 
 日常修改先用 `.test <测试组>` 验证受影响部分，提交前执行完整 `.test`。每组显示 PASS/FAIL 和耗时，结束后汇总失败文件及可复制的 PowerShell 复跑命令；双运行时执行结束后显示各运行时结果与总耗时。汇总按测试文件计数，不替代运行器输出的用例断言详情。一组失败不会阻止后续组或另一运行时执行。本地测试无需等待 GitHub CI。
 
-默认 `.test` 先检查 Bun 和 Node 均可用，再依次使用二者执行同一套 `tests/*.test.mjs` 离线用例；任一运行失败，命令整体失败。支持测试组 `all`（默认）、`doctor`、`setup`、`process`、`dev`、`config`、`github`。缺少任一运行时就明确报错，不安装、不联网，也不把未执行的运行时算作通过。`.test-bun` 和 `.test-node` 只检查并运行指定运行时，适合定位问题，不能替代双运行时验收。
+默认 `.test` 先检查 Bun 和 Node 均可用，再依次使用二者执行同一套 `tests/*.test.mjs` 离线用例；任一运行失败，命令整体失败。支持测试组 `all`（默认）、`doctor`、`setup`、`process`、`dev`、`config`、`github`、`entry`。缺少任一运行时就明确报错，不安装、不联网，也不把未执行的运行时算作通过。`.test-bun` 和 `.test-node` 只检查并运行指定运行时，适合定位问题，不能替代双运行时验收。
 
 测试使用 `node:test` 与 `node:assert/strict`，Bun 通过自身测试运行器执行，Node 使用 `--test`。用例、断言、临时目录、进程调度共用 JavaScript；`scripts/dev/dev.mjs` 适配启动参数，两种运行时均按文件串行启动独立进程，隔离测试状态，也避免 Bun 1.2.15 的 `node:test` 多文件注册缓存漏执行。`tests/support/windows.ps1` 仅调用被测 PowerShell 函数、检查 BOM 后解析语法、编译 fixture executable 和构造 ZIP。C# fixture 用于模拟 Windows executable 和继承输出管道的进程，不属于产品。
 

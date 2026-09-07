@@ -1,14 +1,14 @@
 # Windows 基础诊断
 
-入口：`scripts/windows/doctor.ps1`。当前验证平台为 Windows x64、Windows PowerShell 5.1；不要求先安装 Bun、Node 或 gh。
+公开入口：`gidd.cmd doctor`。当前验证平台为 Windows x64、Windows PowerShell 5.1；不要求先安装 Bun、Node 或 gh。
 
-从实际技能安装目录执行，例如：
+从目标仓库的 `.agents/skills/gidd/` 安装目录执行：
 
 ```powershell
-powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\scripts\windows\doctor.ps1 -RepositoryPath 'D:\work\project'
+.\gidd.cmd doctor
 ```
 
-RepositoryPath 是必需的绝对路径。Agent 根据用户指定项目传入，不将技能源码目录当作目标仓库；Shell 不展开的 `~` 须由调用方展开。目标可以是仓库子目录，工具定位先按最近的 `.git` 标记确定根目录，Git 可用时另行验证工作树；配置不继承用户级文件。`tools.directory` 独立于技能安装位置，doctor 不建立工具目录。
+仓库内 `.agents/skills/gidd/` 的入口自动定位含 `.git` 标记的目标根（含 worktree），不依赖工作目录。Git 可用时另行验证工作树；配置不继承用户级文件。`tools.directory` 独立于技能安装位置，doctor 不建立工具目录。
 
 ## 源码归属
 
@@ -34,7 +34,7 @@ RepositoryPath 是必需的绝对路径。Agent 根据用户指定项目传入�
 | 工具 | 基础版本门槛 | PATH 后的候选 |
 | --- | --- | --- |
 | Git | 2.0 | 无 |
-| Node.js | 22.0 | `<工具根>/node/node.exe`；只复用，不由技能入口下载 |
+| Node.js | 22.0 | `<工具根>/node/node.exe`；可用 `gidd.cmd setup node` 准备 |
 | Bun | 1.2 | `<工具根>/bun/bun.exe` |
 | gh | 2.0 | `<工具根>/gh/gh.exe` |
 
