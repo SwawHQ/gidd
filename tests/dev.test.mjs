@@ -12,7 +12,7 @@ test('PowerShell sources have UTF-8 BOM before parsing', { timeout: 120000 }, ()
         if (entry.isDirectory()) visit(path); else if (entry.name.endsWith('.ps1')) paths.push(path);
       }
     }
-    for (const dir of ['scripts','skills/gidd/scripts','tests']) visit(join(repo,dir));
+    for (const dir of ['scripts','.agents/skills/gidd/scripts','tests']) visit(join(repo,dir));
     assert.equal(json(ok(adapter(f.root,{action:'syntax',paths}))).checked,paths.length);
   } finally { f.dispose(); }
 });
@@ -47,7 +47,7 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
   const f=fixture();
   try {
     const checkout=join(f.root,'开发 repo & spaces'); mkdirSync(checkout);
-    for (const path of ['dev.cmd','scripts/dev','skills/gidd/scripts/windows','skills/gidd/assets']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts/windows','.agents/skills/gidd/assets']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
     const entry=join(checkout,'dev.cmd'), cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
     const invoke=(args, env={}) => run(cmd,['/d','/s','/c',`""${entry}" ${args.join(' ')}"`],{
       cwd:f.root,windowsVerbatimArguments:true,env:{PATH:'',GIDD_DEV_LANG:'',LC_ALL:'en_US.UTF-8',...env},
@@ -123,7 +123,7 @@ test('dev.cmd .setup selects one tool, reuses gh and rejects local package input
   const f = fixture();
   try {
     const checkout = join(f.root, 'repo with spaces');
-    for (const path of ['dev.cmd','scripts/dev','skills/gidd/scripts/windows','skills/gidd/assets']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts/windows','.agents/skills/gidd/assets']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
     const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
     const invoke = (args = '', path = '', tool = 'gh') => run(cmd, ['/d','/s','/c', `""${join(checkout,'dev.cmd')}" .setup ${tool} ${args}"`], { windowsVerbatimArguments:true, env:{PATH:path} });
     assert.notEqual(invoke('relative-path').status, 0);
@@ -161,7 +161,7 @@ test('dev.cmd bun/node forwards argv, stdin, cwd and exit code using the selecte
   const f = fixture();
   try {
     const checkout = join(f.root, '开发 repo & spaces');
-    for (const path of ['dev.cmd','scripts/dev','skills/gidd/scripts/windows','skills/gidd/assets']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
+    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts/windows','.agents/skills/gidd/assets']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
     const config = join(checkout, '.agents/skills/gidd/config.toml');
     write(config, 'schema_version = 1\n[tools]\ndirectory = ".fixture-tools"\n');
     const name = process.versions.bun ? 'bun' : 'node', other = name === 'bun' ? 'node' : 'bun';
