@@ -22,17 +22,17 @@ test('test command executes every suite and propagates failures', { timeout: 120
   try {
     const runner=join(f.root,'scripts/dev/dev.mjs');
     write(runner,readFileSync(join(repo,'scripts/dev/dev.mjs'),'utf8'));
-    for (const suite of ['doctor','setup','process','dev','config','github']) {
+    for (const suite of ['doctor','setup','process','dev','config','github','entry']) {
       const marker=join(f.root,`${suite}.ran`);
       write(join(f.root,`tests/${suite}.test.mjs`),
         `import {test} from 'node:test'; import {writeFileSync} from 'node:fs';\ntest('${suite}', () => { writeFileSync(${JSON.stringify(marker)}, 'ran'); ${suite === 'setup' ? "throw new Error('expected fixture failure');" : ''} });\n`);
     }
     const result=run(process.execPath,[runner,'.test']);
     assert.equal(result.status,1,'A failing suite must fail the command');
-    assert.match(result.stdout,/Suite summary: 5 passed, 1 failed/);
+    assert.match(result.stdout,/Suite summary: 6 passed, 1 failed/);
     assert.match(result.stdout,/FAIL tests\/setup.test.mjs \(\d+\.\d+s\)/);
     assert.match(result.stdout,/Rerun \(PowerShell\): .*\.test-(bun|node) setup/);
-    for (const suite of ['doctor','setup','process','dev','config','github']) {
+    for (const suite of ['doctor','setup','process','dev','config','github','entry']) {
       assert.equal(existsSync(join(f.root,`${suite}.ran`)),true,`${suite} must actually execute, including after a failure`);
     }
     const selected=ok(run(process.execPath,[runner,'.test','doctor']));
@@ -176,19 +176,26 @@ test('dev.cmd bun/node forwards argv, stdin, cwd and exit code using the selecte
     assert.notEqual(invoke(`${name} --version`).status, 0, 'Portable mode must not use an available PATH runtime');
     assert.notEqual(invoke('sys').status, 0);
     assert.notEqual(invoke('sys unknown').status, 0);
-    const result = invoke(`sys ${name} "${script}" "two words" "" --Argument --help "tail\\\\"`, 'stdin fixture');
+    const result = invoke(`sys ${name} "${script}" "two words" "" --Argument --help "tail\\\\" - "a & b"`, 'stdin fixture');
     assert.equal(result.status, 17, result.stderr);
     const output = json(result);
-    assert.deepEqual(output.args, ['two words', '', '--Argument', '--help', 'tail\\']);
+    assert.deepEqual(output.args, ['two words', '', '--Argument', '--help', 'tail\\', '-', 'a & b']);
     assert.equal(statSync(output.cwd, { bigint: true }).ino, statSync(f.root, { bigint: true }).ino);
     assert.equal(output.input, 'stdin fixture');
     assert.match(result.stderr, /fixture stderr/);
     assert.equal(existsSync(join(checkout, '.fixture-tools')), false, 'Forwarding must not install');
     const evaluated = ok(invoke(`sys ${name} -e "console.log('evaluation works')"`));
     assert.match(evaluated.stdout, /evaluation works/);
+    const inputScript = "console.log('stdin script works'); process.exit(19);";
+    const systemInput = invoke(`sys ${name} -`, inputScript);
+    assert.equal(systemInput.status, 19, systemInput.stderr);
+    assert.match(systemInput.stdout, /stdin script works/);
     // A real managed executable wins over the same runtime on PATH.
     const managed = join(checkout, `.fixture-tools/${name}/${name}.exe`);
     stub(process.execPath, managed, undefined, true);
+    const managedInput = invoke(`${name} -`, inputScript);
+    assert.equal(managedInput.status, 19, managedInput.stderr);
+    assert.match(managedInput.stdout, /stdin script works/);
     const selected = json(invoke(`${name} "${script}"`));
     assert.equal(statSync(selected.exe, { bigint: true }).ino, statSync(managed, { bigint: true }).ino);
     const system = json(invoke(`sys ${name} "${script}" --system sys`));

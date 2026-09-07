@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const [command, argument = '', ...extra] = process.argv.slice(2);
-const suites = ['doctor', 'setup', 'process', 'dev', 'config', 'github'];
+const suites = ['doctor', 'setup', 'process', 'dev', 'config', 'github', 'entry'];
 if (process.platform !== 'win32') {
   console.error('Development tests currently require Windows. Other platforms are not yet verified.');
   process.exit(1);
@@ -11,7 +11,7 @@ if (process.platform !== 'win32') {
 if (extra.length || !['.test', '.test-live'].includes(command) ||
     (command === '.test-live' && argument) ||
     (command === '.test' && argument && argument !== 'all' && !suites.includes(argument))) {
-  console.error('Use dev.cmd .test [all|doctor|setup|process|dev|config|github] or .test-live.');
+  console.error('Use dev.cmd .test [all|doctor|setup|process|dev|config|github|entry] or .test-live.');
   process.exit(1);
 }
 const files = command === '.test-live' ? ['tests/live.test.mjs'] :

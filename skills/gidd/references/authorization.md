@@ -5,12 +5,12 @@
 Windows 入口（可用 Node/Bun 任一种）：
 
 ```powershell
-powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <技能目录>\scripts\windows\authorize.ps1 -RepositoryPath D:\projects\example -Account octocat -Hostname github.com
+& "<目标仓库>\.agents\skills\gidd\gidd.cmd" auth
 ```
 
-主机默认 `github.com`，目标须为现有本地盘绝对路径，预期账号必填。启动器按既有工具配置复用 gh 和运行时，不安装工具。缺失时先由 Agent 根据用户授权使用 [工具准备入口](setup.md)。申请授权要求 gh 2.98.0 或更新版本。
+仓库内 `.agents/skills/gidd/` 的入口从自身位置自动定位目标（含 worktree），不依赖工作目录。主机与预期账号只读取仓库配置中的 `github.hostname` 和 `github.account`；缺失即报错，不临时覆盖或推断账号。`github.remote` 不参与授权，配置设置见 [configuration.md](configuration.md)。启动器按既有工具配置复用 gh 和运行时，不安装工具。缺失时先由 Agent 根据用户授权使用 [工具准备入口](setup.md)。申请授权要求 gh 2.98.0 或更新版本。
 
-已定位工具时可直接运行 `scripts/auth.mjs --repository <绝对路径> --account <预期账号> --hostname <主机> --gh <gh可执行文件绝对路径>`。业务逻辑使用 Node/Bun 共有标准 API；当前 CLI 平台验收仅为 Windows x64，其他平台启动/取消行为仍待测试，不宣称已支持。
+业务逻辑使用 Node/Bun 共有标准 API；当前 CLI 平台验收仅为 Windows x64，其他平台启动/取消行为仍待测试，不宣称已支持。
 
 ## 流程与输出
 
@@ -31,6 +31,6 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File <技能�
 
 登录开始后的失败或账号不匹配可能发生在 gh 已保存凭据之后，因此结果标记 `credentials_may_have_changed=true`。Agent 应报告实际结果；不擅自 logout、删除凭据或回滚账号。成功仅确认 GitHub API 身份，Git 传输和 commit 作者仍通过 [身份检查](identity.md) 分别报告，不声称已能 push，也不启用仓库。
 
-离线用例使用模拟 gh，不读取真实登录。已用真实 gh 2.98.0 在 Node/Bun 下验证设备信息输出和取消；维护者已在本仓库运行 `dev.cmd .auth <预期账号>` 并确认通过。该人工结果由维护者提供，具体凭据存储后端仍以 gh 的实际结果为准。
+离线用例使用模拟 gh，不读取真实登录。已用真实 gh 2.98.0 在 Node/Bun 下验证设备信息输出和取消；维护者曾用当时的账号参数入口确认真实授权通过；当前入口改为配置读取，并通过模拟 gh 回归验证，未重新发起真实登录。该人工结果由维护者提供，具体凭据存储后端仍以 gh 的实际结果为准。
 
 依据：[gh auth login](https://cli.github.com/manual/gh_auth_login)、[gh 2.98 非交互授权实现](https://github.com/cli/cli/blob/v2.98.0/internal/authflow/flow.go)、[GitHub 设备流程](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow)。

@@ -2,6 +2,7 @@ import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCommand, validateOptions } from './github.mjs';
+import { configurationHint, readGitHubConfiguration } from './config.mjs';
 
 // Platform-neutral orchestration. Windows is the only verified launcher today.
 export async function authorize(input, { execute = runCommand, env = process.env, signal, onEvent = () => {}, timeoutMs = 900000 } = {}) {
@@ -75,15 +76,16 @@ async function main() {
     const args = process.argv.slice(2), options = {};
     for (let i = 0; i < args.length; i += 2) {
       const key = args[i].slice(2);
-      if (!args[i].startsWith('--') || !['repository','hostname','account','gh'].includes(key) || key in options || !args[i + 1]) throw new Error('invalid_arguments');
+      if (!args[i].startsWith('--') || !['repository','gh'].includes(key) || key in options || !args[i + 1]) throw new Error('invalid_arguments');
       options[key] = args[i + 1];
     }
-    const result = await authorize(options, { signal: controller.signal,
+    const result = await authorize({ ...options, ...readGitHubConfiguration(options.repository, ['hostname', 'account']) }, { signal: controller.signal,
       onEvent: event => console.error(JSON.stringify(event)) });
     console.log(JSON.stringify(result, null, 2));
     process.exitCode = result.status === 'ready' ? 0 : 1;
   } catch (error) {
-    const reason = /^(expected_account_required|gh_required|repository_unavailable|repository_must_be_absolute|invalid_hostname|invalid_account|gh_must_be_absolute_executable|unsupported_platform|invalid_arguments)$/.test(error.message) ? error.message : 'authorization_start_failed';
+    const reason = /^(config_[a-z_]+|expected_account_required|gh_required|repository_unavailable|repository_must_be_absolute|invalid_hostname|invalid_account|gh_must_be_absolute_executable|unsupported_platform|invalid_arguments)$/.test(error.message) ? error.message : 'authorization_start_failed';
+    const hint = configurationHint(reason); if (hint) console.error(hint);
     console.log(JSON.stringify({ schema: 'gidd.auth/v1', status: 'error', reason }));
     process.exitCode = 2;
   } finally {

@@ -49,17 +49,24 @@ function Read-GiddToolConfiguration {
     $values = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::Ordinal)
     $tools = Get-GiddDefaultTools
     $stringPattern = '(?:"(?:[^"\\]|\\["\\])*"|''[^'']*'')'
-    $inTools = $false; $lineNumber = 0
+    $inTools = $false; $lineNumber = 0; $section = ''
+    $tables = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
     foreach ($line in ($text -split "`n")) {
         $lineNumber++
         $line = $line.TrimEnd("`r")
         if ($line -match '[\x00-\x08\x0b-\x1f\x7f]') { throw "config_control_character:$lineNumber" }
         if ($line -cmatch '^[ \t]*(?:#.*)?$') { continue }
-        if ($line -cmatch '^[ \t]*\[tools\][ \t]*(?:#.*)?$') {
-            if ($inTools) { throw 'config_duplicate_tools_table' }
-            $inTools = $true; continue
+        if ($line -cmatch '^[ \t]*\[(tools|github)\][ \t]*(?:#.*)?$') {
+            $section = $Matches[1]
+            if (-not $tables.Add($section)) { throw "config_duplicate_${section}_table" }
+            $inTools = $section -eq 'tools'; continue
         }
-        if (-not $inTools -and $line -cmatch '^[ \t]*schema_version[ \t]*=[ \t]*1[ \t]*(?:#.*)?$') {
+        if ($section -eq 'github' -and $line -cmatch ('^[ \t]*(hostname|account|remote)[ \t]*=[ \t]*(' + $stringPattern + ')[ \t]*(?:#.*)?$')) {
+            $key = 'github.' + $Matches[1]
+            if ($values.ContainsKey($key)) { throw "config_duplicate_key:$key" }
+            $values.Add($key, (ConvertFrom-GiddConfigString $Matches[2])); continue
+        }
+        if (-not $section -and $line -cmatch '^[ \t]*schema_version[ \t]*=[ \t]*1[ \t]*(?:#.*)?$') {
             if ($values.ContainsKey('schema_version')) { throw 'config_duplicate_schema_version' }
             $values.Add('schema_version','1'); continue
         }
@@ -98,8 +105,10 @@ function Read-GiddToolConfiguration {
 
 function Resolve-GiddToolStorage {
     param([string]$RepositoryRoot, [string]$DefaultDirectory = '~/.agents/skills/gidd.tools',
-        [string]$UserProfilePath = [Environment]::GetFolderPath('UserProfile'))
-    $configPath = if ($RepositoryRoot) { Join-Path $RepositoryRoot '.agents/skills/gidd/config.toml' } else { $null }
+        [string]$UserProfilePath = [Environment]::GetFolderPath('UserProfile'),
+        [string]$CandidatePath)
+    # Internal editor validation can inspect a temporary candidate before publication.
+    $configPath = if ($CandidatePath) { $CandidatePath } elseif ($RepositoryRoot) { Join-Path $RepositoryRoot '.agents/skills/gidd/config.toml' } else { $null }
     $configured = $false
     $settings = @{ directory = $DefaultDirectory; tools = (Get-GiddDefaultTools) }
     if ($configPath) {
@@ -137,7 +146,9 @@ function Resolve-GiddToolStorage {
         while ($pending.Count) {
             foreach ($item in Get-ChildItem -LiteralPath $pending.Pop() -Force) {
                 if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'reparse_tools_directory' }
-                if ($item.Name -in @('SKILL.md','config.toml','.git')) { throw 'tools_directory_contains_project_or_skill' }
+                # A candidate will become config.toml here; catch it before publication, including path aliases.
+                if ($item.Name -in @('SKILL.md','config.toml','.git') -or
+                    ($CandidatePath -and $item.Name -eq [IO.Path]::GetFileName($CandidatePath))) { throw 'tools_directory_contains_project_or_skill' }
                 if ($item.PSIsContainer) { $pending.Push($item.FullName) }
             }
         }

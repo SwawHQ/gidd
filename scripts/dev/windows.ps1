@@ -1,9 +1,9 @@
-﻿# Keep runtime flags literal; PowerShell named-parameter binding would consume them.
+﻿# Runtime argv bypasses PowerShell; this script resolves tools and runs development operations.
 $Command = if ($args.Count) { [string]$args[0] } else { '.help' }
 $Argument = if ($args.Count -gt 1) { [string]$args[1] } else { '' }
-$Extra = @(); $runtimeArguments = @()
+$Extra = @()
 if ($args.Count -gt 2) { $Extra = @($args[2..($args.Count - 1)]) }
-if ($args.Count -gt 1) { $runtimeArguments = @($args[1..($args.Count - 1)]) }
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
@@ -31,11 +31,13 @@ function Test-DevManagedTool {
 }
 try {
     $runtimeSource = 'managed'
-    if ($Command -eq 'sys') {
-        if ($Argument -notin @('bun','node')) { throw 'Use dev.cmd sys bun ... or dev.cmd sys node ...' }
+    if ($Command -eq '.runtime-path') {
+        if ($Argument -notin @('bun','node') -or $Extra.Count -ne 1 -or $Extra[0] -notin @('managed','system')) {
+            throw 'Invalid internal runtime request.'
+        }
+        $runtimeSource = $Extra[0]
         $Command = $Argument
-        $runtimeSource = 'system'
-        $runtimeArguments = @($Extra)
+        $Argument = ''; $Extra = @()
     }
     if ($Command -eq '.setup') {
         if ($Argument -and $Argument -notin @('bun','node','gh')) { throw 'Use dev.cmd .setup bun, .setup node or .setup gh.' }
@@ -59,10 +61,15 @@ try {
         exit 0
     }
     if ($Command -notin @('.info','.setup','.test','.test-bun','.test-node','.test-live','.auth','bun','node')) { throw 'Unknown command. Use dev.cmd .help.' }
-    if ($Command -eq '.auth' -and $Argument -notmatch '^[A-Za-z0-9][A-Za-z0-9-]{0,99}$') { throw '.auth requires the expected GitHub account.' }
+    if ($Command -eq '.auth' -and $Argument) { throw '.auth reads github.account from config.toml; use gidd.cmd config set github.account <login>.' }
     if ($Command -eq '.info' -and $Argument) { throw '.info takes no arguments.' }
     if ($Command -eq '.test-live' -and $Argument) { throw '.test-live takes no arguments.' }
-    if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev','config','github')) { throw 'Unknown test suite.' }
+    if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev','config','github','entry')) { throw 'Unknown test suite.' }
+    if ($Command -eq '.auth') {
+        . (Join-Path $codeRoot 'lib/_entry.ps1')
+        Invoke-GiddEntry -CommandArguments @('auth','--repository',$repoRoot) -DefaultToolsDirectory '.dev'
+        exit $LASTEXITCODE
+    }
     foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','doctor/platform.ps1')) { . (Join-Path $codeRoot $file) }
     if ((Get-DoctorPlatformCheck).status -ne 'ready') { throw 'unsupported_platform' }
     $storage = Resolve-GiddToolStorage $repoRoot '.dev'
@@ -71,22 +78,12 @@ try {
         $name = $Command.ToLowerInvariant()
         $runtime = Get-DevTool $name -Source $runtimeSource
         if ($runtime.status -ne 'ready') { throw "$runtimeSource $name unavailable or invalid. Portable and PATH modes do not fall back to each other. Use dev.cmd .help." }
-        # Transfer argv as data, avoiding a second PowerShell native quoting pass.
-        $payload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject $runtimeArguments -Compress)))
-        & $runtime.details.path (Join-Path $PSScriptRoot 'runtime.mjs') $payload
-        exit $LASTEXITCODE
+        [Console]::WriteLine($runtime.details.path)
+        exit 0
     }
     $setupTools = if ($Command -eq '.setup' -and $Argument) { @($Argument.ToLowerInvariant()) } else { @('bun','node') }
     $checks = @{}
     foreach ($name in $setupTools) { $checks[$name] = Get-DevTool $name }
-    if ($Command -eq '.auth') {
-        $runtimeName = @('bun','node' | Where-Object { $checks[$_].status -eq 'ready' } | Select-Object -First 1)
-        if (-not $runtimeName.Count) { throw 'No runtime available. Run dev.cmd .setup first.' }
-        $gh = Get-DevTool 'gh'
-        if ($gh.status -ne 'ready') { throw 'gh 2.98.0 or newer unavailable. Run dev.cmd .setup gh first.' }
-        & $checks[$runtimeName[0]].details.path (Join-Path $repoRoot 'skills/gidd/scripts/auth.mjs') --repository $repoRoot --account $Argument --gh $gh.details.path
-        exit $LASTEXITCODE
-    }
     if ($Command -eq '.info') {
         @{ schema='gidd.dev/v1'; bun=$checks.bun; node=$checks.node; tools_root=$toolsRoot; storage=$storage } | ConvertTo-Json -Depth 8
         if ($checks.bun.status -eq 'ready' -and $checks.node.status -eq 'ready') { exit 0 } else { exit 1 }

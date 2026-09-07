@@ -1,9 +1,6 @@
 ﻿[CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][string]$RepositoryPath,
-    [string]$Hostname = 'github.com',
-    [string]$Account = '',
-    [string]$Remote = 'origin'
+    [Parameter(Mandatory = $true)][string]$RepositoryPath
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -19,8 +16,7 @@ try {
     $checks = @(Get-DoctorToolChecks $storage.tools_root $storage.tools)
     $runtime = @($checks | Where-Object id -eq 'runtime')[0]
     if ($runtime.status -ne 'ready') { throw 'runtime_unavailable' }
-    $arguments = @((Join-Path $PSScriptRoot '../github.mjs'), '--repository', $target, '--hostname', $Hostname, '--remote', $Remote)
-    if ($Account) { $arguments += @('--account', $Account) }
+    $arguments = @((Join-Path $PSScriptRoot '../github.mjs'), '--repository', $target)
     foreach ($name in @('git','gh')) {
         $tool = @($checks | Where-Object id -eq "tool.$name")[0]
         if ($tool.status -eq 'ready') { $arguments += @("--$name", $tool.details.path) }

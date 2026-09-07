@@ -10,13 +10,13 @@ GIDD 仓库开发（Windows x64 / Windows PowerShell 5.1）
   dev.cmd .test-bun [测试组]     只运行 Bun 测试。
   dev.cmd .test-node [测试组]    只运行 Node 测试。
   dev.cmd .test-live            两种运行时验证官方下载、安装及已有工具复用。
-  dev.cmd .auth <账号>          显式申请 GitHub.com 授权，等待设备代码授权完成。
+  dev.cmd .auth                 按 config.toml 中的主机和账号申请设备授权。
   dev.cmd bun [参数...]         只使用配置目录中的便携 Bun，不回退到 PATH。
   dev.cmd node [参数...]        只使用配置目录中的便携 Node，不回退到 PATH。
   dev.cmd sys bun [参数...] 只使用 PATH 中的 Bun。
   dev.cmd sys node [参数...] 只使用 PATH 中的 Node。
 
-测试组：all（默认）、doctor、setup、process、dev、config、github。
+测试组：all（默认）、doctor、setup、process、dev、config、github、entry。
 每组显示结果和耗时，失败汇总附带 PowerShell 复跑命令。
 开发中按组验证，提交前运行完整 .test。
 无参数显示帮助。帮助语言按参数、GIDD_DEV_LANG、系统语言、英文的顺序选择。
