@@ -3,21 +3,21 @@ import { createHash } from 'node:crypto';
 import { statSync, symlinkSync, unlinkSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { configure, editConfiguration, editGitHub, parseGitHub, readGitHubConfiguration } from '../.agents/skills/gidd/scripts/config.mjs';
-import { adapter, assert, code, compile, existsSync, findGit, fixture, hash, join, json, mkdirSync, ok, ps, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
+import { toolsRoot, adapter, assert, code, compile, existsSync, findGit, fixture, hash, join, json, mkdirSync, ok, ps, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
 
-const configText = (directory='.devv') => `# preserved comment\nschema_version = 1\n[tools]\ndirectory = ${JSON.stringify(directory.replaceAll('\\','/'))} # inline comment\n`;
+const configText = () => `# preserved comment\nschema_version = 1\n[tools]\n`;
 
-test('config set edits tool fields without changing companions, installing or migrating tools', { timeout: 120000 }, () => {
+test('config set edits tool fields without changing companions or installing tools', { timeout: 120000 }, () => {
   const f = fixture();
   try {
     const fresh = join(f.root,'fresh'); mkdirSync(fresh);
-    assert.throws(() => configure(fresh,'set','tools.directory','.agents/skills/gidd'),/config_candidate_invalid/);
+    assert.throws(() => configure(fresh,'set','tools.directory','.agents/skills/gidd'),/config_unknown_key/);
     assert.equal(existsSync(join(fresh,'.agents/skills/gidd/config.toml')),false);
     const path = join(f.root,'.agents/skills/gidd/config.toml');
-    const original = '\uFEFF' + configText('old-tools').replaceAll('\n','\r\n') +
+    const original = '\uFEFF' + configText().replaceAll('\n','\r\n') +
       "  node = { source = 'https://nodejs.org/dist' , version = 'lts' } # keep node comment\r\n" +
       '[github]\r\nhostname = "github.com"\r\naccount = "Octocat"\r\nremote = "origin"\r\n';
-    write(path,original); write(join(f.root,'old-tools/keep.txt'),'existing tools');
+    write(path,original);
     configure(f.root,'set','tools.node.version','24.20.0');
     assert.equal(readFileSync(path,'utf8'),original.replace("'lts'",'"24.20.0"'));
     assert.throws(() => configure(f.root,'set','tools.node.source','https://mirror.example/node,a#bad'),/config_invalid_tool_source/);
@@ -27,13 +27,12 @@ test('config set edits tool fields without changing companions, installing or mi
       configure(f.root,'set',`tools.${tool}.version`,'latest');
       configure(f.root,'set',`tools.${tool}.source`,`https://mirror.example/${tool}`);
     }
-    configure(f.root,'set','tools.directory','new tools');
-    assert.equal(existsSync(join(f.root,'new tools')),false);
-    assert.equal(readFileSync(join(f.root,'old-tools/keep.txt'),'utf8'),'existing tools');
+    assert.throws(() => configure(f.root,'set','tools.directory','new tools'),/config_unknown_key/);
+    assert.equal(existsSync(toolsRoot(f.root)),false);
     assert.deepEqual(readGitHubConfiguration(f.root,['account']),{hostname:'github.com',account:'Octocat',remote:'origin'});
     const before = readFileSync(path,'utf8');
     for (const [key,value] of [['tools.node.version','01.2.3'],['tools.bun.version','lts'],['tools.gh.source','http://example.test'],
-      ['tools.gh.source','https://user:secret@example.test'],['tools.directory','../escape'],['tools.directory','.agents/skills/gidd'],
+      ['tools.gh.source','https://user:secret@example.test'],
       ['schema_version','2'],['tools.node.unknown','value']]) {
       assert.throws(() => configure(f.root,'set',key,value),/config_/);
       assert.equal(readFileSync(path,'utf8'),before);
@@ -54,7 +53,7 @@ test('GitHub config editing preserves comments, BOM, line endings and unrelated 
     configure(f.root,'set','github.account','Octocat');
     assert.deepEqual(readGitHubConfiguration(f.root,['hostname','account','remote']),{hostname:'github.com',account:'Octocat',remote:'origin'});
     for (const newline of ['\n','\r\n']) {
-      const original = '\uFEFF' + ['# 顶部注释','schema_version = 1','[github] # identity',"  account = 'OldAccount' # 保留此注释",'hostname = "github.com"','[tools] # 工具段','directory = ".devv" # untouched',''].join(newline);
+      const original = '\uFEFF' + ['# 顶部注释','schema_version = 1','[github] # identity',"  account = 'OldAccount' # 保留此注释",'hostname = "github.com"','[tools] # 工具段','# untouched tools comment',''].join(newline);
       write(path,original);
       configure(f.root,'set','github.account','Octocat');
       const replaced = original.replace("'OldAccount'",'"Octocat"');
@@ -69,7 +68,7 @@ test('GitHub config editing preserves comments, BOM, line endings and unrelated 
         assert.equal(hash(path),before);
       }
       // Both bootstrap and JavaScript accept the same section order and string syntax.
-      ok(adapter(f.root,{action:'configuration',repositoryRoot:f.root,userProfilePath:join(f.root,'profile'),defaultDirectory:'.dev'}));
+      ok(adapter(f.root,{action:'configuration',repositoryRoot:f.root}));
     }
     assert.throws(() => parseGitHub('[github]\naccount="a"\naccount="b"'),/duplicate/);
     assert.throws(() => parseGitHub('[github]\n[tools]\n[github]'),/duplicate/);
@@ -95,49 +94,37 @@ function samePath(actual, expected) {
   assert.notEqual(b.ino,0n); assert.equal(a.ino,b.ino); assert.equal(a.dev,b.dev);
 }
 
-test('configuration: direct paths, home expansion, supported TOML, validation and no writes', { timeout: 120000 }, () => {
+test('configuration: fixed shared home, repository independence and read-only validation', { timeout: 120000 }, () => {
   const f=fixture();
   try {
-    const repositoryRoot=join(f.root,'仓库 space'), userProfilePath=join(f.root,'profile'); mkdirSync(repositoryRoot);
-    const path=join(repositoryRoot,'.agents/skills/gidd/config.toml');
-    const resolve=(extra={}) => adapter(f.root,{action:'configuration',repositoryRoot,userProfilePath,defaultDirectory:'~/.agents/skills/gidd.tools',...extra},{env:{PATH:''}});
-    samePath(json(ok(resolve())).tools_root,join(userProfilePath,'.agents/skills/gidd.tools'));
-    samePath(json(ok(resolve({defaultDirectory:'.dev'}))).tools_root,join(repositoryRoot,'.dev'));
-    assert.equal(existsSync(userProfilePath),false); assert.equal(existsSync(path),false);
-    write(join(userProfilePath,'.agents/skills/gidd/config.toml'),'invalid user config must not be inherited');
+    const repositoryRoot=join(f.root,'仓库 space'), other=join(f.root,'other repo');
+    mkdirSync(repositoryRoot); mkdirSync(other);
+    const path=join(repositoryRoot,'.agents/skills/gidd/config.toml'), root=toolsRoot(f.root);
+    const resolve=(target=repositoryRoot,env={}) => adapter(f.root,{action:'configuration',repositoryRoot:target},{env:{PATH:'',...env}});
+    samePath(json(ok(resolve())).tools_root,root);
+    samePath(json(ok(resolve(other))).tools_root,root);
+    assert.equal(existsSync(root),false); assert.equal(existsSync(path),false);
+    write(join(f.root,'.agents/skills/gidd/config.toml'),'invalid user config must not be inherited');
     assert.equal(json(ok(resolve())).configured,false);
-    const cases=[
-      [configText(),join(repositoryRoot,'.devv')],
-      ['\uFEFF'+configText(),join(repositoryRoot,'.devv')],
-      [configText().replaceAll('\n','\r\n'),join(repositoryRoot,'.devv')],
-      [configText('下载 # tools'),join(repositoryRoot,'下载 # tools')],
-      [configText('cache/subdir').replace('"cache/subdir"',"'cache\\subdir'"),join(repositoryRoot,'cache/subdir')],
-      [configText('./cache/'),join(repositoryRoot,'cache')],
-      [configText(join(f.root,'external tools')),join(f.root,'external tools')],
-      [configText('~/.agents/skills/gidd.tools'),join(userProfilePath,'.agents/skills/gidd.tools')],
-      [configText('~/custom tools'),join(userProfilePath,'custom tools')],
-      [configText('cache/subdir').replace('"cache/subdir"','"cache\\\\subdir"'),join(repositoryRoot,'cache/subdir')],
-    ];
-    for (const [text,expected] of cases) {
+    for (const text of [configText(),'\uFEFF'+configText(),configText().replaceAll('\n','\r\n')]) {
       write(path,text); const before=hash(path), result=json(ok(resolve()));
-      samePath(result.tools_root,expected); assert.equal(result.configured,true); assert.equal('scope' in result,false);
-      assert.equal(hash(path),before,'Reading must preserve comments and formatting');
-      assert.equal(existsSync(result.tools_root),false,'Resolving must not create storage');
+      samePath(result.tools_root,root); assert.equal(result.configured,true);
+      assert.equal('directory' in result,false); assert.equal('scope' in result,false);
+      assert.equal(hash(path),before); assert.equal(existsSync(root),false);
     }
     write(path,readFileSync(join(repo,'.agents/skills/gidd/assets/config.example.toml'),'utf8'));
-    samePath(json(ok(resolve())).tools_root,join(userProfilePath,'.agents/skills/gidd.tools'));
-    for (const text of ['', configText().replace('= 1','= 2'), configText().replace('schema_version','Schema_version'), configText()+'directory="other"\n', configText()+'[tools]\n', configText()+'scope="repository"\n', configText()+'unexpected=true\n', configText().replace('[tools]','[other]'), configText().replace('".devv"','true'), configText().replace('".devv"','"bad\\npath"'), configText().replace('".devv"','"""multiline"""')]) {
-      write(path,text); assert.notEqual(resolve().status,0,`Must reject unsupported config: ${text}`);
+    samePath(json(ok(resolve())).tools_root,root);
+    samePath(json(ok(resolve(other,{USERPROFILE:join(f.root,'separate home')}))).tools_root,toolsRoot(join(f.root,'separate home')));
+    assert.notEqual(resolve(other,{USERPROFILE:'relative'}).status,0);
+    for (const text of ['',configText().replace('= 1','= 2'),configText().replace('schema_version','Schema_version'),
+      configText()+'directory="other"\n',configText()+'[tools]\n',configText()+'scope="repository"\n',
+      configText()+'unexpected=true\n',configText().replace('[tools]','[other]')+'node="bad"\n']) {
+      write(path,text); assert.notEqual(resolve().status,0,text);
     }
-    for (const directory of ['.','..','../outside','/outside','a/../b','a//b','.git/data','NUL','CON.txt','trailing.','trailing ','stream:ads','C:relative','C:/','~','~/','~someone/tools','~/../outside','//server/share/tools']) {
-      write(path,configText(directory)); assert.notEqual(resolve().status,0,`Unsafe path: ${directory}`);
-    }
-    write(path,configText('~/tools')); assert.notEqual(resolve({userProfilePath:''}).status,0);
-    assert.notEqual(resolve({repositoryRoot:'',defaultDirectory:'.devv'}).status,0);
     write(path,Buffer.from([0xff,0xfe,0x01])); assert.match(resolve().stderr,/config_invalid_utf8/);
     write(path,'#'.repeat(16385)); assert.match(resolve().stderr,/config_too_large/);
     write(path,configText());
-    const root=join(repositoryRoot,'.devv'), outside=join(f.root,'outside'); mkdirSync(outside);
+    const outside=join(f.root,'outside'); mkdirSync(outside); mkdirSync(dirname(root),{recursive:true});
     symlinkSync(outside,root,'junction');
     try { assert.notEqual(resolve().status,0); } finally { unlinkSync(root); }
     write(join(root,'nested/SKILL.md'),'keep'); assert.match(resolve().stderr,/tools_directory_contains_project_or_skill/);
@@ -147,7 +134,7 @@ test('configuration: direct paths, home expansion, supported TOML, validation an
 test('configured setup reuses Node/gh without knowing a skill installation directory', { timeout: 120000 }, () => {
   const f=fixture();
   try {
-    const path=join(f.root,'.agents/skills/gidd/config.toml'), tools=join(f.root,'.devv');
+    const path=join(f.root,'.agents/skills/gidd/config.toml'), tools=toolsRoot(f.root);
     write(path,configText()); const before=hash(path), exe=compile(f.root);
     stub(exe,join(tools,'node/node.exe'),undefined,true); stub(exe,join(tools,'gh/gh.exe'),undefined,true);
     const invoke=() => ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root],{env:{PATH:''}});
@@ -162,7 +149,7 @@ test('configured setup reuses Node/gh without knowing a skill installation direc
     assert.equal(diagnosis.checks.find(x=>x.id==='runtime').details.selected,'tool.node');
     assert.equal(diagnosis.checks.find(x=>x.id==='repository.config.validation').status,'ready');
     assert.equal(diagnosis.checks.find(x=>x.id==='github.identity').status,'not_checked');
-    write(path,configText('../outside')); assert.notEqual(invoke().status,0);
+    write(path,configText()+'directory = "../outside"\n'); assert.notEqual(invoke().status,0);
   } finally { f.dispose(); }
 });
 
@@ -170,7 +157,7 @@ test('inline tool configuration validates versions and visible sources without n
   const f=fixture();
   try {
     const path=join(f.root,'.agents/skills/gidd/config.toml');
-    const resolve=() => adapter(f.root,{action:'configuration',repositoryRoot:f.root,defaultDirectory:'.dev',userProfilePath:f.root},{env:{PATH:''}});
+    const resolve=() => adapter(f.root,{action:'configuration',repositoryRoot:f.root},{env:{PATH:''}});
     const line='node = { version = "lts", source = "https://nodejs.org/dist" }';
     for (const input of [line, line+' # comment with {braces}', 'node = { source = \'https://nodejs.org/dist/\', version = \'24.20.0\' } # comment']) {
       write(path,configText()+input+'\n'); const before=hash(path);
@@ -191,7 +178,7 @@ test('inline tool configuration validates versions and visible sources without n
     ]) {
       write(path,configText()+invalid+'\n'); assert.notEqual(resolve().status,0,invalid);
     }
-    assert.equal(existsSync(join(f.root,'.devv')),false);
+    assert.equal(existsSync(toolsRoot(f.root)),false);
   } finally { f.dispose(); }
 });
 

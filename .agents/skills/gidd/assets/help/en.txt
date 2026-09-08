@@ -13,7 +13,6 @@ Repository config (requires Node or Bun):
   gidd.cmd config show                               Read config.toml without changing it.
   gidd.cmd config set <key> <value>                  Edit a field, preserving comments; create a template if absent.
   gidd.cmd config set github.account <login>         Set the expected account; does not log in or switch accounts.
-  gidd.cmd config set tools.directory <directory>    Set tool storage; does not download or move tools.
 
 GitHub identity (requires Node or Bun):
   gidd.cmd identity                                  Check configured API identity, Git remote reading and author.

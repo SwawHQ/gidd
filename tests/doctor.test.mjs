@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { statSync } from 'node:fs';
-import { assert, code, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, ps, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
+import { toolsRoot, assert, code, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, ps, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
 
 test('doctor: dependency matrix, repository states, read-only checks and redaction', { timeout: 120000 }, () => {
   const f = fixture();
@@ -12,7 +12,7 @@ test('doctor: dependency matrix, repository states, read-only checks and redacti
     const gitOnly = `${emptyBin};${gitBin}`, toolPath = `${fakeBin};${gitBin}`;
     ok(run(git, ['-C', repository, 'init', '--quiet']));
     const config=join(repository,'.agents/skills/gidd/config.toml');
-    const validConfig=`schema_version = 1\n[tools]\ndirectory = ${JSON.stringify(join(skills,'gidd.tools').replaceAll('\\','/'))}\n`;
+    const validConfig=`schema_version = 1\n[tools]\n`;
     write(config,validConfig);
     const check = (report, id) => {
       const matches = report.checks.filter(item => item.id === id);
@@ -39,8 +39,8 @@ test('doctor: dependency matrix, repository states, read-only checks and redacti
       assert.equal(check(r,'repository.history').reason,'unborn_branch'); assert.equal(check(r,'repository.config').status,'missing');
     });
     write(config,validConfig);
-    stub(exe,join(skills,'gidd.tools/bun/bun.exe'),'1.2.15',true);
-    stub(exe,join(skills,'gidd.tools/gh/gh.exe'),'gh version 2.98.0 (test)',true);
+    stub(exe,join(toolsRoot(f.root),'bun/bun.exe'),'1.2.15',true);
+    stub(exe,join(toolsRoot(f.root),'gh/gh.exe'),'gh version 2.98.0 (test)',true);
     runCase('Bun alone from managed tools',gitOnly,r => {
       assert.equal(check(r,'runtime').details.selected,'tool.bun'); assert.equal(check(r,'tool.gh').details.source,'managed');
     });

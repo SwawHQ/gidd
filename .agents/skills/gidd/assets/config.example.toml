@@ -3,8 +3,7 @@
 schema_version = 1
 
 [tools]
-# Recommended dedicated tools directory; ~ means the current OS user's home.
-directory = "~/.agents/skills/gidd.tools"
+# Tools are shared at ~/.agents/skills.tools/gidd/; the directory is not configurable.
 # Release/download roots. Installation reports the exact version and archive URL.
 # node: lts/latest or an exact version; bun/gh: latest or an exact version.
 # Floating versions are resolved only when downloading a missing tool.
@@ -12,11 +11,6 @@ node = { version = "lts", source = "https://nodejs.org/dist" }
 bun = { version = "latest", source = "https://github.com/oven-sh/bun/releases" }
 gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 
-# Repository-relative example:
-# directory = ".devv"
-# Absolute Windows example:
-# directory = "D:/tools/gidd"
-# Skill installation is managed by the Agent, independently of this tools path.
 # Custom mirrors must preserve the upstream download layout; hashes come from upstream.
 
 [github]

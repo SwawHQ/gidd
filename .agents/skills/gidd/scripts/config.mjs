@@ -8,7 +8,7 @@ const fields = new Set(['hostname', 'account', 'remote']);
 const stringLiteral = String.raw`(?:"(?:[^"\\]|\\["\\])*"|'[^']*')`;
 const assignment = new RegExp(`^([ \\t]*)(hostname|account|remote)([ \\t]*=[ \\t]*)(${stringLiteral})([ \\t]*(?:#.*)?)$`);
 const decode = literal => literal[0] === "'" ? literal.slice(1, -1) : JSON.parse(literal);
-const editableKey = /^(?:github\.(?:hostname|account|remote)|tools\.(?:directory|(?:node|bun|gh)\.(?:version|source)))$/;
+const editableKey = /^(?:github\.(?:hostname|account|remote)|tools\.(?:node|bun|gh)\.(?:version|source))$/;
 
 function validateSetting(key, value) {
   if (!editableKey.test(key || '')) throw new Error('config_unknown_key');
@@ -40,23 +40,20 @@ function parseTools(text) {
       continue;
     }
     if (section !== 'tools') continue;
-    const directory = new RegExp(`^([ \\t]*directory[ \\t]*=[ \\t]*)(${stringLiteral})([ \\t]*(?:#.*)?)$`).exec(line);
     const inline = /^([ \t]*(node|bun|gh)[ \t]*=[ \t]*\{)(.*?)(\}[ \t]*(?:#.*)?)$/.exec(line);
-    if (!directory && !inline) throw new Error('config_invalid_tools_syntax');
-    const name = directory ? 'directory' : inline[2];
+    if (!inline) throw new Error('config_invalid_tools_syntax');
+    const name = inline[2];
     if (Object.hasOwn(entries, name)) throw new Error('config_duplicate_tool');
-    const entry = { index: i, directory, inline, fields: {} };
-    if (inline) {
-      const pattern = new RegExp(`(^|,)([ \\t]*)(version|source)([ \\t]*=[ \\t]*)(${stringLiteral})([ \\t]*)(?=,|$)`, 'g');
-      let consumed = 0;
-      for (const match of inline[3].matchAll(pattern)) {
-        if (match.index !== consumed || Object.hasOwn(entry.fields, match[3])) throw new Error('config_invalid_tool_table');
-        consumed += match[0].length;
-        const offset = match.index + match[1].length + match[2].length + match[3].length + match[4].length;
-        entry.fields[match[3]] = { offset, literal: match[5], value: decode(match[5]) };
-      }
-      if (consumed !== inline[3].length || !entry.fields.version || !entry.fields.source) throw new Error('config_invalid_tool_table');
+    const entry = { index: i, inline, fields: {} };
+    const pattern = new RegExp(`(^|,)([ \\t]*)(version|source)([ \\t]*=[ \\t]*)(${stringLiteral})([ \\t]*)(?=,|$)`, 'g');
+    let consumed = 0;
+    for (const match of inline[3].matchAll(pattern)) {
+      if (match.index !== consumed || Object.hasOwn(entry.fields, match[3])) throw new Error('config_invalid_tool_table');
+      consumed += match[0].length;
+      const offset = match.index + match[1].length + match[2].length + match[3].length + match[4].length;
+      entry.fields[match[3]] = { offset, literal: match[5], value: decode(match[5]) };
     }
+    if (consumed !== inline[3].length || !entry.fields.version || !entry.fields.source) throw new Error('config_invalid_tool_table');
     entries[name] = entry;
   }
   return { lines, start, end, entries };
@@ -76,24 +73,17 @@ export function editConfiguration(text, key, value) {
   const doc = parseTools(text), [, name, field] = key.split('.'), entry = doc.entries[name];
   const literal = JSON.stringify(value);
   if (entry) {
-    let line;
-    if (name === 'directory') line = entry.directory[1] + literal + entry.directory[3];
-    else {
-      const { offset, literal: previous } = entry.fields[field];
-      const content = entry.inline[3];
-      line = entry.inline[1] + content.slice(0, offset) + literal + content.slice(offset + previous.length) + entry.inline[4];
-    }
+    const { offset, literal: previous } = entry.fields[field];
+    const content = entry.inline[3];
+    const line = entry.inline[1] + content.slice(0, offset) + literal + content.slice(offset + previous.length) + entry.inline[4];
     doc.lines[entry.index] = line + (doc.lines[entry.index].endsWith('\r') ? '\r' : '');
     text = doc.lines.join('\n');
   } else {
-    let setting = `directory = ${literal}`;
-    if (name !== 'directory') {
-      // A missing inline table gets its companion field from the published template.
-      const defaults = parseTools(readFileSync(new URL('../assets/config.example.toml', import.meta.url), 'utf8')).entries[name].fields;
-      const version = field === 'version' ? value : defaults.version.value;
-      const source = field === 'source' ? value : defaults.source.value;
-      setting = `${name} = { version = ${JSON.stringify(version)}, source = ${JSON.stringify(source)} }`;
-    }
+    // A missing inline table gets its companion field from the published template.
+    const defaults = parseTools(readFileSync(new URL('../assets/config.example.toml', import.meta.url), 'utf8')).entries[name].fields;
+    const version = field === 'version' ? value : defaults.version.value;
+    const source = field === 'source' ? value : defaults.source.value;
+    const setting = `${name} = { version = ${JSON.stringify(version)}, source = ${JSON.stringify(source)} }`;
     text = insertSetting(text, doc, 'tools', setting);
   }
   parseGitHub(text);

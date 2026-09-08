@@ -39,7 +39,7 @@ try {
             }
         }
         'find' { Find-Tool $request.name ([version]$request.minimum) $request.pattern $request.managedPath | ConvertTo-Json -Depth 8 -Compress }
-        'configuration' { Resolve-GiddToolStorage $request.repositoryRoot $request.defaultDirectory $request.userProfilePath | ConvertTo-Json -Depth 8 -Compress }
+        'configuration' { Resolve-GiddToolStorage $request.repositoryRoot | ConvertTo-Json -Depth 8 -Compress }
         'release' {
             $settings = @{ version=$request.version;source=$request.source }
             $pinned = if ($request.pinnedPath) { [IO.File]::ReadAllText($request.pinnedPath) | ConvertFrom-Json } else { $null }

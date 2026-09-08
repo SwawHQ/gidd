@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { statSync, readFileSync } from 'node:fs';
-import { assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, ps, run, snapshot, stub, write } from './support/helpers.mjs';
+import { toolsRoot, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, ps, run, snapshot, stub, write } from './support/helpers.mjs';
 
 // Encode for the native Windows argv boundary, including terminal backslashes.
 const quote = value => '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';
@@ -10,7 +10,7 @@ function installation(f) {
   copySkill(skill);
   assert.equal(existsSync(join(skill, 'config.toml')), false, 'Installation must not inherit development configuration');
   mkdirSync(target);
-  write(join(target, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\ndirectory = "tools"\n');
+  write(join(target, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\n');
   const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
   const invoke = (args, env = {}) => run(cmd, ['/d','/s','/c', `""${join(skill, 'gidd.cmd')}" ${args.map(quote).join(' ')}"`], {
     cwd: skill, windowsVerbatimArguments: true, env: { PATH: '', GIDD_LANG: '', LC_ALL: 'en_US.UTF-8', ...env },
@@ -63,12 +63,12 @@ test('shell setup selects only bun, node or gh and keeps storage independent of 
     stub(exe, join(bin, 'bun.exe'));
     const bun = json(ok(s.invoke(['setup','bun',...s.args], { PATH: bin })));
     assert.deepEqual(bun.tools.map(t => [t.name, t.action]), [['bun','reused']]);
-    assert.equal(existsSync(join(s.target,'tools')), false);
+    assert.equal(existsSync(toolsRoot(f.root)), false);
     stub(exe, join(bin, 'node.exe'));
     const node = json(ok(s.invoke(['setup','node',...s.args], { PATH: bin })));
     assert.deepEqual(node.tools.map(t => [t.name, t.action]), [['node','reused']]);
-    assert.equal(existsSync(join(s.target,'tools')), false);
-    const tools = join(s.target,'tools');
+    assert.equal(existsSync(toolsRoot(f.root)), false);
+    const tools = toolsRoot(f.root);
     stub(exe, join(tools,'gh/gh.exe'), undefined, true);
     write(join(tools,'bun/keep.txt'), 'unrelated damaged installation');
     const beforeSkill = snapshot(s.skill), beforeBun = snapshot(join(tools,'bun'));
@@ -77,7 +77,7 @@ test('shell setup selects only bun, node or gh and keeps storage independent of 
     sameDirectory(gh.tools_root, tools);
     assert.deepEqual(snapshot(join(tools,'bun')), beforeBun);
     assert.deepEqual(snapshot(s.skill), beforeSkill);
-    write(join(s.target,'.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\ndirectory = "tools"\ngh = { version = "2.99.0", source = "https://github.com/cli/cli/releases" }\n');
+    write(join(s.target,'.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\ngh = { version = "2.99.0", source = "https://github.com/cli/cli/releases" }\n');
     const conflict = s.invoke(['setup','gh',...s.args]);
     assert.equal(conflict.status, 1);
     assert.match(json(conflict).reason, /occupied_or_version_conflicting_target:gh/);
@@ -104,7 +104,7 @@ test('repository installation locates its own Git worktree independently of cwd'
     for (const root of [target,worktree]) {
       const skill = join(root,'.agents/skills/gidd');
       copySkill(skill);
-      write(join(skill,'config.toml'),'schema_version = 1\n[tools]\ndirectory = "tools"\n');
+      write(join(skill,'config.toml'),'schema_version = 1\n[tools]\n');
       const before = snapshot(root);
       const result = run(cmd, ['/d','/s','/c', `""${join(skill,'gidd.cmd')}" doctor"`], {
         cwd: f.root, windowsVerbatimArguments: true, env: { PATH: dirname(git) },
@@ -126,7 +126,7 @@ test('shell identity and auth preserve JavaScript results, events and exit codes
   try {
     const s = installation(f), git = findGit();
     const config = join(s.target,'.agents/skills/gidd/config.toml');
-    const configured = 'schema_version = 1\n[tools]\ndirectory = "tools"\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "fixture"\n';
+    const configured = 'schema_version = 1\n[tools]\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "fixture"\n';
     write(config,configured);
     for (const args of [['init'], ['config','user.name','Fixture Author'], ['config','user.email','author@example.test'],
       ['remote','add','fixture','git@github.com:owner/repo.git']]) ok(run(git, ['-C',s.target,...args]));
@@ -191,18 +191,10 @@ test('config shell command creates and edits defaults; identity/auth reject miss
     for (const key of ['tools.node.version','tools.bun.version']) {
       ok(s.invoke(['config','set',key,'999.0.0',...s.args],env));
     }
-    ok(s.invoke(['config','set','tools.directory','new tools',...s.args],env));
-    assert.equal(existsSync(join(s.target,'new tools')),false);
-    for (const value of ['new tools\\', join(s.target, 'absolute tools') + '\\']) {
-      const changed = json(ok(s.invoke(['config','set','tools.directory',value,...s.args],env)));
-      assert.equal(changed.value,value);
-      assert.ok(readFileSync(config,'utf8').includes(`directory = ${JSON.stringify(value)}`));
-      assert.equal(existsSync(join(s.target, 'absolute tools')),false);
-    }
-    // Also exercise the shell-to-JavaScript boundary independently of gidd.cmd.
+    assert.equal(s.invoke(['config','set','tools.directory','custom',...s.args],env).status,2);
     const direct = ps(join(s.skill,'scripts/windows/config.ps1'),
-      ['-RepositoryPath',s.target,'-Action','set','-Key','tools.directory','-Value','direct tools\\'],{env});
-    assert.equal(json(ok(direct)).value,'direct tools\\');
+      ['-RepositoryPath',s.target,'-Action','set','-Key','tools.node.source','-Value','https://mirror.example/node'],{env});
+    assert.equal(json(ok(direct)).value,'https://mirror.example/node');
     ok(s.invoke(['config','show',...s.args],env));
   } finally { f.dispose(); }
 });

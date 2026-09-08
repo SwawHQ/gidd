@@ -13,7 +13,6 @@ GIDD（Windows x64 / PowerShell 5.1）
   gidd.cmd config show                               查看 config.toml，只读。
   gidd.cmd config set <字段> <值>                    修改配置并保留注释；首次创建模板。
   gidd.cmd config set github.account <账号>          设置预期 GitHub 账号，不登录或切换账号。
-  gidd.cmd config set tools.directory <工具目录>     设置工具存放位置，不立即下载或搬迁。
 
 GitHub 身份（需 Node/Bun 任一种）：
   gidd.cmd identity                                  按配置检查 API 身份、Git 远程读取和提交作者。

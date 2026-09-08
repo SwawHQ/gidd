@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { symlinkSync, unlinkSync } from 'node:fs';
-import { adapter, assert, code, compile, dirname, existsSync, fixture, hash, installSpec, join, json, makeZip, mkdirSync, ok, ps, readFileSync, startAdapter, stub, until, write } from './support/helpers.mjs';
+import { toolsRoot, adapter, assert, code, compile, dirname, existsSync, fixture, hash, installSpec, join, json, makeZip, mkdirSync, ok, ps, readFileSync, startAdapter, stub, until, write } from './support/helpers.mjs';
 
 test('setup: install, integrity, interrupted publication, locks, preservation and reuse', { timeout: 120000 }, async () => {
   const f = fixture();
@@ -18,7 +18,6 @@ test('setup: install, integrity, interrupted publication, locks, preservation an
     assert.equal(json(ok(install(tools))).action,'installed'); assert.equal(valid(tools),true);
     assert.equal(existsSync(join(tools,'.cache/bun')),false,'Successful install must remove downloads and extraction');
     assert.equal(existsSync(join(tools,'.cache/install.lock')),true,'Stage cleanup must preserve the lock file');
-    assert.equal(existsSync(join(tools,'.install.lock')),false,'Fresh installs must not create the legacy root lock');
     const recordPath=join(tools,'bun/install.json'), recordHash=hash(recordPath), recordText=readFileSync(recordPath,'utf8');
     assert.equal(json(ok(install(tools,definitionPath,join(f.root,'missing')))).action,'reused'); assert.equal(hash(recordPath),recordHash);
     const managedBin=join(tools,'bun'), managedExe=join(managedBin,'bun.exe');
@@ -85,17 +84,17 @@ test('setup: install, integrity, interrupted publication, locks, preservation an
     const external=join(f.root,'external'); stub(exe,join(external,'node.exe')); stub(exe,join(external,'gh.exe'));
     for (const runtime of ['node','bun']) {
       if (runtime==='bun') stub(exe,join(external,'bun.exe'));
-      const skills=join(f.root,`not-created-${runtime}-skills`);
+      const home=join(f.root,`home-${runtime}`);
       for (const existing of [false,true]) {
-        if (existing) mkdirSync(join(skills,'gidd.tools'),{recursive:true});
-        write(join(f.root,'.agents/skills/gidd/config.toml'),`schema_version = 1\n[tools]\ndirectory = ${JSON.stringify(join(skills,'gidd.tools').replaceAll('\\','/'))}\n`);
-        const report=json(ok(ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root],{env:{PATH:external}})));
+        if (existing) mkdirSync(toolsRoot(home),{recursive:true});
+        write(join(f.root,'.agents/skills/gidd/config.toml'),`schema_version = 1\n[tools]\n`);
+        const report=json(ok(ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root],{env:{PATH:external,USERPROFILE:home}})));
         assert.equal(report.status,'ready'); assert.equal(report.tools.length,2);
         for (const name of [runtime,'gh']) {
           const matches=report.tools.filter(tool=>tool.name===name); assert.equal(matches.length,1);
           assert.equal(matches[0].action,'reused'); assert.equal(matches[0].path,join(external,`${name}.exe`));
         }
-        if (!existing) assert.equal(existsSync(skills),false);
+        if (!existing) assert.equal(existsSync(toolsRoot(home)),false);
       }
     }
   } finally { f.dispose(); }
@@ -104,7 +103,7 @@ test('setup: install, integrity, interrupted publication, locks, preservation an
 test('setup: Node archive version, integrity and reuse without downloads', { timeout: 120000 }, () => {
   const f=fixture();
   try {
-    const exe=compile(f.root), archive=join(f.root,'node.zip'), root=join(f.root,'.dev');
+    const exe=compile(f.root), archive=join(f.root,'node.zip'), root=join(f.root,'node-storage');
     makeZip(f.root,archive,[{name:'node/node.exe',source:exe}]);
     const definition={name:'node',version:'24.0.0',archive:'node.zip',url:'https://example.invalid/node.zip',sha256:hash(archive),files:[{entry:'node/node.exe',name:'node.exe'}],supplements:[]};
     const path=join(f.root,'node.json'); write(path,JSON.stringify(definition));

@@ -11,8 +11,8 @@ GIDD repository development (Windows x64 / Windows PowerShell 5.1)
   dev.cmd .test-node [suite]     Run only Node tests.
   dev.cmd .test-live            Test official downloads, installation and reuse under both runtimes.
   dev.cmd .auth                  Authorize the hostname/account in repository config.toml.
-  dev.cmd bun [args...]          Run the configured portable Bun, without PATH fallback.
-  dev.cmd node [args...]         Run the configured portable Node, without PATH fallback.
+  dev.cmd bun [args...]          Run the shared portable Bun, without PATH fallback.
+  dev.cmd node [args...]         Run the shared portable Node, without PATH fallback.
   dev.cmd sys bun [args...]  Run Bun from PATH only.
   dev.cmd sys node [args...] Run Node from PATH only.
 
@@ -23,7 +23,7 @@ No arguments show help. Help language: argument, GIDD_DEV_LANG, locale, then Eng
 Only .setup and .test-live perform GIDD-managed downloads. .test never installs tools.
 bun/node forward caller cwd, arguments and stdio; the invoked command controls its own effects.
 Portable and sys modes never fall back to each other; both honor configured versions.
-Tool storage, versions and download roots follow .agents/skills/gidd/config.toml.
+Tools: ~/.agents/skills.tools/gidd/; versions and download roots follow repository config.toml.
 Defaults for missing downloads: Node LTS, stable Bun; existing usable tools are reused.
 Setup downloads configured tools or reuses existing ones; local package directories are not accepted.
 Portable Node includes the runtime and license, without npm; tests have no npm dependencies.
