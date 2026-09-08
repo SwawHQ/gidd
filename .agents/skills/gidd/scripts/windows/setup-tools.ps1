@@ -27,7 +27,7 @@ try {
     if ($needed.Count -or (Test-Path -LiteralPath $toolsRoot)) {
         $lock = Open-GiddInstallLock $toolsRoot
         Write-GiddInstallationGuide $toolsRoot
-        # Development may have prepared Node in the same configured directory.
+        # Development may have prepared Node in the same shared directory.
         if (-not $Tool -and (Test-Path -LiteralPath (Join-Path $toolsRoot 'node'))) {
             if (-not (Test-GiddManagedTool (Join-Path $toolsRoot 'node') 'node')) { throw 'occupied_or_invalid_target:node' }
             Remove-GiddStage $toolsRoot 'node'

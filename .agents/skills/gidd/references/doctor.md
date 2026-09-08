@@ -8,7 +8,7 @@
 .\gidd.cmd doctor
 ```
 
-仓库内 `.agents/skills/gidd/` 的入口自动定位含 `.git` 标记的目标根（含 worktree），不依赖工作目录。Git 可用时另行验证工作树；配置不继承用户级文件。`tools.directory` 独立于技能安装位置，doctor 不建立工具目录。
+仓库内 `.agents/skills/gidd/` 的入口自动定位含 `.git` 标记的目标根（含 worktree），不依赖工作目录。Git 可用时另行验证工作树；配置不继承用户级文件。工具固定存放于 `~/.agents/skills.tools/gidd/`，独立于技能安装位置，doctor 不建立工具目录。
 
 ## 源码归属
 

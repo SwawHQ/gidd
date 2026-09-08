@@ -67,12 +67,12 @@ try {
     if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev','config','github','entry')) { throw 'Unknown test suite.' }
     if ($Command -eq '.auth') {
         . (Join-Path $codeRoot 'lib/_entry.ps1')
-        Invoke-GiddEntry -CommandArguments @('auth','--repository',$repoRoot) -DefaultToolsDirectory '.dev'
+        Invoke-GiddEntry -CommandArguments @('auth','--repository',$repoRoot)
         exit $LASTEXITCODE
     }
     foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','doctor/platform.ps1')) { . (Join-Path $codeRoot $file) }
     if ((Get-DoctorPlatformCheck).status -ne 'ready') { throw 'unsupported_platform' }
-    $storage = Resolve-GiddToolStorage $repoRoot '.dev'
+    $storage = Resolve-GiddToolStorage $repoRoot
     $toolsRoot = $storage.tools_root
     if ($Command -in @('bun','node')) {
         $name = $Command.ToLowerInvariant()

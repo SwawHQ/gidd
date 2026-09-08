@@ -1,6 +1,6 @@
 ﻿# Internal dispatcher shared by the published entry and repository development entry.
 function Invoke-GiddEntry {
-    param([object[]]$CommandArguments, [string]$DefaultToolsDirectory)
+    param([object[]]$CommandArguments)
     $entryRoot = Split-Path -Parent $PSScriptRoot
     # Public command dispatch only; business logic remains in the existing scripts.
     Set-StrictMode -Version Latest
@@ -60,7 +60,6 @@ function Invoke-GiddEntry {
         }
         if ($parameters.RepositoryPath -notmatch '^[A-Za-z]:[\\/]') { throw 'repository_must_be_absolute' }
         $script = switch ($command) { doctor { 'doctor.ps1' } setup { 'setup-tools.ps1' } identity { 'check-identity.ps1' } auth { 'authorize.ps1' } config { 'config.ps1' } }
-        if ($command -eq 'auth' -and $DefaultToolsDirectory) { $parameters.DefaultToolsDirectory = $DefaultToolsDirectory }
         & (Join-Path $entryRoot $script) @parameters
         exit $LASTEXITCODE
     } catch {

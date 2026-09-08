@@ -11,8 +11,8 @@ GIDD 仓库开发（Windows x64 / Windows PowerShell 5.1）
   dev.cmd .test-node [测试组]    只运行 Node 测试。
   dev.cmd .test-live            两种运行时验证官方下载、安装及已有工具复用。
   dev.cmd .auth                 按 config.toml 中的主机和账号申请设备授权。
-  dev.cmd bun [参数...]         只使用配置目录中的便携 Bun，不回退到 PATH。
-  dev.cmd node [参数...]        只使用配置目录中的便携 Node，不回退到 PATH。
+  dev.cmd bun [参数...]         只使用共享目录中的便携 Bun，不回退到 PATH。
+  dev.cmd node [参数...]        只使用共享目录中的便携 Node，不回退到 PATH。
   dev.cmd sys bun [参数...] 只使用 PATH 中的 Bun。
   dev.cmd sys node [参数...] 只使用 PATH 中的 Node。
 
@@ -23,7 +23,7 @@ GIDD 仓库开发（Windows x64 / Windows PowerShell 5.1）
 只有 .setup 和 .test-live 执行 GIDD 管理的下载；.test 不安装工具。
 bun/node 保留调用目录、参数和输入输出；具体命令可以有自己的网络和写入行为。
 便携与 sys 模式互不回退，两者均遵守配置中的版本要求。
-工具目录、版本与下载来源读取 .agents/skills/gidd/config.toml。
+工具固定存放于 ~/.agents/skills.tools/gidd/；版本与下载来源读取仓库 config.toml。
 缺失时默认下载 Node LTS、Bun 稳定版；已有可用工具继续复用。
 安装按配置联网下载或复用已有工具；不接受本地安装包目录。
 Node 仅包含运行时和许可证，不附带 npm；当前测试无 npm 依赖。

@@ -46,8 +46,8 @@ function Write-GiddInstallationGuide {
     $text = @'
 # GIDD-managed tools
 
-The repository config.toml selects this tool storage location.
-It is independent of the skill installation directory and may be shared by repositories.
+This fixed tool storage location is ~/.agents/skills.tools/gidd/.
+It is independent of the skill installation directory and is shared by repositories.
 It is not a skill: do not add SKILL.md or repository config.toml here.
 
 - bun/, node/ and gh/ (as needed): published files, upstream licenses and install.json.
