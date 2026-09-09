@@ -8,7 +8,7 @@ Windows 入口（可用 Node/Bun 任一种）：
 & "<目标仓库>\.agents\skills\gidd\gidd.cmd" auth
 ```
 
-仓库内 `.agents/skills/gidd/` 的入口从自身位置自动定位目标（含 worktree），不依赖工作目录。主机与预期账号只读取仓库配置中的 `github.hostname` 和 `github.account`；缺失即报错，不临时覆盖或推断账号。`github.remote` 不参与授权，配置设置见 [configuration.md](configuration.md)。启动器按既有工具配置复用 gh 和运行时，不安装工具。缺失时先由 Agent 根据用户授权使用 [工具准备入口](setup.md)。申请授权要求 gh 2.98.0 或更新版本。
+仓库内 `.agents/skills/gidd/` 的入口从自身位置自动定位目标（含 worktree），不依赖工作目录。主机与预期账号只读取仓库配置中的 `github.hostname` 和 `github.account`；缺失即报错，不临时覆盖或推断账号。`github.remote` 不参与授权，配置设置见 [configuration.md](configuration.md)。启动器先按 [stage0](bootstrap.md) 自动复用或准备运行时，再由 JS 按配置查找 gh。缺失 gh 时由 Agent 根据用户授权使用 [工具准备入口](setup.md)。申请授权要求 gh 2.98.0 或更新版本。
 
 业务逻辑使用 Node/Bun 共有标准 API；当前 CLI 平台验收仅为 Windows x64，其他平台启动/取消行为仍待测试，不宣称已支持。
 

@@ -1,20 +1,23 @@
 GIDD (Windows x64 / PowerShell 5.1)
 
+Startup: managed runtime first, then PATH; if absent, download the configured default (Bun).
+This also applies before help/doctor. The JavaScript doctor itself is read-only and offline.
+
 Help and diagnosis:
   gidd.cmd help [en|zh]                              Show help; aliases: --help, -h. Also shown with no arguments.
   gidd.cmd doctor                                    Check environment and target repository; read-only, offline.
 
-Tool setup (no Node/Bun required):
+Tool setup (after automatic runtime preparation):
   gidd.cmd setup bun                                 Reuse usable Bun or download the configured version.
   gidd.cmd setup node                                Prepare Node; defaults to LTS, without npm.
   gidd.cmd setup gh                                  Prepare gh 2.98.0+; does not log in.
 
-Repository config (requires Node or Bun):
+Repository config:
   gidd.cmd config show                               Read config.toml without changing it.
   gidd.cmd config set <key> <value>                  Edit a field, preserving comments; create a template if absent.
   gidd.cmd config set github.account <login>         Set the expected account; does not log in or switch accounts.
 
-GitHub identity (requires Node or Bun):
+GitHub identity:
   gidd.cmd identity                                  Check configured API identity, Git remote reading and author.
   gidd.cmd auth                                      Wait for device authorization using config; gh may save credentials.
 

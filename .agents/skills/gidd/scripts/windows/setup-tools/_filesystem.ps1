@@ -34,8 +34,51 @@ function Open-GiddInstallLock {
     [void][IO.Directory]::CreateDirectory($cacheRoot)
     $lockPath = Join-Path $ToolsRoot '.cache/install.lock'
     Assert-GiddPlainPath $lockPath
-    try { return [IO.File]::Open($lockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None) }
-    catch [IO.IOException] { throw 'install_locked_or_unwritable' }
+    $token = [guid]::NewGuid().ToString()
+    $marker = "owner-$token.json"
+    $prepared = Join-Path $cacheRoot "lock-$token"
+    [void][IO.Directory]::CreateDirectory($prepared)
+    Write-GiddDurableFile (Join-Path $prepared $marker) ([Text.Encoding]::UTF8.GetBytes((@{schema='gidd.lock/v1';pid=$PID;token=$token} | ConvertTo-Json -Compress)))
+    try {
+        for ($attempt = 0; $attempt -lt 4; $attempt++) {
+            Assert-GiddPlainPath $lockPath
+            if (Test-Path -LiteralPath $lockPath) {
+                $item = Get-Item -LiteralPath $lockPath -Force
+                if (-not $item.PSIsContainer -and $item.Length -eq 0) {
+                    $retired = Join-Path $cacheRoot "legacy-$token"
+                    try { [IO.File]::Move($lockPath,$retired); [IO.File]::Delete($retired) }
+                    catch { throw 'install_locked_or_unwritable' }
+                } elseif ($item.PSIsContainer) {
+                    $entries = @(Get-ChildItem -LiteralPath $lockPath -Force)
+                    if (-not $entries.Count) { try { [IO.Directory]::Delete($lockPath) } catch {}; continue }
+                    if ($entries.Count -ne 1 -or $entries[0].Name -notmatch '^owner-[a-f0-9-]{36}\.json$' -or $entries[0].Length -gt 1024) { throw 'install_locked_or_unwritable' }
+                    Assert-GiddPlainPath $entries[0].FullName
+                    $owner = [IO.File]::ReadAllText($entries[0].FullName) | ConvertFrom-Json
+                    if ($owner.schema -ne 'gidd.lock/v1' -or $owner.pid -le 0 -or $entries[0].Name -ne "owner-$($owner.token).json") { throw 'install_locked_or_unwritable' }
+                    $dead = $false
+                    try { $process = [Diagnostics.Process]::GetProcessById($owner.pid); $process.Dispose() }
+                    catch [ArgumentException] { $dead = $true }
+                    if (-not $dead) { throw 'install_locked_or_unwritable' }
+                    Remove-GiddLockMarker $lockPath $entries[0].Name
+                    continue
+                } else { throw 'install_locked_or_unwritable' }
+            }
+            try { [IO.Directory]::Move($prepared,$lockPath) }
+            catch { if (-not (Test-Path -LiteralPath $lockPath)) { throw }; continue }
+            $handle = [pscustomobject]@{ Path=$lockPath; Marker=$marker }
+            $handle | Add-Member -MemberType ScriptMethod -Name Dispose -Value { Remove-GiddLockMarker $this.Path $this.Marker }
+            return $handle
+        }
+        throw 'install_locked_or_unwritable'
+    } finally { if ([IO.Directory]::Exists($prepared)) { Remove-GiddLockMarker $prepared $marker } }
+}
+
+function Remove-GiddLockMarker {
+    param([string]$Path, [string]$Marker)
+    # Delete only this owner's unique marker, then only an empty directory.
+    [IO.File]::Delete((Join-Path $Path $Marker))
+    try { [IO.Directory]::Delete($Path) }
+    catch [IO.IOException] { if ([IO.Directory]::Exists($Path) -and -not @(Get-ChildItem -LiteralPath $Path -Force).Count) { throw } }
 }
 
 function Write-GiddInstallationGuide {
@@ -43,38 +86,7 @@ function Write-GiddInstallationGuide {
     $destination = Join-Path $ToolsRoot 'INSTALLATION.md'
     $temporary = Join-Path $ToolsRoot '.INSTALLATION.tmp'
     Assert-GiddPlainPath $destination
-    $text = @'
-# GIDD-managed tools
-
-This fixed tool storage location is ~/.agents/skills.tools/gidd/.
-It is independent of the skill installation directory and is shared by repositories.
-It is not a skill: do not add SKILL.md or repository config.toml here.
-
-- bun/, node/ and gh/ (as needed): published files, upstream licenses and install.json.
-- Repository config.toml selects version policies and visible download roots.
-  Floating versions resolve only when downloading a missing tool; existing usable tools are reused.
-- Official release metadata supplies versions and hashes, including for mirrored archives.
-  install.json records the exact archive source and hashes actually installed.
-- Verified release hashes: .agents/skills/gidd/assets/runtimes.json (Bun/gh), scripts/dev/runtimes.json
-  (development Node). Missing tools are downloaded; local package inputs are not supported.
-- Node includes node.exe and LICENSE, without npm.
-- install.json: tool version, upstream source and file hashes; do not edit it.
-- .cache/<tool>/: temporary downloads and extraction; removed after success
-  or rebuilt on the next explicit retry. Download archives are not retained.
-- .cache/install.lock: OS file lock; its presence alone does not mean installation is running.
-
-After an interruption, run the repository-installed skill's gidd.cmd setup
-again (optionally selecting bun, node or gh). The installer verifies completed
-directories and never overwrites an occupied final directory. A corrupt or unknown
-final directory requires explicit review; keep it until its ownership is clear.
-Do not delete .cache/ or its lock file while an installer is running.
-
-When uninstalling, distinguish one repository from all shared tools. Remove this
-whole directory only when removal of this tool storage is intended and no installer
-is running. Check other repositories before removing shared storage; reference tracking
-is not implemented. External PATH tools are not owned here. Deleting files does not revoke
-GitHub authorization. GIDD's MIT license does not replace upstream tool licenses.
-'@
+    $text = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../../../assets/INSTALLATION.md'))
     if ([IO.File]::Exists($destination) -and [IO.File]::ReadAllText($destination) -ceq $text) { return }
     Write-GiddDurableFile $temporary ([Text.Encoding]::UTF8.GetBytes($text))
     if ([IO.File]::Exists($destination)) { [IO.File]::Replace($temporary, $destination, [System.Management.Automation.Language.NullString]::Value) }

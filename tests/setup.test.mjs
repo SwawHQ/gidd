@@ -1,13 +1,50 @@
 import { test } from 'node:test';
 import { symlinkSync, unlinkSync } from 'node:fs';
-import { toolsRoot, adapter, assert, code, compile, dirname, existsSync, fixture, hash, installSpec, join, json, makeZip, mkdirSync, ok, ps, readFileSync, startAdapter, stub, until, write } from './support/helpers.mjs';
+import { product, jsAdapter, toolsRoot, adapter as shellAdapter, assert, code, compile, dirname, existsSync, fixture, hash, installSpec, join, json, makeZip, mkdirSync, ok, ps, readFileSync, startAdapter as startShellAdapter, stub, until, write } from './support/helpers.mjs';
 
-test('setup: install, integrity, interrupted publication, locks, preservation and reuse', { timeout: 120000 }, async () => {
+test('Shell and JS installers exclude each other and reclaim a killed owner', { timeout: 60000 }, async () => {
+  const f = fixture();
+  try {
+    const exe = compile(f.root), archive = join(f.root,'bun.zip'), definitionPath = join(f.root,'definition.json');
+    makeZip(f.root,archive,[{ name: 'bun/bun.exe', source: exe }]);
+    write(definitionPath,JSON.stringify({ name: 'bun', version: '1.4.2', archive: 'bun.zip', url: 'https://fixture.invalid/bun.zip', sha256: hash(archive), files: [{ entry: 'bun/bun.exe', name: 'bun.exe' }], supplements: [] }));
+    for (const javascript of [false,true]) {
+      const root = join(f.root,`lock-${javascript}`), spec = installSpec(root,definitionPath,f.root);
+      const owner = startShellAdapter(f.root,{ ...spec, stopAt: 'locked' },{ javascript });
+      try {
+        await until(() => existsSync(owner.marker));
+        const competing = (javascript ? shellAdapter : jsAdapter)(f.root,spec);
+        assert.notEqual(competing.status,0); assert.match(competing.stderr,/install_locked/);
+      } finally { owner.child.kill(); await owner.result; }
+      ok((javascript ? shellAdapter : jsAdapter)(f.root,spec));
+      assert.equal(existsSync(join(root,'bun/install.json')),true);
+    }
+    // Retire the old unlocked empty file without accepting an unknown file.
+    const root = join(f.root,'legacy'); write(join(root,'.cache/install.lock'),'');
+    ok(jsAdapter(f.root,{ action: 'guide', root }));
+    write(join(root,'.cache/install.lock'),'unknown owner data');
+    assert.match(jsAdapter(f.root,{ action: 'guide', root }).stderr,/install_locked/);
+    assert.equal(readFileSync(join(root,'.cache/install.lock'),'utf8'),'unknown owner data');
+    const legacyRoot = join(f.root,'legacy-running');
+    const old = startShellAdapter(f.root,{ action: 'legacy-lock', root: legacyRoot });
+    try {
+      await until(() => existsSync(old.marker));
+      for (const invoke of [shellAdapter,jsAdapter]) assert.notEqual(invoke(f.root,{ action: 'guide', root: legacyRoot }).status,0,'Never retire a live legacy OS lock');
+      assert.equal(existsSync(join(legacyRoot,'.cache/install.lock')),true);
+    } finally { old.child.kill(); await old.result; }
+    ok(jsAdapter(f.root,{ action: 'guide', root: legacyRoot }));
+  } finally { f.dispose(); }
+});
+
+for (const engine of ['shell','javascript']) {
+const adapter = engine === 'shell' ? shellAdapter : jsAdapter;
+const startAdapter = (root,spec) => startShellAdapter(root,spec,{ javascript: engine === 'javascript' });
+test(`setup ${engine}: install, integrity, interrupted publication, locks, preservation and reuse`, { timeout: 120000 }, async () => {
   const f = fixture();
   try {
     const exe = compile(f.root), archive = join(f.root,'bun.zip');
     makeZip(f.root,archive,[{name:'bun-windows-x64/bun.exe',source:exe}]);
-    const definition = {name:'bun',version:'1.2.15',archive:'bun.zip',url:'https://example.invalid/bun.zip',sha256:hash(archive),files:[{entry:'bun-windows-x64/bun.exe',name:'bun.exe'}],supplements:[]};
+    const definition = {name:'bun',version:'1.4.2',archive:'bun.zip',url:'https://example.invalid/bun.zip',sha256:hash(archive),files:[{entry:'bun-windows-x64/bun.exe',name:'bun.exe'}],supplements:[]};
     const definitionPath = join(f.root,'definition.json'); write(definitionPath,JSON.stringify(definition));
     const install = (root, path = definitionPath, archives = f.root) => adapter(f.root,installSpec(root,path,archives));
     const valid = root => json(ok(adapter(f.root,{action:'validate',root:join(root,'bun'),name:'bun'})));
@@ -17,7 +54,7 @@ test('setup: install, integrity, interrupted publication, locks, preservation an
     assert.ok(readFileSync(join(tools,'INSTALLATION.md'),'utf8').startsWith('# GIDD-managed tools'));
     assert.equal(json(ok(install(tools))).action,'installed'); assert.equal(valid(tools),true);
     assert.equal(existsSync(join(tools,'.cache/bun')),false,'Successful install must remove downloads and extraction');
-    assert.equal(existsSync(join(tools,'.cache/install.lock')),true,'Stage cleanup must preserve the lock file');
+    assert.equal(existsSync(join(tools,'.cache/install.lock')),false,'Finished installer releases its lock');
     const recordPath=join(tools,'bun/install.json'), recordHash=hash(recordPath), recordText=readFileSync(recordPath,'utf8');
     assert.equal(json(ok(install(tools,definitionPath,join(f.root,'missing')))).action,'reused'); assert.equal(hash(recordPath),recordHash);
     const managedBin=join(tools,'bun'), managedExe=join(managedBin,'bun.exe');
@@ -88,7 +125,7 @@ test('setup: install, integrity, interrupted publication, locks, preservation an
       for (const existing of [false,true]) {
         if (existing) mkdirSync(toolsRoot(home),{recursive:true});
         write(join(f.root,'.agents/skills/gidd/config.toml'),`schema_version = 1\n[tools]\n`);
-        const report=json(ok(ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root],{env:{PATH:external,USERPROFILE:home}})));
+        const report=json(ok(product(['setup','--repository',f.root],{env:{PATH:external,USERPROFILE:home}})));
         assert.equal(report.status,'ready'); assert.equal(report.tools.length,2);
         for (const name of [runtime,'gh']) {
           const matches=report.tools.filter(tool=>tool.name===name); assert.equal(matches.length,1);
@@ -100,12 +137,12 @@ test('setup: install, integrity, interrupted publication, locks, preservation an
   } finally { f.dispose(); }
 });
 
-test('setup: Node archive version, integrity and reuse without downloads', { timeout: 120000 }, () => {
+test(`setup ${engine}: Node archive version, integrity and reuse without downloads`, { timeout: 120000 }, () => {
   const f=fixture();
   try {
     const exe=compile(f.root), archive=join(f.root,'node.zip'), root=join(f.root,'node-storage');
     makeZip(f.root,archive,[{name:'node/node.exe',source:exe}]);
-    const definition={name:'node',version:'24.0.0',archive:'node.zip',url:'https://example.invalid/node.zip',sha256:hash(archive),files:[{entry:'node/node.exe',name:'node.exe'}],supplements:[]};
+    const definition={name:'node',version:'24.19.0',archive:'node.zip',url:'https://example.invalid/node.zip',sha256:hash(archive),files:[{entry:'node/node.exe',name:'node.exe'}],supplements:[]};
     const path=join(f.root,'node.json'); write(path,JSON.stringify(definition));
     assert.equal(json(ok(adapter(f.root,installSpec(root,path,f.root)))).action,'installed');
     assert.equal(existsSync(join(root,'.cache/node')),false);
@@ -119,3 +156,5 @@ test('setup: Node archive version, integrity and reuse without downloads', { tim
     assert.match(adapter(f.root,installSpec(root,path,f.root)).stderr,/occupied_or_invalid_target/);
   } finally { f.dispose(); }
 });
+
+}

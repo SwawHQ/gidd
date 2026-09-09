@@ -4,14 +4,16 @@
 }
 
 function Find-Tool {
-    param([string]$Name, [version]$Minimum, [string]$Pattern, [string]$ManagedPath, [string]$RequestedVersion = '')
+    param([string]$Name, [version]$Minimum, [string]$Pattern, [string]$ManagedPath, [string]$RequestedVersion = '', [ValidateSet('auto','managed','path')][string]$Source = 'auto')
     $managedFullPath = if ($ManagedPath) { [IO.Path]::GetFullPath($ManagedPath) } else { '' }
     $candidates = @()
-    foreach ($command in @(Get-Command "$Name.exe" -CommandType Application -All -ErrorAction SilentlyContinue)) {
-        $candidates += @{ path = $command.Source; source = 'path' }
-    }
-    if ($ManagedPath -and (Test-Path -LiteralPath $ManagedPath)) {
+    if ($Source -ne 'path' -and $ManagedPath -and (Test-Path -LiteralPath $ManagedPath)) {
         $candidates += @{ path = $ManagedPath; source = 'managed' }
+    }
+    if ($Source -ne 'managed') {
+        foreach ($command in @(Get-Command "$Name.exe" -CommandType Application -All -ErrorAction SilentlyContinue)) {
+            $candidates += @{ path = $command.Source; source = 'path' }
+        }
     }
     $attempts = @()
     foreach ($candidate in $candidates) {

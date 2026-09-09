@@ -2,16 +2,20 @@ import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readF
 import { randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { parseConfiguration } from './storage.mjs';
 
 const fields = new Set(['hostname', 'account', 'remote']);
 const stringLiteral = String.raw`(?:"(?:[^"\\]|\\["\\])*"|'[^']*')`;
 const assignment = new RegExp(`^([ \\t]*)(hostname|account|remote)([ \\t]*=[ \\t]*)(${stringLiteral})([ \\t]*(?:#.*)?)$`);
 const decode = literal => literal[0] === "'" ? literal.slice(1, -1) : JSON.parse(literal);
-const editableKey = /^(?:github\.(?:hostname|account|remote)|tools\.(?:node|bun|gh)\.(?:version|source))$/;
+const editableKey = /^(?:bootstrap\.runtime|github\.(?:hostname|account|remote)|tools\.(?:node|bun|gh)\.(?:version|source))$/;
 
 function validateSetting(key, value) {
   if (!editableKey.test(key || '')) throw new Error('config_unknown_key');
+  if (key === 'bootstrap.runtime') {
+    if (!['bun', 'node'].includes(value)) throw new Error('config_invalid_bootstrap_runtime');
+    return;
+  }
   if (key.startsWith('github.')) return validateGitHubField(key.slice(7), value);
   if (typeof value !== 'string' || !value || /[\x00-\x1f\x7f]/.test(value)) throw new Error('config_invalid_tool_value');
   if (key.endsWith('.version')) {
@@ -69,6 +73,24 @@ function insertSetting(text, doc, section, setting) {
 
 export function editConfiguration(text, key, value) {
   validateSetting(key, value);
+  if (key === 'bootstrap.runtime') {
+    parseConfiguration(text);
+    const lines = text.split('\n');
+    let section = '', start = -1, end = lines.length, index = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const table = /^[ \t]*\[([^\]]+)\]/.exec(lines[i]);
+      if (table) {
+        if (section === 'bootstrap') end = i;
+        section = table[1]; if (section === 'bootstrap') start = i;
+      } else if (section === 'bootstrap' && /^[ \t]*runtime[ \t]*=/.test(lines[i])) index = i;
+    }
+    if (index < 0) text = insertSetting(text, { lines, start, end }, 'bootstrap', `runtime = ${JSON.stringify(value)}`);
+    else {
+      lines[index] = lines[index].replace(new RegExp(`^([ \\t]*runtime[ \\t]*=[ \\t]*)${stringLiteral}`), (_, prefix) => prefix + JSON.stringify(value));
+      text = lines.join('\n');
+    }
+    parseConfiguration(text); return text;
+  }
   if (key.startsWith('github.')) return editGitHub(text, key.slice(7), value);
   const doc = parseTools(text), [, name, field] = key.split('.'), entry = doc.entries[name];
   const literal = JSON.stringify(value);
@@ -89,16 +111,6 @@ export function editConfiguration(text, key, value) {
   parseGitHub(text);
   if (Buffer.byteLength(text) > 16384) throw new Error('config_too_large');
   return text;
-}
-
-function validateCandidate(repository, path) {
-  const shell = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/WindowsPowerShell/v1.0/powershell.exe');
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'psmodulepath'));
-  env.PSModulePath = join(dirname(shell), 'Modules');
-  const result = spawnSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
-    fileURLToPath(new URL('./windows/validate-config.ps1', import.meta.url)), '-RepositoryPath', repository, '-CandidatePath', path],
-  { encoding: 'utf8', windowsHide: true, timeout: 30000, env });
-  if (result.error || result.status !== 0) throw new Error('config_candidate_invalid');
 }
 
 export function configPath(repository) {
@@ -133,7 +145,7 @@ export function validateGitHubField(key, value) {
   if (typeof value !== 'string' || /[\x00-\x20\x7f]/.test(value) || !patterns[key].test(value)) throw new Error(`config_invalid_github_${key}`);
 }
 
-// The shell validates the full bootstrap schema; this reader owns GitHub settings.
+// The shared JavaScript parser validates the schema; this reader owns GitHub values.
 // Keep offsets and literal spelling so editing one field preserves all other text.
 export function parseGitHub(text, { validate = true } = {}) {
   const lines = text.split('\n'), github = {}, entries = {};
@@ -166,7 +178,8 @@ export function parseGitHub(text, { validate = true } = {}) {
 export function readGitHubConfiguration(repository, required) {
   const path = configPath(repository);
   if (!existsSync(path)) throw new Error('config_missing');
-  const { github } = parseGitHub(readText(path));
+  const content = readText(path); parseConfiguration(content);
+  const { github } = parseGitHub(content);
   for (const key of required) if (!Object.hasOwn(github, key)) throw new Error(`config_missing_github_${key}`);
   return github;
 }
@@ -200,7 +213,7 @@ export function configure(repository, action, key, value) {
   plainPath(path);
   if (action === 'show') {
     if (!existsSync(path)) throw new Error('config_missing');
-    const content = readText(path); parseGitHub(content);
+    const content = readText(path); parseConfiguration(content); parseGitHub(content);
     return { schema: 'gidd.config/v1', status: 'ready', config_path: path, content };
   }
   if (action !== 'set') throw new Error('config_invalid_arguments');
@@ -215,9 +228,9 @@ export function configure(repository, action, key, value) {
     const original = existsSync(path) ? readText(path) : null;
     const text = original ?? readFileSync(new URL('../assets/config.example.toml', import.meta.url), 'utf8');
     const result = editConfiguration(text, key, value);
+    parseConfiguration(result);
     const fd = openSync(temporary, 'wx');
     try { writeFileSync(fd, result, 'utf8'); fsyncSync(fd); } finally { closeSync(fd); }
-    if (key.startsWith('tools.')) validateCandidate(repository, temporary);
     plainPath(path);
     if ((existsSync(path) ? readText(path) : null) !== original) throw new Error('config_changed_during_edit');
     renameSync(temporary, path);

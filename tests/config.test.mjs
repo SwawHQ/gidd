@@ -3,10 +3,30 @@ import { createHash } from 'node:crypto';
 import { statSync, symlinkSync, unlinkSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { configure, editConfiguration, editGitHub, parseGitHub, readGitHubConfiguration } from '../.agents/skills/gidd/scripts/config.mjs';
-import { toolsRoot, adapter, assert, code, compile, existsSync, findGit, fixture, hash, join, json, mkdirSync, ok, ps, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
+import { diagnosis as runDiagnosis, product, jsAdapter, toolsRoot, adapter as shellAdapter, assert, code, compile, existsSync, findGit, fixture, hash, join, json, mkdirSync, ok, ps, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
 
 const configText = () => `# preserved comment\nschema_version = 1\n[tools]\n`;
 
+test('bootstrap runtime defaults and edits preserve comments and reject unsupported choices', () => {
+  const f = fixture();
+  try {
+    const path = join(f.root,'.agents/skills/gidd/config.toml');
+    const original = '\uFEFFschema_version = 1\r\n[bootstrap]\r\n  runtime = \'bun\' # keep preference comment\r\n[tools]\r\n';
+    write(path,original); configure(f.root,'set','bootstrap.runtime','node');
+    assert.equal(readFileSync(path,'utf8'),original.replace("'bun'",'"node"'));
+    for (const value of ['', 'Node', 'deno']) assert.throws(() => configure(f.root,'set','bootstrap.runtime',value),/config_invalid_bootstrap_runtime/);
+    write(path,configText()); configure(f.root,'set','bootstrap.runtime','node');
+    assert.ok(readFileSync(path,'utf8').startsWith(configText()));
+    write(path,'schema_version = 1\n[bootstrap]\n# empty table\n[github]\naccount = "Octocat"\n');
+    configure(f.root,'set','bootstrap.runtime','bun');
+    assert.match(readFileSync(path,'utf8'),/# empty table\nruntime = "bun"\n\[github\]/);
+    assert.equal(existsSync(toolsRoot(f.root)),false);
+  } finally { f.dispose(); }
+});
+
+for (const engine of ['shell','javascript']) {
+// gh metadata is JavaScript-only; native stage0 prepares Bun/Node only.
+const adapter = (root, spec, options) => (engine === 'shell' && !(spec.action === 'release' && spec.name === 'gh') ? shellAdapter : jsAdapter)(root,spec,options);
 test('config set edits tool fields without changing companions or installing tools', { timeout: 120000 }, () => {
   const f = fixture();
   try {
@@ -137,14 +157,14 @@ test('configured setup reuses Node/gh without knowing a skill installation direc
     const path=join(f.root,'.agents/skills/gidd/config.toml'), tools=toolsRoot(f.root);
     write(path,configText()); const before=hash(path), exe=compile(f.root);
     stub(exe,join(tools,'node/node.exe'),undefined,true); stub(exe,join(tools,'gh/gh.exe'),undefined,true);
-    const invoke=() => ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root],{env:{PATH:''}});
+    const invoke=() => product(['setup','--repository',f.root],{env:{PATH:''}});
     assert.notEqual(ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root,'-ArchiveDirectory',f.root],{env:{PATH:''}}).status,0);
     const report=json(ok(invoke())); samePath(report.tools_root,tools);
     assert.deepEqual(report.tools.map(x=>x.name),['node','gh']); assert.ok(report.tools.every(x=>x.action==='reused'));
     assert.equal(existsSync(join(tools,'bun')),false); assert.equal(hash(path),before);
     assert.match(readFileSync(join(tools,'INSTALLATION.md'),'utf8'),/independent of the skill installation directory/);
     const git=findGit(); ok(run(git,['-C',f.root,'init','--quiet']));
-    const diagnosis=json(ps(join(code,'doctor.ps1'),['-RepositoryPath',f.root],{env:{PATH:dirname(git)}}));
+    const diagnosis=json(runDiagnosis(f.root,{env:{PATH:dirname(git)}}));
     samePath(diagnosis.checks.find(x=>x.id==='tools.storage').details.tools_root,tools);
     assert.equal(diagnosis.checks.find(x=>x.id==='runtime').details.selected,'tool.node');
     assert.equal(diagnosis.checks.find(x=>x.id==='repository.config.validation').status,'ready');
@@ -168,7 +188,7 @@ test('inline tool configuration validates versions and visible sources without n
     }
     for (const invalid of [
       line+'\n'+line, line.replace('"lts"','"canary"'), line.replace('"lts"','"24"'),
-      line.replace('"lts"','"024.1.0"'), line.replace('"lts"','"24.0.0-beta"'),
+      line.replace('"lts"','"024.1.0"'), line.replace('"lts"','"24.19.0-beta"'),
       line.replace('https:','http:'), line.replace('nodejs.org','user:secret@nodejs.org'),
       line.replace('/dist','/dist?token=secret'), line.replace('/dist','/dist#fragment'),
       line.replace('version =','Version ='), line.replace('source =','url ='),
@@ -234,3 +254,5 @@ test('release resolution selects stable versions, verifies upstream hashes and p
     assert.match(resolve('bun','latest',{}, {pinnedPath}).stderr,/unexpected_metadata_request/);
   } finally { f.dispose(); }
 });
+
+}

@@ -1,6 +1,11 @@
 # 本仓库的工具存储配置；不表示启用 GIDD 或完成 GitHub 登录。
 schema_version = 1
 
+[bootstrap]
+# 每种来源内优先 Bun；共享目录优先 PATH，两处均无合格候选才安装 Bun。
+# 允许 bun/node；安装目录永久固定，不配置 bin 路径。
+runtime = "bun"
+
 [tools]
 # 工具固定存放于 ~/.agents/skills.tools/gidd/，开发入口与技能共用。
 # 下载来源可核对或改为镜像；安装时展示确切版本和完整地址，并校验文件。

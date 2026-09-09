@@ -1,6 +1,6 @@
 # GitHub 身份检查（Windows）
 
-用户要求“检查此仓库的 GitHub 登录”时，Agent 先确定目标仓库和预期主机、账号，再调用 `gidd.cmd identity`。该命令会联网检查，但不启用仓库、不安装工具、不发起登录或切换账号，不写入配置或 commit。
+用户要求“检查此仓库的 GitHub 登录”时，Agent 先确定目标仓库和预期主机、账号，再调用 `gidd.cmd identity`。该命令会联网检查，但不启用仓库、不安装 gh、不发起登录或切换账号，不写入配置或 commit。
 
 ```powershell
 & "<目标仓库>\.agents\skills\gidd\gidd.cmd" identity
@@ -8,7 +8,7 @@
 
 仓库内 `.agents/skills/gidd/` 的入口从自身位置自动定位目标（含 worktree），不依赖工作目录。主机、预期账号和 remote 只读取仓库配置的 `github.hostname`、`github.account`、`github.remote`，三者均须存在；缺项时报错并提示 `config set`，运行时不补默认值。账号比较忽略大小写。旧的三个覆盖参数已移除，设置方式见 [configuration.md](configuration.md)。
 
-PowerShell 仅定位工具和启动 JavaScript：按既有仓库工具配置复用 PATH 或受管目录中的 gh、Git、Bun/Node，任一可用运行时即可。业务入口为 `scripts/github.mjs`，Node/Bun 执行同一套逻辑。配置或启动失败时先运行离线 doctor；检查不会为了诊断而下载工具。
+PowerShell 按 [stage0](bootstrap.md) 复用或准备 Bun/Node 后启动 JS。scripts/gidd.mjs 用共用 JS 探测 gh、Git，再调用 scripts/github.mjs。缺失 gh 不自动安装；前置 stage0 可能安装启动运行时，且失败时身份检查尚未执行。
 
 入口只使用实际 `.exe`，不依赖开发者私有包装命令。
 
@@ -26,7 +26,7 @@ PowerShell 仅定位工具和启动 JavaScript：按既有仓库工具配置复�
 
 `checks_passed` / 退出 0 表示前四项都通过，仍不代表 Git 推送认证通过。失败、不匹配、依赖缺失或远程未检查为 `needs_attention` / 退出 1；参数、平台或启动错误为退出 2。API 请求失败可能是凭据、网络或服务问题，不直接判定“未登录”。错误输出仅保留原因码，不转发子进程 stderr、失败 stdout 或完整远程 URL。
 
-当前仅验证 Windows x64、Windows PowerShell 5.1、Bun 1.4.2 与 Node 24。SSH、其他主机、带凭据或查询参数的远程不会进行传输探测，返回 `not_checked`；这不是认证失败。`doctor.ps1` 仍是纯离线诊断。
+当前仅验证 Windows x64、Windows PowerShell 5.1、Bun 1.4.2 与 Node 24。SSH、其他主机、带凭据或查询参数的远程不会进行传输探测，返回 `not_checked`；这不是认证失败。JS doctor 是离线诊断；系统入口的前置 stage0 可能联网。
 
 每个业务子进程默认最多 15 秒，终止确认最多额外 500 毫秒，输出最多 1 MiB；一项失败后继续独立项。关闭 stdin，禁用 Git/GCM 的交互提示，不执行 `auth login`、`auth switch` 或 `auth setup-git`。继承调用进程选定的 gh 认证环境（包括 `GH_CONFIG_DIR` 和 token 环境变量），不读取或输出 token；Git 继续使用自身现有凭据配置。外部凭据助手自身的行为由该助手决定。
 

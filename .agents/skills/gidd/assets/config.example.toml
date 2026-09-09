@@ -2,6 +2,11 @@
 # Repository settings; this file does not enable GIDD or authenticate GitHub.
 schema_version = 1
 
+[bootstrap]
+# Prefer this runtime within each source; install it only if no candidate qualifies.
+# bun or node. Managed shared tools always precede PATH; no bin/directory settings.
+runtime = "bun"
+
 [tools]
 # Tools are shared at ~/.agents/skills.tools/gidd/; the directory is not configurable.
 # Release/download roots. Installation reports the exact version and archive URL.

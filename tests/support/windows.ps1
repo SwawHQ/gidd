@@ -40,6 +40,22 @@ try {
         }
         'find' { Find-Tool $request.name ([version]$request.minimum) $request.pattern $request.managedPath | ConvertTo-Json -Depth 8 -Compress }
         'configuration' { Resolve-GiddToolStorage $request.repositoryRoot | ConvertTo-Json -Depth 8 -Compress }
+        'bootstrap' {
+            . (Join-Path $request.codeRoot 'lib/_bootstrap.ps1')
+            function Read-GiddReleaseText {
+                param([string]$Url)
+                $property = $request.responses.PSObject.Properties[$Url]
+                if (-not $property) { throw "unexpected_metadata_request:$Url" }
+                return [string]$property.Value
+            }
+            function Open-GiddDownload {
+                param([string]$Url)
+                $property = $request.downloads.PSObject.Properties[$Url]
+                if (-not $property) { throw "unexpected_download:$Url" }
+                return @{ response=$null; stream=[IO.File]::OpenRead([string]$property.Value) }
+            }
+            Resolve-GiddBootstrapRuntime (Resolve-GiddToolStorage $request.repositoryRoot) (Get-GiddRuntimeRequirements) | ConvertTo-Json -Depth 10 -Compress
+        }
         'release' {
             $settings = @{ version=$request.version;source=$request.source }
             $pinned = if ($request.pinnedPath) { [IO.File]::ReadAllText($request.pinnedPath) | ConvertFrom-Json } else { $null }
@@ -59,6 +75,13 @@ try {
         'guide' {
             $lock = Open-GiddInstallLock $request.root
             Write-GiddInstallationGuide $request.root
+        }
+        'legacy-lock' {
+            $cache = Join-Path $request.root '.cache'
+            [void][IO.Directory]::CreateDirectory($cache)
+            $lock = [IO.File]::Open((Join-Path $cache 'install.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+            [IO.File]::WriteAllText(($RequestPath + '.locked'),'locked')
+            Start-Sleep -Seconds 30
         }
         'install' {
             $definition = [IO.File]::ReadAllText($request.definitionPath) | ConvertFrom-Json
