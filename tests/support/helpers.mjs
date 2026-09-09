@@ -25,7 +25,9 @@ export function environment(overrides = {}) {
     if (/^(path|psmodulepath|git_dir|git_work_tree|git_index_file|git_common_dir|git_ceiling_directories)$/i.test(key) ||
         Object.keys(overrides).some(name => name.toLowerCase() === key.toLowerCase())) delete env[key];
   }
-  return { ...env, PATH: process.env.PATH ?? process.env.Path ?? '', PSModulePath: join(dirname(shell), 'Modules'), ...overrides };
+  // An isolated USERPROFILE can make Windows PowerShell's cache path relative.
+  // Disable that cache so fixtures cannot leave Microsoft/ in the checkout.
+  return { ...env, PATH: process.env.PATH ?? process.env.Path ?? '', PSModulePath: join(dirname(shell), 'Modules'), PSModuleAnalysisCachePath: 'NUL', ...overrides };
 }
 export function run(executable, args = [], options = {}) {
   const result = spawnSync(executable, args, { encoding: 'utf8', timeout: 20000, windowsHide: true, cwd: repo, ...options, env: environment(options.env) });
@@ -74,9 +76,19 @@ export function adapter(root, spec, options) {
   try { return ps(join(support, 'windows.ps1'), ['-RequestPath', path], options); }
   finally { rmSync(path, { force: true }); }
 }
+export function product(args, options) { return run(process.execPath, [join(code,'../gidd.mjs'),...args], options); }
+export function diagnosis(target, options) { return run(process.execPath,[join(code,'../doctor.mjs'),target],options); }
+export function jsAdapter(root, spec, options) {
+  if (!['configuration','release','validate','find','stage','guide','install'].includes(spec.action)) return adapter(root,spec,options);
+  const path = request(root,spec);
+  try { return run(process.execPath,[join(support,'javascript.mjs'),path],options); }
+  finally { rmSync(path,{ force: true }); }
+}
 export function startAdapter(root, spec, options = {}) {
   const path = request(root, spec);
-  const child = spawn(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(support, 'windows.ps1'), '-RequestPath', path],
+  const executable = options.javascript ? process.execPath : shell;
+  const arguments_ = options.javascript ? [join(support,'javascript.mjs'),path] : ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(support, 'windows.ps1'), '-RequestPath', path];
+  const child = spawn(executable, arguments_,
     { cwd: repo, windowsHide: true, env: environment(options.env), stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '', stderr = '';
   child.stdout.on('data', chunk => { stdout += chunk; });
@@ -107,7 +119,7 @@ export function stub(source, destination, mode, managed = false) {
     const dir = dirname(destination);
     const files = readdirSync(dir).filter(name => name !== 'install.json').map(name => ({ name, length: lstatSync(join(dir, name)).size, sha256: hash(join(dir, name)) }));
     const name = destination.endsWith('bun.exe') ? 'bun' : destination.endsWith('node.exe') ? 'node' : 'gh';
-    write(join(dir, 'install.json'), JSON.stringify({ schema: 'gidd.install/v1', name, platform: 'windows-x64', version: name === 'node' ? '24.0.0' : name === 'gh' ? '2.98.0' : '1.2.15', archive_sha256: '0'.repeat(64), files }));
+    write(join(dir, 'install.json'), JSON.stringify({ schema: 'gidd.install/v1', name, platform: 'windows-x64', version: name === 'node' ? '24.19.0' : name === 'gh' ? '2.98.0' : '1.4.2', archive_sha256: '0'.repeat(64), files }));
   }
 }
 export function snapshot(root) {

@@ -1,6 +1,6 @@
 # 仓库配置 v1
 
-已确认的 stage0 配置修订见 [bootstrap.md](bootstrap.md)：计划增加 bootstrap.runtime（默认 bun），最低支持版本仍由技能维护，不增加安装目录或 bin 字段。该字段尚未实现，现有模板和仓库实例暂不写入它；以下描述当前解析器支持的配置。
+stage0 配置见 [bootstrap.md](bootstrap.md)：bootstrap.runtime 默认 bun，最低支持版本由 assets/runtime-requirements.json 维护，不增加安装目录或 bin 字段。
 
 模板为 `assets/config.example.toml`，实例唯一位置为 `<目标仓库>/.agents/skills/gidd/config.toml`。技能安装位置与安装方式由 Agent 客户端处理；GIDD 不在配置中记录“用户级/仓库级”模式，也不需要客户端用户技能根目录来定位下载工具。
 
@@ -17,10 +17,11 @@ gidd.cmd identity
 gidd.cmd auth
 ```
 
-`config show/set` 使用可用 Node/Bun 执行共用 `scripts/config.mjs`；缺少运行时时先显式 `setup bun` 或 `setup node`，不会自动安装。`show` 只读；`set <字段> <值>` 支持下表全部可编辑字段，拒绝未知字段和凭据字段，`schema_version` 由程序管理。仍可手工编辑 TOML。首次 set 创建完整模板，明确写入 hostname=github.com、remote=origin；账号由用户指定。已有配置不自动补齐其他缺项，Agent 按提示逐项设置。
+`config show/set` 使用可用 Node/Bun 执行共用 `scripts/config.mjs`；入口先经 stage0 自动复用或准备运行时。`show` 只读；`set <字段> <值>` 支持下表全部可编辑字段，拒绝未知字段和凭据字段，`schema_version` 由程序管理。仍可手工编辑 TOML。首次 set 创建完整模板，明确写入 hostname=github.com、remote=origin；账号由用户指定。已有配置不自动补齐其他缺项，Agent 按提示逐项设置。
 
 | 可编辑字段 | 值与用途 |
 | --- | --- |
+| `bootstrap.runtime` | `bun`（缺省）或 `node`；同一来源内的优先项及无候选时的安装选择 |
 | `github.hostname` | GitHub 主机名，例如 `github.com` |
 | `github.account` | 预期登录账号 |
 | `github.remote` | Git remote 名称，例如 `origin` |
@@ -28,9 +29,9 @@ gidd.cmd auth
 | `tools.bun.version`、`tools.gh.version` | `latest` 或确切版本 |
 | `tools.node.source`、`tools.bun.source`、`tools.gh.source` | HTTPS 下载根，规则见下文 |
 
-工具字段写入前，以临时配置调用同一 PowerShell schema 与共享工具目录校验器；校验失败保留原文件，不创建共享工具目录。内联表只替换指定字段的字符串，保留另一个字段、顺序、空格和行尾注释；原本省略整个工具行时，从模板补齐伴随字段，生成合法的完整内联表。
+写入前直接使用 scripts/storage.mjs 校验完整配置，不回调 PowerShell；校验失败保留原文件。JS 编辑本身不创建共享工具目录，前置 stage0 的准备另计。内联表只替换指定字段的字符串，保留另一个字段、顺序、空格和行尾注释；原本省略整个工具行时，从模板补齐伴随字段，生成合法的完整内联表。
 
-配置编辑器按最低可运行版本复用 PATH 或当前共享目录中的 Node/Bun，不要求匹配配置版本，避免刚设置新版本就无法继续编辑。其他命令仍遵守原来的版本要求。修改版本或来源只影响后续操作，不立即下载或升级工具。
+配置编辑器按最低可运行版本依次复用共享目录、PATH 中的 Node/Bun，不要求匹配配置版本，避免刚设置新版本就无法继续编辑。其他命令仍遵守原来的版本要求。JS 修改版本或来源只影响后续操作，不立即下载或升级工具；启动编辑器所需的 stage0 仍可能准备运行时。
 
 ```toml
 [github]
@@ -41,7 +42,7 @@ remote = "origin"  # Git remote 名称，不是 URL
 
 身份检查必须从文件读取三项；授权只要求 hostname/account，remote 不参与授权。缺项或非法值时报错，提示设置；不从当前 gh 登录、Git remote、命令行参数或默认值推断。`identity/auth` 已移除 `--hostname`、`--account`、`--remote` 以及 `auth <账号>`；`dev.cmd .auth` 同样不接收账号。修改账号只改变预期身份，不登录、不切换账号、不修改 Git 配置，也不自动启用仓库。
 
-编辑保留无关字段、注释、UTF-8 BOM 和原有换行。按白名单校验主机名、账号和 remote，保留已有非法/不支持的结构供人工修订，不重建文件来丢弃未知内容。完整启动 schema 由 Shell 校验，GitHub 字段值和所需字段由 JavaScript 校验；doctor 的工具配置就绪不代表身份配置齐备。
+编辑保留无关字段、注释、UTF-8 BOM 和原有换行。按白名单校验主机名、账号和 remote，保留已有非法/不支持的结构供人工修订，不重建文件来丢弃未知内容。stage0 用受限读取器检查启动配置，完整 schema、GitHub 字段值和所需字段由 JavaScript 校验；doctor 的工具配置就绪不代表身份配置齐备。
 
 写入使用同目录临时文件、刷盘和原子替换，独占 `config.toml.lock` 防止 GIDD 编辑器相互覆盖；正常结束清理临时文件与锁。写入前发现文件已被外部修改时拒绝替换。进程被强制终止可能留下锁和临时文件；确认无配置编辑进程运行后才清理对应遗留文件并重试，不自动删除锁抢占。保留原文件不等于任意硬件断电下零丢失。
 
@@ -86,11 +87,11 @@ Node 支持 `lts`（默认）、`latest` 或确切的 `x.y.z`；Bun、gh 支持 
 
 `gidd.cmd` 与 `dev.cmd` 使用同一位置；仓库移动、当前工作目录、是否已有配置及技能安装位置均不改变它。配置只决定版本要求和下载来源，不提供目录字段或路径覆盖参数。各工具占用固定 bun/、node/、gh/ 子目录；不同仓库要求不匹配的固定版本时报告冲突，不覆盖现有安装。
 
-路径解析由 `scripts/windows/lib/_configuration.ps1` 完成，不依赖 Bun/Node。只读解析不建目录；复用 PATH 工具也不创建存储。配置错误时停止受管工具操作，doctor 仍报告可检查的独立项目。
+stage0 路径解析由 `scripts/windows/lib/_configuration.ps1` 完成，不依赖 Bun/Node；JS 使用 scripts/storage.mjs 读取同一规则。只读解析不建目录；复用 PATH 工具也不创建存储。配置错误时 stage0 停止并报告启动失败；直接调用 JS doctor 时仍报告可检查的独立项目。
 
 ## 读取与校验
 
-这是当前工具字段的受限 TOML 读取器，不是通用 TOML 实现。支持 UTF-8（可带 BOM）、LF/CRLF、空行、`#` 注释、裸字段名、`[tools]` / `[github]` 表、单行字符串及上述工具内联表。内联表两个字段可交换顺序，不支持跨行或尾随逗号。双引号字符串支持反斜杠与双引号的转义，单引号字符串按字面读取。
+这是当前工具字段的受限 TOML 读取器，不是通用 TOML 实现。支持 UTF-8（可带 BOM）、LF/CRLF、空行、`#` 注释、裸字段名、`[tools]` / `[github]` / `[bootstrap]` 表、单行字符串及上述工具内联表。内联表两个字段可交换顺序，不支持跨行或尾随逗号。双引号字符串支持反斜杠与双引号的转义，单引号字符串按字面读取。
 
 不支持引号字段名、点分字段、多行字符串、数组、其他内联表或其他字段、转义。重复字段（包括内联表内）、重复表、缺少必需字段、未知字段、其他 schema 版本、非 UTF-8 和超过 16 KiB 的文件均报错。读取不重写实例，保留注释与格式；显式 `config set` 可创建模板并修改上表中的 GitHub 与工具字段；完整技能安装与更新尚未实现。
 
@@ -98,7 +99,7 @@ Node 支持 `lts`（默认）、`latest` 或确切的 `x.y.z`；Bun、gh 支持 
 
 ## 发布、提交与清理
 
-版本策略和下载来源在仓库实例中，已解析版本和校验值在实际工具的 install.json 中。`assets/runtimes.json`（Bun/gh）与源码仓库的 `scripts/dev/runtimes.json`（开发 Node）保留已验证版本的校验信息；平台资产名称与提取规则由 releases.ps1 适配。每个实际工具根内的 INSTALLATION.md 说明来源与清理边界，不记录技能安装模式。
+版本策略和下载来源在仓库实例中，已解析版本和校验值在实际工具的 install.json 中。`assets/runtimes.json`（Bun/gh）与源码仓库的 `scripts/dev/runtimes.json`（开发 Node）保留已验证版本的校验信息；平台资产名称与提取规则由 stage0 releases.ps1 和 JS install.mjs 适配。每个实际工具根内的 INSTALLATION.md 说明来源与清理边界，不记录技能安装模式。
 
 仓库实例只记录版本策略、下载来源和预期 GitHub 身份，可随源码审阅；不把整个 `.agents/` 默认视为应提交或应忽略。共享工具和下载缓存位于仓库外，不进入源码提交。
 

@@ -18,7 +18,7 @@
 
 2. **GIDD-002 — 对话管理与显式启用。** GIDD 的安装、初始化和管理以用户与 Agent 的对话为入口；例如“当前仓库启用 GIDD”“检查此仓库的 GitHub 登录”。安装到用户目录只提供技能，不启用任何仓库。用户明确要求启用某个目标仓库后，Agent 才执行该仓库的初始化；再次初始化应复用有效配置并补齐缺项，不重复登录或重建开发任务。底层脚本提供可验证的操作与结果，首版不另做面向人类的交互式配置向导。
 
-3. **GIDD-003 — 配置唯一且具体归属。** 运行配置 `config.toml` 只保存在 `<目标仓库>/.agents/skills/gidd/`；用户级技能安装目录，若出现 GIDD `config.toml` 属于未定义行为，如何使用看用户如何提示；`config.toml` 不会自动继承或多层覆盖。用户级技能服务的目标仓库也使用上述固定路径；该目录只有配置文件时，不代表已安装完整技能。`config.toml` 使用注释解释字段，允许人类直接编辑，Agent 修改时保留无关字段和注释。工具配置 schema v1 已确定为 `schema_version` 与 tools 下的 node/bun/gh 内联表（version、source）；同一 schema 可选增加 [github] 表（hostname、account、remote），模板见 `.agents/skills/gidd/assets/config.example.toml`。启用记录仍未定义，不能凭配置存在执行治理流程。
+3. **GIDD-003 — 配置唯一且具体归属。** 运行配置 `config.toml` 只保存在 `<目标仓库>/.agents/skills/gidd/`；用户级技能安装目录，若出现 GIDD `config.toml` 属于未定义行为，如何使用看用户如何提示；`config.toml` 不会自动继承或多层覆盖。用户级技能服务的目标仓库也使用上述固定路径；该目录只有配置文件时，不代表已安装完整技能。`config.toml` 使用注释解释字段，允许人类直接编辑，Agent 修改时保留无关字段和注释。工具配置 schema v1 已确定为 `schema_version` 与 tools 下的 node/bun/gh 内联表（version、source）；同一 schema 可选增加 [github] 表（hostname、account、remote）与 [bootstrap] 表（runtime=bun/node，缺省 bun），模板见 `.agents/skills/gidd/assets/config.example.toml`。启用记录仍未定义，不能凭配置存在执行治理流程。
 
 4. **GIDD-004 — 认证由授权事实确认。** `config.toml` 可以记录预期 GitHub 主机与账号，不保存 token、密码或二次验证码；修改账号字段不能视作已登录。有人参与的 gh 登录统一展示本次认证返回的 URL 和一次性用户代码，不自动打开浏览器，由用户在任意设备完成授权；脚本等待并验证实际身份后才报告成功。GitHub API 认证、Git 传输认证和 commit 作者信息分别检查。无 GUI 环境也采用该流程；长期凭据的保存位置由选定认证方式决定，不承诺复制配置即可复制登录状态。
 
@@ -26,7 +26,7 @@
 
 6. **GIDD-006 — 工具集中存储与清理。** 已有可用的 Bun、gh 优先复用；需要 GIDD 下载工具时才建立实际工具目录；工具目录固定为 `~/.agents/skills.tools/gidd/`，不提供配置或命令行覆盖。Bun、Node、gh 分别保存在工具根的 `bun/`、`node/`、`gh/` 下，Node 可由技能入口 `gidd.cmd setup node` 或仓库开发入口准备。该目录只管理 GIDD 下载的工具及配套安装数据，不保存 GIDD `config.toml`；目录及全部子目录不得包含 `SKILL.md`。其中 `INSTALLATION.md` 说明用途、工具来源和清理方式，供人类及 Agent 主动读取。建立共享工具目录不代表安装用户级技能或启用任何仓库。收到卸载请求时，GIDD 管理流程检查 Agent 确认的技能实际安装目录、仓库配置文件、固定共享工具目录，展示清理范围；仅卸载当前仓库不得自动删除共享工具，无法确认其他仓库是否使用时不得声称工具已无引用。完整卸载须明确包含共享工具；不得删除复用的外部工具，也不得将删除文件表述为退出 GitHub 或撤销授权。
 
-- **GIDD-008 — stage0 启动边界（已确认，迁移待实现）。** 系统原生 Shell 先读取技能最低版本要求、仓库 Bun/Node 版本及下载来源、默认运行时策略，再检查固定共享目录中的候选并验证受管安装完整性；有合格候选立即启动 JavaScript；否则检查 PATH，有合格候选立即启动；两处均无合格候选时自动准备默认运行时并启动。配置默认运行时为 Bun，同一来源内先检查默认运行时再检查另一种，来源优先级高于运行时偏好。最低支持版本由技能维护，不追加到仓库配置；运行时路径每次探测，不写 bin 字段或 bootstrap.txt/stage0.txt。安装位置永久固定为 `~/.agents/skills.tools/gidd/`，不提供自定义位置。新边界取代“完整 doctor 必须在无运行时时运行”的旧约定；JavaScript doctor 自身只读，但首次调用前的 stage0 可以下载运行时。stage0 失败时不得声称 doctor 已执行。具体字段、失败边界与验收用例见 `.agents/skills/gidd/references/bootstrap.md`；Linux/macOS 仍须分别实现并验证。
+- **GIDD-008 — stage0 启动边界。** 系统原生 Shell 先读取技能最低版本要求、仓库 Bun/Node 版本及下载来源、默认运行时策略，再检查固定共享目录中的候选并验证受管安装完整性；有合格候选立即启动 JavaScript；否则检查 PATH，有合格候选立即启动；两处均无合格候选时自动准备默认运行时并启动。配置默认运行时为 Bun，同一来源内先检查默认运行时再检查另一种，来源优先级高于运行时偏好。最低支持版本由技能维护，不追加到仓库配置；运行时路径每次探测，不写 bin 字段或 bootstrap.txt/stage0.txt。安装位置永久固定为 `~/.agents/skills.tools/gidd/`，不提供自定义位置。新边界取代“完整 doctor 必须在无运行时时运行”的旧约定；JavaScript doctor 自身只读，但首次调用前的 stage0 可以下载运行时。stage0 失败时不得声称 doctor 已执行。具体字段、失败边界与验收用例见 `.agents/skills/gidd/references/bootstrap.md`；Linux/macOS 仍须分别实现并验证。
 
 ## Open
 
@@ -34,15 +34,15 @@
 
 ## Maintainer Notes
 
-以下记录当前可执行实现；stage0 的目标边界以 GIDD-005、GIDD-008 和 bootstrap.md 为准。脚本迁移完成前，不将自动准备运行时、共享目录优先或 bootstrap.runtime 配置字段描述为已可用。
+以下记录当前可执行实现；stage0 迁移由 Issue #21 跟踪。所有技能命令先准备运行时，再执行共用 JavaScript；最低版本由 assets/runtime-requirements.json 维护。
 
 - 维护本源码仓库时，先查看 PATH 中的 `ghbw.cmd --help`，通过该入口访问 GitHub；先创建 Issue，再创建其关联分支，修订和验证后提交 PR，由人工 merge。`ghbw.cmd` 仅是本仓库维护所用的身份入口，不得成为公开 GIDD 技能或产品脚本的依赖。
 
-- `gidd.cmd config show` 只读展示配置，`config set <字段> <值>` 支持 github.hostname/account/remote 及 node/bun/gh 的 version/source；完整命令及原子写入协议见 `.agents/skills/gidd/references/configuration.md`。编辑逻辑在 `.agents/skills/gidd/scripts/config.mjs`，需要 Node/Bun 任一种；首次 set 生成模板，已有文件保留注释、无关字段和内联表的另一字段；工具字段写入前复用安装器校验。未知字段与 schema_version 不可设置，修改不安装、升级或迁移工具。config 编辑器定位运行时时不要求匹配待安装的新版本；普通工具命令仍遵守版本要求。help 按用途分组，说明紧跟命令同行，只列常用设置示例；完整字段与详细协议放入 references。schema v1 增加可选 `[github]` 表；identity 必须从文件读取 hostname/account/remote，auth 必须读取 hostname/account。运行时不补默认值，不允许命令参数覆盖；`dev.cmd .auth` 同样只读配置。配置修改不代表登录或启用，完整安装与迁移继续由 #14 跟踪。
+- `gidd.cmd config show` 只读展示配置，`config set <字段> <值>` 支持 bootstrap.runtime、github.hostname/account/remote 及 node/bun/gh 的 version/source；完整命令及原子写入协议见 `.agents/skills/gidd/references/configuration.md`。编辑逻辑在 `.agents/skills/gidd/scripts/config.mjs`，需要 Node/Bun 任一种；首次 set 生成模板，已有文件保留注释、无关字段和内联表的另一字段；写入前直接使用共用 JavaScript schema 校验，不回调 PowerShell。未知字段与 schema_version 不可设置，修改不安装、升级或迁移工具。config 编辑器定位运行时时不要求匹配待安装的新版本；普通工具命令仍遵守版本要求。help 按用途分组，说明紧跟命令同行，只列常用设置示例；完整字段与详细协议放入 references。schema v1 增加可选 `[github]` 表；identity 必须从文件读取 hostname/account/remote，auth 必须读取 hostname/account。运行时不补默认值，不允许命令参数覆盖；`dev.cmd .auth` 同样只读配置。配置修改不代表登录或启用，完整安装与迁移继续由 #14 跟踪。
 
-- `dev.cmd .setup bun`、`.setup node`、`.setup gh` 分别准备指定工具，共用技能安装代码及仓库工具配置；`.setup gh` 不要求 Bun/Node，也不发起登录。安装只支持按配置联网下载或复用已有工具，不接受本地安装包目录；实际安装位置固定为 `~/.agents/skills.tools/gidd/`。
+- `dev.cmd .setup bun`、`.setup node`、`.setup gh` 分别准备指定工具，共用技能安装代码及仓库工具配置；`.setup gh` 经 stage0 准备运行时，再由 JavaScript 安装 gh，不发起登录。安装只支持按配置联网下载或复用已有工具，不接受本地安装包目录；实际安装位置固定为 `~/.agents/skills.tools/gidd/`。
 
-- 开发前先看 `dev.cmd .help zh` 和 `DEVELOPMENT.md`。运行命令/脚本使用 `dev.cmd bun ...` 或 `dev.cmd node ...`，默认只用共享目录中的便携版本；显式 `dev.cmd sys bun ...` / `dev.cmd sys node ...` 只搜索 PATH，两种模式互不回退。不手写开发者机器的运行时路径。日常验证用 `dev.cmd .test <测试组>`；提交前用完整 `.test` 做 Node/Bun 双运行时验收。`.auth` 是会保存 gh 凭据的真实授权快捷入口，不是离线测试；普通测试不得触发它。统一技能入口由 Issue #12 跟踪：Windows 使用 .agents/skills/gidd/gidd.cmd 调用系统 PowerShell 分发 help、doctor、setup、config、identity、auth；配置编辑、身份检查和授权调用共用 JavaScript。仓库内 .agents/skills/gidd/ 的入口从自身位置与 .git 标记定位目标（含 worktree）；本仓库直接调用无需额外参数，开发和测试仅在指定其他目标时使用内部参数 --repository；公开 help 与技能使用说明不暴露此参数。help 支持 --help、-h 别名；setup bun、setup node、setup gh 分别准备指定工具，identity/auth 不会自动安装缺失依赖。完整安装与固定共享工具路径迁移由 Issue #14 跟踪，schema v1 增加 github 表，工具版本与来源仍可配置，目录固定共享。dev.cmd .auth 转发同一分发器；入口测试用 dev.cmd .test entry。Linux/macOS 启动器待验证后提供。
+- 开发前先看 `dev.cmd .help zh` 和 `DEVELOPMENT.md`。运行命令/脚本使用 `dev.cmd bun ...` 或 `dev.cmd node ...`，默认只用共享目录中的便携版本；显式 `dev.cmd sys bun ...` / `dev.cmd sys node ...` 只搜索 PATH，两种模式互不回退。不手写开发者机器的运行时路径。日常验证用 `dev.cmd .test <测试组>`；提交前用完整 `.test` 做 Node/Bun 双运行时验收。`.auth` 是会保存 gh 凭据的真实授权快捷入口，不是离线测试；普通测试不得触发它。统一技能入口由 Issue #12 跟踪：Windows 使用 .agents/skills/gidd/gidd.cmd 调用系统 PowerShell 分发 help、doctor、setup、config、identity、auth；完整 doctor、配置编辑、工具准备、身份检查和授权调用共用 JavaScript。仓库内 .agents/skills/gidd/ 的入口从自身位置与 .git 标记定位目标（含 worktree）；本仓库直接调用无需额外参数，开发和测试仅在指定其他目标时使用内部参数 --repository；公开 help 与技能使用说明不暴露此参数。help 支持 --help、-h 别名；setup bun、setup node、setup gh 分别准备指定工具，identity/auth 的 stage0 可以准备运行时，但不会自动安装 gh。完整安装与固定共享工具路径迁移由 Issue #14 跟踪，schema v1 增加 github 表，工具版本与来源仍可配置，目录固定共享。dev.cmd .auth 转发同一分发器；入口测试用 dev.cmd .test entry。Linux/macOS 启动器待验证后提供。
 
 - 仓库开发入口为根 `dev.cmd`，用法见 `DEVELOPMENT.md`。`scripts/dev/` 和 `tests/` 属于仓库开发工具；`.setup` 准备 Bun 和 Node，`.test` 分别在两种运行时执行同一套 JavaScript 用例，Windows 辅助仅保留被测 PowerShell 接口与 fixture 构造。开发 Node 已验证版本清单位于 `scripts/dev/runtimes.json`，仅提取运行时和许可证，不附带 npm。工具固定存放于 `~/.agents/skills.tools/gidd/`，版本与来源读取仓库内联配置；测试通过临时 USERPROFILE 隔离并在结束后恢复，worker 内用例串行；产品脚本的 Node/Bun 双运行时约束不变，技能工具初始化仍只要求其中一种运行时可用。
 

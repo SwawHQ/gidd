@@ -4,7 +4,7 @@ GIDD 仓库开发（Windows x64 / Windows PowerShell 5.1）
   dev.cmd .info                  分别报告开发 Bun 和 Node。
   dev.cmd .setup bun            只准备 Bun，优先复用，否则按配置下载安装。
   dev.cmd .setup node           只准备 Node，优先复用，否则按配置下载安装。
-  dev.cmd .setup gh             只准备 gh 2.98.0+，无需 Bun/Node，不发起登录。
+  dev.cmd .setup gh             先准备启动运行时，再准备 gh 2.98.0+，不发起登录。
   dev.cmd .setup                同时准备开发测试需要的 Bun 和 Node。
   dev.cmd .test [测试组]         用 Bun 和 Node 分别执行同一套离线测试。
   dev.cmd .test-bun [测试组]     只运行 Bun 测试。
@@ -20,7 +20,7 @@ GIDD 仓库开发（Windows x64 / Windows PowerShell 5.1）
 每组显示结果和耗时，失败汇总附带 PowerShell 复跑命令。
 开发中按组验证，提交前运行完整 .test。
 无参数显示帮助。帮助语言按参数、GIDD_DEV_LANG、系统语言、英文的顺序选择。
-只有 .setup 和 .test-live 执行 GIDD 管理的下载；.test 不安装工具。
+.setup 和 .test-live 可以下载工具；.auth 的 stage0 也可能准备运行时。.test 不安装工具。
 bun/node 保留调用目录、参数和输入输出；具体命令可以有自己的网络和写入行为。
 便携与 sys 模式互不回退，两者均遵守配置中的版本要求。
 工具固定存放于 ~/.agents/skills.tools/gidd/；版本与下载来源读取仓库 config.toml。

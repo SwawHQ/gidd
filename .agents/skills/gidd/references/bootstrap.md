@@ -1,14 +1,14 @@
 # stage0 与 JavaScript 的边界
 
-状态：已确认设计，脚本迁移尚未实现。本文记录目标行为；现有命令仍按其他 references 中的当前实现运行，不能将本文中的新字段写入尚未支持它的配置解析器。
+状态：Windows x64 / PowerShell 5.1 的 stage0 与共用 JavaScript 已实现；Linux/macOS 启动器仍待实现与验证。
 
-本次规则与设计文档修订由 [Issue #19](https://github.com/SwawHQ/gidd/issues/19) 跟踪，脚本迁移另行实现。
+设计由 [Issue #19](https://github.com/SwawHQ/gidd/issues/19) 确认，实现与迁移由 [Issue #21](https://github.com/SwawHQ/gidd/issues/21) 跟踪。
 
 ## 固定位置与配置
 
 GIDD 下载的工具永久使用当前用户家目录下的 `~/.agents/skills.tools/gidd/`，Bun、Node、gh 分别使用 `bun/`、`node/`、`gh/`。这不是可覆盖的默认值，不提供配置、命令行或专用环境变量来定制安装位置。系统家目录的正常解析及测试隔离不属于工具目录配置。
 
-目标配置固定为 `<目标仓库>/.agents/skills/gidd/config.toml`。拟增加可选字段：
+目标配置固定为 `<目标仓库>/.agents/skills/gidd/config.toml`。支持可选字段：
 
 ```toml
 [bootstrap]
@@ -19,7 +19,7 @@ runtime = "bun"
 
 省略 bootstrap 表或 runtime 字段时使用 bun，保持旧配置可读；显式空值或其他值报错，不静默改为默认值。模板和新建配置写明默认值。现有 tools.node/tools.bun 内联表继续配置 version/source；source 是下载来源，不是安装位置。
 
-最低支持版本随技能发布并由技能维护，Shell 与 JavaScript 读取同一份运行时要求；仓库不增加 min_version 或 bin 字段。最低版本取值须依据实际验证确定，不把旧 doctor 的探测门槛自动当成 JavaScript 兼容性结论。
+最低支持版本随技能发布并由技能维护，Shell 与 JavaScript 读取同一份运行时要求；仓库不增加 min_version 或 bin 字段。最低版本保存在 assets/runtime-requirements.json：Bun 1.4.2、Node 24.19.0；此前已用这两个版本完成基线双运行时验收。后续补丁版本仍须通过项目测试，不以版本号代替验证。
 
 ## 启动顺序
 
@@ -30,7 +30,7 @@ runtime = "bun"
 5. 有合格候选立即启动 JavaScript，不为了默认偏好额外下载工具。
 6. 两处均无合格候选时，自动下载、校验并安装默认运行时，验证后启动 JavaScript。失败则报告本次失败，不自动改装另一种运行时。
 
-合格候选必须可执行、达到技能最低版本，并满足该工具配置的固定版本要求。latest/lts 沿用当前含义：已有合格工具直接复用，只在缺失需要下载时解析版本，不在启动时自动升级或联网证明既有 Node 属于 LTS。配置非法时报告错误，不忽略非法版本或下载来源来安装。
+合格候选必须可执行、达到技能最低版本，并满足该工具配置的固定版本要求。latest/lts 沿用当前含义：已有合格工具直接复用，只在缺失需要下载时解析版本，不在启动时自动升级或联网证明既有 Node 属于 LTS。配置非法时报告错误，不忽略非法版本或下载来源来安装。help 与 config 编辑是既有版本约束的例外：只要求候选达到技能最低版本，便于修改尚未安装的新 pin；来源顺序和完整性要求不变。无候选时仍按配置准备默认运行时。
 
 来源优先于偏好。例如默认 bun 时，共享目录中的合格 Node 优先于 PATH 中的 Bun；共享目录没有合格候选且 PATH 只有合格 Node 时，直接用 Node；两者都缺失才下载 Bun。用户改为 node 时交换每一来源内的检查顺序，仍保持共享目录优先。
 
@@ -38,9 +38,9 @@ runtime = "bun"
 
 ## 两层职责
 
-Shell 负责启动所需的配置读取、运行时探测、首次运行时下载及其校验、受控解压、锁、发布与中断恢复，并启动 JavaScript。安装器须在锁内重新检查状态，避免多个仓库同时首次启动时重复发布。只有执行下载时才创建共享工具目录，复用 PATH 工具不创建空目录。
+Shell 负责启动所需的配置读取、运行时探测、首次运行时下载及其校验、受控解压、锁、发布与中断恢复，并启动 JavaScript。安装器须在锁内重新检查状态，避免多个仓库同时首次启动时重复发布。只有进入安装准备时才创建共享工具目录，复用 PATH 工具不创建空目录。
 
-JavaScript 负责完整配置校验与编辑、完整 doctor、gh 准备、GitHub 身份检查和设备授权，后续 Issue/PR 业务也归 JavaScript。新设计下 setup gh 也先经过运行时 bootstrap；stage0 不安装 gh、不启动登录、不启用仓库。
+JavaScript 负责完整配置校验与编辑、完整 doctor、gh 准备、GitHub 身份检查和设备授权，后续 Issue/PR 业务也归 JavaScript。setup gh 也先经过运行时 bootstrap；stage0 不安装 gh、不启动登录、不启用仓库。
 
 Shell 用已选定的 executable 直接启动 JS，透传参数、标准输入输出和退出码。JS 通过 process.execPath 获取当前运行时；来源等本次启动元数据需要时用内部参数或子进程环境传递，不写入仓库配置，也不创建 bootstrap.txt/stage0.txt。每次启动重新探测。
 
@@ -48,7 +48,7 @@ Shell 用已选定的 executable 直接启动 JS，透传参数、标准输入�
 
 运行时检查 → 必要时自动下载并准备运行时 → 启动 JS → doctor → 按请求补齐其他工具或配置。
 
-完整 doctor 不再承担无运行时诊断。JS doctor 本身只读、不联网安装；通过系统入口首次调用 doctor 时，前置 stage0 可以联网和写入共享运行时目录，帮助文案必须说明这一点。stage0 失败须报告其失败阶段，不能输出仿造的 doctor 成功或把未执行检查视为通过。
+所有公开命令（包括 help）先经过 stage0。完整 doctor 不再承担无运行时诊断。JS doctor 本身只读、不联网安装；通过系统入口首次调用 doctor 时，前置 stage0 可以联网和写入共享运行时目录，帮助文案必须说明这一点。stage0 失败返回 gidd.cli/v1、退出 2，并通过 reason 报告配置、下载、校验或锁错误，不能输出仿造的 doctor 成功或把未执行检查视为通过。
 
 运行时准备不修改 config.toml、不修改系统 PATH、不授权 GitHub、不代表仓库启用。缺少配置时采用已公开的启动默认值即可，配置创建和编辑仍归 JS；不得用自动 bootstrap 推断缺失 GitHub 身份字段。
 

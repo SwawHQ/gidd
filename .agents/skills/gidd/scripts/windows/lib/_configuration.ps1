@@ -48,6 +48,7 @@ function Read-GiddToolConfiguration {
     catch { throw 'config_invalid_utf8' }
     $values = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::Ordinal)
     $tools = Get-GiddDefaultTools
+    $bootstrap = @{ runtime = 'bun' }
     $stringPattern = '(?:"(?:[^"\\]|\\["\\])*"|''[^'']*'')'
     $inTools = $false; $lineNumber = 0; $section = ''
     $tables = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
@@ -56,10 +57,16 @@ function Read-GiddToolConfiguration {
         $line = $line.TrimEnd("`r")
         if ($line -match '[\x00-\x08\x0b-\x1f\x7f]') { throw "config_control_character:$lineNumber" }
         if ($line -cmatch '^[ \t]*(?:#.*)?$') { continue }
-        if ($line -cmatch '^[ \t]*\[(tools|github)\][ \t]*(?:#.*)?$') {
+        if ($line -cmatch '^[ \t]*\[(tools|github|bootstrap)\][ \t]*(?:#.*)?$') {
             $section = $Matches[1]
             if (-not $tables.Add($section)) { throw "config_duplicate_${section}_table" }
             $inTools = $section -eq 'tools'; continue
+        }
+        if ($section -eq 'bootstrap' -and $line -cmatch ('^[ \t]*runtime[ \t]*=[ \t]*(' + $stringPattern + ')[ \t]*(?:#.*)?$')) {
+            if ($values.ContainsKey('bootstrap.runtime')) { throw 'config_duplicate_key:bootstrap.runtime' }
+            $runtime = ConvertFrom-GiddConfigString $Matches[1]
+            if ($runtime -cnotin @('bun','node')) { throw 'config_invalid_bootstrap_runtime' }
+            $bootstrap.runtime = $runtime; $values.Add('bootstrap.runtime',$runtime); continue
         }
         if ($section -eq 'github' -and $line -cmatch ('^[ \t]*(hostname|account|remote)[ \t]*=[ \t]*(' + $stringPattern + ')[ \t]*(?:#.*)?$')) {
             $key = 'github.' + $Matches[1]
@@ -92,15 +99,14 @@ function Read-GiddToolConfiguration {
         throw "config_unsupported_syntax_or_field:$lineNumber"
     }
     if (-not $values.ContainsKey('schema_version')) { throw 'config_missing_key:schema_version' }
-    return @{ tools = $tools }
+    return @{ tools = $tools; bootstrap = $bootstrap }
 }
 
 function Resolve-GiddToolStorage {
-    param([string]$RepositoryRoot, [string]$CandidatePath)
-    # Internal editor validation can inspect a temporary candidate before publication.
-    $configPath = if ($CandidatePath) { $CandidatePath } elseif ($RepositoryRoot) { Join-Path $RepositoryRoot '.agents/skills/gidd/config.toml' } else { $null }
+    param([string]$RepositoryRoot)
+    $configPath = if ($RepositoryRoot) { Join-Path $RepositoryRoot '.agents/skills/gidd/config.toml' } else { $null }
     $configured = $false
-    $settings = @{ tools = (Get-GiddDefaultTools) }
+    $settings = @{ tools = (Get-GiddDefaultTools); bootstrap = @{ runtime = 'bun' } }
     if ($configPath) {
         Assert-GiddPlainPath $configPath
         if (Test-Path -LiteralPath $configPath) { $settings = Read-GiddToolConfiguration $configPath; $configured = $true }
@@ -122,5 +128,5 @@ function Resolve-GiddToolStorage {
             }
         }
     }
-    return @{ tools_root = $root; config_path = $configPath; configured = $configured; tools = $settings.tools }
+    return @{ tools_root = $root; config_path = $configPath; configured = $configured; tools = $settings.tools; bootstrap = $settings.bootstrap }
 }

@@ -1,7 +1,7 @@
 ﻿function Install-GiddTool {
     param([string]$ToolsRoot, $Definition, [scriptblock]$OnPhase = {})
     $name = $Definition.name
-    if ($name -notin @('bun','gh','node')) { throw 'invalid_tool_name' }
+    if ($name -notin @('bun','node')) { throw 'invalid_tool_name' }
     $target = Join-Path $ToolsRoot $name
     Assert-GiddPlainPath $target
     if (Test-Path -LiteralPath $target) {
@@ -28,8 +28,7 @@
     & $OnPhase 'extracted'
     $probe = Invoke-GiddProcess (Join-Path $payload "$name.exe") @('--version')
     $pattern = if ($name -eq 'bun') { '^' + [regex]::Escape($Definition.version) + '$' }
-        elseif ($name -eq 'node') { '^v' + [regex]::Escape($Definition.version) + '$' }
-        else { '^gh version ' + [regex]::Escape($Definition.version) + '(?:\s|$)' }
+        else { '^v' + [regex]::Escape($Definition.version) + '$' }
     if (-not $probe.ok -or $probe.text -notmatch $pattern) { throw 'installed_version_mismatch' }
     $files = @(Get-ChildItem -LiteralPath $payload -File | ForEach-Object {
         @{ name = $_.Name; length = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName).Hash.ToLowerInvariant() }

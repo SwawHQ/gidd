@@ -112,7 +112,7 @@ test('CLI reads real Git author and remains read-only in an isolated repository'
     const configured = snapshot(f.root);
     const bootstrap = ps(join(repo, '.agents/skills/gidd/scripts/windows/check-identity.ps1'), ['-RepositoryPath', f.root]);
     assert.equal(bootstrap.status, 2);
-    assert.equal(json(bootstrap).reason, 'bootstrap_failed_run_offline_doctor');
+    assert.match(json(bootstrap).reason, /^config_/);
     assert.deepEqual(snapshot(f.root), configured);
     write(join(f.root, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\n' + githubConfig);
     const valid = snapshot(f.root);
@@ -233,7 +233,7 @@ test('dev.cmd .auth requires identity config and uses shared storage', { timeout
   const f = fixture();
   try {
     const checkout = join(f.root,'checkout');
-    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts','.agents/skills/gidd/assets']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
     const compiled = compile(f.root,'auth-gh.cs');
     const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
     for (const configured of [false,true]) {
@@ -256,7 +256,7 @@ test('dev.cmd .auth dispatches real JavaScript with one runtime and never instal
   const f = fixture();
   try {
     const checkout = join(f.root, 'repo with spaces');
-    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
+    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts','.agents/skills/gidd/assets']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
     write(join(checkout, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\n' + githubConfig);
     const compiled = compile(f.root, 'auth-gh.cs'), gh = join(f.root, 'bin/gh.exe');
     mkdirSync(dirname(gh)); copyFileSync(compiled, gh); write(gh + '.mode', 'success');

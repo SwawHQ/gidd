@@ -4,7 +4,7 @@ GIDD repository development (Windows x64 / Windows PowerShell 5.1)
   dev.cmd .info                  Report development Bun and Node separately.
   dev.cmd .setup bun            Prepare only Bun; reuse or install the configured version.
   dev.cmd .setup node           Prepare only Node; reuse or install the configured version.
-  dev.cmd .setup gh             Prepare only gh 2.98.0+; no runtime required, no login.
+  dev.cmd .setup gh             Prepare gh 2.98.0+ after runtime bootstrap; no login.
   dev.cmd .setup                Prepare both Bun and Node for development tests.
   dev.cmd .test [suite]          Run the same offline tests under Bun and Node.
   dev.cmd .test-bun [suite]      Run only Bun tests.
@@ -20,7 +20,7 @@ Suites: all (default), doctor, setup, process, dev, config, github, entry.
 Each suite reports its result and duration; failures include PowerShell rerun commands.
 Use a focused suite while editing, then run .test before submitting changes.
 No arguments show help. Help language: argument, GIDD_DEV_LANG, locale, then English.
-Only .setup and .test-live perform GIDD-managed downloads. .test never installs tools.
+.setup/.test-live can download tools; .auth stage0 can prepare a runtime. .test never installs tools.
 bun/node forward caller cwd, arguments and stdio; the invoked command controls its own effects.
 Portable and sys modes never fall back to each other; both honor configured versions.
 Tools: ~/.agents/skills.tools/gidd/; versions and download roots follow repository config.toml.

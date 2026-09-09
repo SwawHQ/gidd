@@ -14,7 +14,7 @@ $storage = $null
 $lock = $null
 function Get-DevTool {
     param([string]$Name, [ValidateSet('auto','managed','system')][string]$Source = 'auto')
-    $minimum = switch ($Name) { bun { [version]'1.2.15' } node { [version]'24.0.0' } gh { [version]'2.98.0' } }
+    $minimum = switch ($Name) { bun { [version]'1.4.2' } node { [version]'24.19.0' } gh { [version]'2.98.0' } }
     $pattern = switch ($Name) { bun { '^(\d+\.\d+\.\d+)$' } node { '^v(\d+\.\d+\.\d+)$' } gh { '^gh version (\d+\.\d+\.\d+)' } }
     $savedPath = $env:PATH
     try {
@@ -65,6 +65,10 @@ try {
     if ($Command -eq '.info' -and $Argument) { throw '.info takes no arguments.' }
     if ($Command -eq '.test-live' -and $Argument) { throw '.test-live takes no arguments.' }
     if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev','config','github','entry')) { throw 'Unknown test suite.' }
+    if ($Command -eq '.setup' -and $Argument -eq 'gh') {
+        . (Join-Path $codeRoot 'lib/_entry.ps1')
+        Invoke-GiddEntry -CommandArguments @('setup','gh','--repository',$repoRoot)
+    }
     if ($Command -eq '.auth') {
         . (Join-Path $codeRoot 'lib/_entry.ps1')
         Invoke-GiddEntry -CommandArguments @('auth','--repository',$repoRoot)
@@ -107,7 +111,7 @@ try {
                     if (Test-Path -LiteralPath (Join-Path $toolsRoot $name)) { throw "occupied_or_version_conflicting_target:$name" }
                     $pinned = @(@($manifest.tools) + @($devManifest.tools) | Where-Object name -eq $name)[0]
                     $definition = Resolve-GiddRelease $name $storage.tools[$name] $pinned
-                    $minimum = switch ($name) { bun { [version]'1.2.15' } node { [version]'24.0.0' } gh { [version]'2.98.0' } }
+                    $minimum = switch ($name) { bun { [version]'1.4.2' } node { [version]'24.19.0' } gh { [version]'2.98.0' } }
                     if ([version]$definition.version -lt $minimum) { throw "configured_version_below_minimum:$name" }
                     [void](Install-GiddTool $toolsRoot $definition {
                         param($phase)

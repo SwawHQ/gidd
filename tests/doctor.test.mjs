@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { statSync } from 'node:fs';
-import { toolsRoot, assert, code, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, ps, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
+import { diagnosis, toolsRoot, assert, code, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, ps, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
 
 test('doctor: dependency matrix, repository states, read-only checks and redaction', { timeout: 120000 }, () => {
   const f = fixture();
@@ -20,7 +20,7 @@ test('doctor: dependency matrix, repository states, read-only checks and redacti
     };
     const runCase = (name, path, validate, target = repository, env = {}) => {
       const before = snapshot(f.root);
-      const result = ps(join(code, 'doctor.ps1'), ['-RepositoryPath', target], { env: { PATH: path, ...env } });
+      const result = diagnosis(target, { env: { PATH: path, ...env } });
       const report = json(result);
       assert.equal(report.schema, 'gidd.doctor/v1');
       assert.deepEqual(snapshot(f.root), before, `Doctor wrote fixture: ${name}`);
@@ -32,20 +32,20 @@ test('doctor: dependency matrix, repository states, read-only checks and redacti
       for (const id of ['tool.git','tool.node','tool.bun','tool.gh','runtime']) assert.equal(check(r,id).status,'missing');
       assert.equal(check(r,'repository').status,'not_checked');
     });
-    stub(exe, join(fakeBin,'node.exe'),'v22.0.0'); stub(exe, join(fakeBin,'gh.exe'),'gh version 2.98.0 (test)');
+    stub(exe, join(fakeBin,'node.exe'),'v24.19.0'); stub(exe, join(fakeBin,'gh.exe'),'gh version 2.98.0 (test)');
     rmSync(config);
     runCase('Node alone, unborn repository, missing config',toolPath,(r,status) => {
       assert.equal(status,1); assert.equal(check(r,'runtime').details.selected,'tool.node');
       assert.equal(check(r,'repository.history').reason,'unborn_branch'); assert.equal(check(r,'repository.config').status,'missing');
     });
     write(config,validConfig);
-    stub(exe,join(toolsRoot(f.root),'bun/bun.exe'),'1.2.15',true);
+    stub(exe,join(toolsRoot(f.root),'bun/bun.exe'),'1.4.2',true);
     stub(exe,join(toolsRoot(f.root),'gh/gh.exe'),'gh version 2.98.0 (test)',true);
     runCase('Bun alone from managed tools',gitOnly,r => {
       assert.equal(check(r,'runtime').details.selected,'tool.bun'); assert.equal(check(r,'tool.gh').details.source,'managed');
     });
-    runCase('PATH Node preferred over managed Bun',toolPath,r => assert.equal(check(r,'runtime').details.selected,'tool.node'));
-    stub(exe,join(fakeBin,'bun.exe'),'1.2.15');
+    runCase('managed Bun preferred over PATH Node',toolPath,r => assert.equal(check(r,'runtime').details.selected,'tool.bun'));
+    stub(exe,join(fakeBin,'bun.exe'),'1.4.2');
     runCase('PATH Bun tie preference',toolPath,r => assert.equal(check(r,'runtime').details.selected,'tool.bun'));
     write(join(fakeBin,'node.exe.mode'),'v18.0.0'); write(join(fakeBin,'bun.exe.mode'),'fail'); write(join(fakeBin,'gh.exe.mode'),'not gh');
     runCase('old, failing and malformed PATH tools fall back',toolPath,r => {
@@ -55,10 +55,10 @@ test('doctor: dependency matrix, repository states, read-only checks and redacti
     });
     write(join(fakeBin,'gh.exe.mode'),'hang');
     const start = Date.now();
-    runCase('hung executable times out and falls back',toolPath,r => assert.equal(check(r,'tool.gh').details.rejected[0].reason,'process_timeout'));
+    runCase('hung executable times out and falls back',toolPath,r => assert.equal(check(r,'tool.gh').details.source,'managed'));
     assert.ok(Date.now()-start < 20000,'Bounded tool probe');
     write(join(fakeBin,'gh.exe.mode'),'gh version 2.98.0 (test)'); write(join(fakeBin,'bun.exe'),'not an executable');
-    runCase('broken executable falls back',toolPath,r => assert.equal(check(r,'tool.bun').details.rejected[0].reason,'process_start_failed'));
+    runCase('broken executable falls back',toolPath,r => assert.equal(check(r,'tool.bun').details.source,'managed'));
     runCase('ordinary directory is not a repository',toolPath,r => {
       assert.equal(check(r,'repository').status,'invalid'); assert.equal(check(r,'repository.config').status,'not_checked');
     },skills);

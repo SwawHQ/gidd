@@ -47,7 +47,7 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
   const f=fixture();
   try {
     const checkout=join(f.root,'开发 repo & spaces'); mkdirSync(checkout);
-    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts/windows','.agents/skills/gidd/assets']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts','.agents/skills/gidd/assets']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
     const entry=join(checkout,'dev.cmd'), cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
     const invoke=(args, env={}) => run(cmd,['/d','/s','/c',`""${entry}" ${args.join(' ')}"`],{
       cwd:f.root,windowsVerbatimArguments:true,env:{PATH:'',GIDD_DEV_LANG:'',LC_ALL:'en_US.UTF-8',...env},
@@ -81,7 +81,7 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     const nodeLeftover=join(toolsRoot(f.root),'.cache/node/download.part'); write(nodeLeftover,'leftover after publication');
     ok(invoke(['.setup'])); assert.equal(existsSync(leftover),false,'Reuse must clean staging left after publication');
     assert.equal(existsSync(nodeLeftover),false);
-    assert.equal(existsSync(join(toolsRoot(f.root),'.cache/install.lock')),true);
+    assert.equal(existsSync(join(toolsRoot(f.root),'.cache/install.lock')),false);
     const localInfo=json(ok(invoke(['.info'])));
     assert.equal(localInfo.bun.details.source,'managed');
     assert.equal(localInfo.node.details.source,'managed');
@@ -108,7 +108,7 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     assert.equal(mismatch.node.status,'invalid');
     assert.ok(mismatch.node.details.rejected.some(x=>x.reason==='configured_version_mismatch'));
     assert.match(invoke(['.setup']).stderr,/occupied_or_version_conflicting_target:node/);
-    assert.equal(readFileSync(join(configuredRoot,'node/install.json'),'utf8').includes('24.0.0'),true);
+    assert.equal(readFileSync(join(configuredRoot,'node/install.json'),'utf8').includes('24.19.0'),true);
     write(config,'invalid = true');
     assert.notEqual(invoke(['.setup']).status,0); assert.notEqual(invoke(['.info']).status,0);
     assert.match(ok(invoke(['.help','en'])).stdout,/repository development/);
@@ -119,16 +119,16 @@ test('dev.cmd .setup selects one tool, reuses gh and rejects local package input
   const f = fixture();
   try {
     const checkout = join(f.root, 'repo with spaces');
-    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts/windows','.agents/skills/gidd/assets']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts','.agents/skills/gidd/assets']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
     const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
-    const invoke = (args = '', path = '', tool = 'gh') => run(cmd, ['/d','/s','/c', `""${join(checkout,'dev.cmd')}" .setup ${tool} ${args}"`], { windowsVerbatimArguments:true, env:{PATH:path} });
+    const invoke = (args = '', path = '', tool = 'gh') => run(cmd, ['/d','/s','/c', `""${join(checkout,'dev.cmd')}" .setup ${tool} ${args}"`], { windowsVerbatimArguments:true, env:{PATH:[dirname(process.execPath),path].join(';')} });
     assert.notEqual(invoke('relative-path').status, 0);
     assert.notEqual(invoke('', '', 'unknown').status, 0);
     assert.notEqual(invoke('one two').status, 0);
     assert.notEqual(invoke(`"${f.root}"`).status, 0);
     const exe = compile(f.root), bin = join(f.root,'bin');
     stub(exe, join(bin,'gh.exe'));
-    assert.match(ok(invoke('',bin)).stdout, /gh 2\.98\.0:/);
+    assert.equal(json(ok(invoke('',bin))).tools[0].name,'gh');
     assert.equal(existsSync(toolsRoot(f.root)), false, 'PATH reuse must not create tool storage');
     for (const name of ['bun','node']) {
       const selectedBin = join(f.root,name);
@@ -142,13 +142,13 @@ test('dev.cmd .setup selects one tool, reuses gh and rejects local package input
     write(config,configText);
     const tools = toolsRoot(f.root);
     stub(exe,join(tools,'gh/gh.exe'),undefined,true);
-    assert.match(ok(invoke()).stdout, /gh 2\.98\.0:/);
+    assert.equal(json(ok(invoke())).tools[0].name,'gh');
     assert.equal(existsSync(join(tools,'gh/gh.exe')), true);
     for (const name of ['bun','node','.cache/gh']) assert.equal(existsSync(join(tools,name)), false);
     assert.equal(readFileSync(config,'utf8'),configText);
     ok(invoke());
     write(config,configText.replace('2.98.0','2.99.0'));
-    assert.match(invoke().stderr,/occupied_or_version_conflicting_target:gh/);
+    assert.match(json(invoke()).reason,/occupied_or_version_conflicting_target:gh/);
     assert.equal(JSON.parse(readFileSync(join(tools,'gh/install.json'),'utf8')).version,'2.98.0');
   } finally { f.dispose(); }
 });

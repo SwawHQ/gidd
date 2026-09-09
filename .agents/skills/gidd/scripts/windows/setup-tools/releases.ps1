@@ -40,7 +40,7 @@ function Get-GiddChecksum {
 function Resolve-GiddRelease {
     param([string]$Name, $Settings, $PinnedDefinition = $null,
         [scriptblock]$ReadText = { param($url) Read-GiddReleaseText $url })
-    if ($Name -notin @('node','bun','gh')) { throw 'invalid_tool_name' }
+    if ($Name -notin @('node','bun')) { throw 'invalid_tool_name' }
     Assert-GiddToolSettings $Name $Settings
     $version = $Settings.version
     $source = $Settings.source
@@ -73,36 +73,32 @@ function Resolve-GiddRelease {
         $url = "$source/v$version/$archive"
         $supplements = @()
     } else {
-        $repo = if ($Name -eq 'bun') { 'oven-sh/bun' } else { 'cli/cli' }
-        $tag = if ($Name -eq 'bun') { "bun-v$version" } else { "v$version" }
+        $repo = 'oven-sh/bun'
+        $tag = "bun-v$version"
         if ($version -eq 'latest') {
             $releaseUrl = "https://api.github.com/repos/$repo/releases/latest"
             $metadata += $releaseUrl
             $release = (& $ReadText $releaseUrl) | ConvertFrom-Json
-            $pattern = if ($Name -eq 'bun') { '^bun-v(\d+\.\d+\.\d+)$' } else { '^v(\d+\.\d+\.\d+)$' }
+            $pattern = '^bun-v(\d+\.\d+\.\d+)$'
             if ($release.draft -or $release.prerelease -or $release.tag_name -cnotmatch $pattern) { throw "invalid_stable_release:$Name" }
             $version = $Matches[1]; $tag = $release.tag_name
         }
-        $archive = if ($Name -eq 'bun') { 'bun-windows-x64.zip' } else { "gh_${version}_windows_amd64.zip" }
-        $checksumFile = if ($Name -eq 'bun') { 'SHASUMS256.txt' } else { "gh_${version}_checksums.txt" }
+        $archive = 'bun-windows-x64.zip'
+        $checksumFile = 'SHASUMS256.txt'
         $checksumUrl = "https://github.com/$repo/releases/download/$tag/$checksumFile"
         $metadata += $checksumUrl
         $hash = Get-GiddChecksum (& $ReadText $checksumUrl) $archive
         $url = "$source/download/$tag/$archive"
         $supplements = @()
-        if ($Name -eq 'bun') {
-            $files = @(@{entry='bun-windows-x64/bun.exe';name='bun.exe'})
-            $licenseUrl = "https://raw.githubusercontent.com/oven-sh/bun/$tag/LICENSE.md"
-            $metadata += $licenseUrl
-            $license = & $ReadText $licenseUrl
-            if ([string]::IsNullOrWhiteSpace($license)) { throw 'empty_bun_license' }
-            $sha = [Security.Cryptography.SHA256]::Create()
-            try { $licenseHash = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($license))).Replace('-','').ToLowerInvariant() }
-            finally { $sha.Dispose() }
-            $supplements = @(@{name='LICENSE.md';url=$licenseUrl;sha256=$licenseHash})
-        } else {
-            $files = @(@{entry='bin/gh.exe';name='gh.exe'}, @{entry='LICENSE';name='LICENSE'})
-        }
+        $files = @(@{entry='bun-windows-x64/bun.exe';name='bun.exe'})
+        $licenseUrl = "https://raw.githubusercontent.com/oven-sh/bun/$tag/LICENSE.md"
+        $metadata += $licenseUrl
+        $license = & $ReadText $licenseUrl
+        if ([string]::IsNullOrWhiteSpace($license)) { throw 'empty_bun_license' }
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try { $licenseHash = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($license))).Replace('-','').ToLowerInvariant() }
+        finally { $sha.Dispose() }
+        $supplements = @(@{name='LICENSE.md';url=$licenseUrl;sha256=$licenseHash})
     }
     return [pscustomobject]@{name=$Name;version=$version;archive=$archive;url=$url;sha256=$hash;files=$files;supplements=$supplements;metadata_sources=$metadata}
 }

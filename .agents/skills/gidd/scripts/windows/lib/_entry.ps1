@@ -2,7 +2,7 @@
 function Invoke-GiddEntry {
     param([object[]]$CommandArguments)
     $entryRoot = Split-Path -Parent $PSScriptRoot
-    # Public command dispatch only; business logic remains in the existing scripts.
+    # Validate the invocation before bootstrap can download; operations run in JS.
     Set-StrictMode -Version Latest
     $ErrorActionPreference = 'Stop'
     [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
@@ -20,8 +20,10 @@ function Invoke-GiddEntry {
                 $locale = @($env:LC_ALL,$env:LC_MESSAGES,$env:LANG,[Globalization.CultureInfo]::CurrentUICulture.Name) | Where-Object { $_ } | Select-Object -First 1
                 $language = if ($locale -match '^zh(?:$|[-_])') { 'zh-CN' } else { 'en' }
             }
-            [Console]::WriteLine([IO.File]::ReadAllText((Join-Path $entryRoot "../../assets/help/$language.txt")))
-            exit 0
+            . (Join-Path $PSScriptRoot '_bootstrap.ps1')
+            $helpRepository = [IO.Path]::GetFullPath((Join-Path $entryRoot '../../../../..'))
+            if (-not (Test-Path -LiteralPath (Join-Path $helpRepository '.git'))) { $helpRepository = '' }
+            Start-GiddJavaScript -RepositoryPath $helpRepository -Arguments @('help',$language) -IgnorePins
         }
         if ($command -notin @('doctor','setup','identity','auth','config')) { throw 'unknown_command' }
         $parameters = @{}
@@ -59,11 +61,12 @@ function Invoke-GiddEntry {
             }
         }
         if ($parameters.RepositoryPath -notmatch '^[A-Za-z]:[\\/]') { throw 'repository_must_be_absolute' }
-        $script = switch ($command) { doctor { 'doctor.ps1' } setup { 'setup-tools.ps1' } identity { 'check-identity.ps1' } auth { 'authorize.ps1' } config { 'config.ps1' } }
-        & (Join-Path $entryRoot $script) @parameters
-        exit $LASTEXITCODE
+        . (Join-Path $PSScriptRoot '_bootstrap.ps1')
+        $forward = @($CommandArguments)
+        if ($tail -notcontains '--repository') { $forward += @('--repository',$parameters.RepositoryPath) }
+        Start-GiddJavaScript -RepositoryPath $parameters.RepositoryPath -Arguments $forward -IgnorePins:($command -eq 'config')
     } catch {
-        $reason = if ($_.Exception.Message -in @('invalid_arguments','unsupported_help_language','unknown_command','github_parameters_moved_to_config','invalid_setup_tool','repository_must_be_absolute','repository_required_for_unbound_entry')) { $_.Exception.Message } else { 'entry_failed' }
+        $reason = if ($_.Exception.Message -match '^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$') { $_.Exception.Message } else { 'entry_failed' }
         if ($reason -eq 'github_parameters_moved_to_config') { [Console]::Error.WriteLine('Use gidd.cmd config set github.hostname/account/remote <value>; identity/auth read config.toml only.') }
         [Console]::Error.WriteLine('GIDD command failed. Use gidd.cmd help for usage.')
         @{ schema='gidd.cli/v1'; status='error'; reason=$reason } | ConvertTo-Json -Compress
