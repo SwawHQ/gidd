@@ -54,7 +54,16 @@ try {
                 if (-not $property) { throw "unexpected_download:$Url" }
                 return @{ response=$null; stream=[IO.File]::OpenRead([string]$property.Value) }
             }
-            Resolve-GiddBootstrapRuntime (Resolve-GiddToolStorage $request.repositoryRoot) (Get-GiddRuntimeRequirements) | ConvertTo-Json -Depth 10 -Compress
+            $yes = $request.PSObject.Properties['yes'] -and $request.yes
+            $node = $request.PSObject.Properties['node'] -and $request.node
+            $reinstall = $request.PSObject.Properties['reinstall'] -and $request.reinstall
+            if ($request.PSObject.Properties['failPublish'] -and $request.failPublish) {
+                function Write-GiddLauncher { throw 'fixture_publish_failed' }
+            }
+            if ($request.PSObject.Properties['failCleanup'] -and $request.failCleanup) {
+                function Remove-GiddRuntimeBackup { throw 'fixture_cleanup_failed' }
+            }
+            Invoke-GiddBootstrap (Resolve-GiddToolStorage $request.repositoryRoot) -Yes:$yes -Node:$node -Reinstall:$reinstall | ConvertTo-Json -Depth 12 -Compress
         }
         'release' {
             $settings = @{ version=$request.version;source=$request.source }
@@ -105,10 +114,11 @@ try {
                 [IO.File]::WriteAllText(($RequestPath + '.locked'),'locked')
                 Start-Sleep -Seconds 30
             }
+            $replace = $request.PSObject.Properties['replace'] -and $request.replace
             Install-GiddTool $request.root $definition {
                 param($phase)
                 if ($phase -eq $request.stopAt) { [Diagnostics.Process]::GetCurrentProcess().Kill() }
-            } | ConvertTo-Json -Compress
+            } -Replace:$replace | ConvertTo-Json -Compress
         }
         'zip' {
             Add-Type -AssemblyName System.IO.Compression.FileSystem

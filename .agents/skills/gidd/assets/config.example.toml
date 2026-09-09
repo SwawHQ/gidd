@@ -2,18 +2,14 @@
 # Repository settings; this file does not enable GIDD or authenticate GitHub.
 schema_version = 1
 
-[bootstrap]
-# Prefer this runtime within each source; install it only if no candidate qualifies.
-# bun or node. Managed shared tools always precede PATH; no bin/directory settings.
-runtime = "bun"
-
 [tools]
 # Tools are shared at ~/.agents/skills.tools/gidd/; the directory is not configurable.
 # Release/download roots. Installation reports the exact version and archive URL.
-# node: lts/latest or an exact version; bun/gh: latest or an exact version.
+# Bun stable / Node LTS are internal download policies; runtime versions are not configured.
+# gh: latest or an exact version. Compatibility is checked by bootstrap.
 # Floating versions are resolved only when downloading a missing tool.
-node = { version = "lts", source = "https://nodejs.org/dist" }
-bun = { version = "latest", source = "https://github.com/oven-sh/bun/releases" }
+node = { source = "https://nodejs.org/dist" }
+bun = { source = "https://github.com/oven-sh/bun/releases" }
 gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 
 # Custom mirrors must preserve the upstream download layout; hashes come from upstream.

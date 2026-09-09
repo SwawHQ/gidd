@@ -1,22 +1,22 @@
 import { test } from 'node:test';
 import { statSync, readFileSync } from 'node:fs';
-import { adapter, hash, makeZip, rmSync, product, toolsRoot, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, ps, run, snapshot, stub, write } from './support/helpers.mjs';
-import { selectRuntime } from '../.agents/skills/gidd/scripts/tools.mjs';
-import { resolveStorage } from '../.agents/skills/gidd/scripts/storage.mjs';
+import { adapter, code, hash, makeZip, rmSync, product, toolsRoot, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, ps, run, snapshot, stub, write } from './support/helpers.mjs';
+import { checkRuntime } from '../.agents/skills/gidd/scripts/runtime-compat.mjs';
 
 // Encode for the native Windows argv boundary, including terminal backslashes.
 const quote = value => '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';
 
-function installation(f) {
+function installation(f, prepare = true) {
   const skill = join(f.root, 'installed skill & spaces'), target = join(f.root, '目标 repo & spaces');
   copySkill(skill);
   assert.equal(existsSync(join(skill, 'config.toml')), false, 'Installation must not inherit development configuration');
   mkdirSync(target);
   write(join(target, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\n');
   const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
-  const invoke = (args, env = {}) => run(cmd, ['/d','/s','/c', `""${join(skill, 'gidd.cmd')}" ${args.map(quote).join(' ')}"`], {
-    cwd: skill, windowsVerbatimArguments: true, env: { PATH: dirname(process.execPath), GIDD_LANG: '', LC_ALL: 'en_US.UTF-8', ...env },
+  const invoke = (args, env = {}, options = {}) => run(cmd, ['/d','/s','/c', `""${join(skill, 'gidd.cmd')}" ${args.map(quote).join(' ')}"`], {
+    cwd: skill, windowsVerbatimArguments: true, ...options, env: { PATH: dirname(process.execPath), GIDD_LANG: '', LC_ALL: 'en_US.UTF-8', ...env },
   });
+  if (prepare) ok(invoke(['bootstrap','--yes','--repository',target]));
   return { skill, target, invoke, args: ['--repository', target] };
 }
 
@@ -25,87 +25,157 @@ function sameDirectory(actual, expected) {
   assert.equal(a.dev, b.dev); assert.equal(a.ino, b.ino);
 }
 
-test('stage0 forwards argv, stdin, cwd, stderr and the JavaScript exit code', () => {
-  const f = fixture();
+test('compatibility is a standalone bootstrap method with internal version policy', () => {
+  for (const [versions,status] of [[{bun:'1.4.2'},'compatible'],[{bun:'1.4.1'},'incompatible'],
+    [{bun:'2.0.0'},'compatible'],[{node:'24.19.0'},'compatible'],[{node:'24.18.9'},'incompatible'],
+    [{node:'25.0.0'},'compatible'],[{node:'unknown'},'incompatible']]) assert.equal(checkRuntime(versions).status,status);
+  assert.equal(json(ok(run(process.execPath,[join(code,'../runtime-compat.mjs')]))).status,'compatible');
+});
+
+test('bootstrap is read only without yes; ordinary commands require the generated launcher', () => {
+  const f=fixture();
   try {
-    const s = installation(f);
-    write(join(s.skill,'scripts/gidd.mjs'), `import {readFileSync} from 'node:fs';\nconsole.log(JSON.stringify({args:JSON.parse(Buffer.from(process.argv[3],'base64').toString('utf8')),input:readFileSync(0,'utf8'),cwd:process.cwd(),exe:process.execPath}));\nconsole.error('stage0 fixture stderr'); process.exit(23);`);
-    const value = 'two words "quoted" tail\\';
-    const result = ps(join(s.skill,'scripts/windows/entry.ps1'),['config','set','tools.node.source',value,...s.args],{
-      cwd: s.target, input: 'stage0 stdin', env: { PATH: dirname(process.execPath) },
-    });
+    const s=installation(f,false), before=snapshot(f.root);
+    const report=json(s.invoke(['bootstrap',...s.args],{PATH:''}));
+    assert.equal(report.status,'needs_bootstrap'); assert.equal(report.runtime,null);
+    assert.equal(report.read_only,true); assert.deepEqual(snapshot(f.root),before);
+    const compatible=json(s.invoke(['bootstrap',...s.args]));
+    assert.equal(compatible.runtime.status,'ready'); assert.equal(compatible.launcher_matches,false);
+    assert.equal(json(s.invoke(['help'])).reason,'bootstrap_required');
+    assert.equal(json(s.invoke(['bootstrap','--reinstall'])).reason,'reinstall_requires_yes');
+    for (const args of [['--yes','--yes'],['--unknown'],['--repository']]) assert.equal(s.invoke(['bootstrap',...args]).status,2);
+    assert.deepEqual(snapshot(f.root),before);
+    const published=json(ok(s.invoke(['bootstrap','--yes',...s.args])));
+    assert.equal(published.launcher_action,'published');
+    const launcher=join(toolsRoot(f.root),'js_exec.cmd'), mtime=statSync(launcher).mtimeMs;
+    assert.equal(json(ok(s.invoke(['bootstrap',...s.args]))).launcher_matches,true);
+    assert.equal(json(ok(s.invoke(['bootstrap','--yes',...s.args]))).launcher_action,'reused');
+    assert.equal(statSync(launcher).mtimeMs,mtime);
+  } finally {f.dispose();}
+});
+
+test('shared launcher forwards raw argv, stdin, cwd, stderr and exit without PowerShell or compatibility', () => {
+  const f=fixture();
+  try {
+    const s=installation(f);
+    write(join(s.skill,'scripts/gidd.mjs'), `import {readFileSync} from 'node:fs'; console.log(JSON.stringify({args:process.argv.slice(2),input:readFileSync(0,'utf8'),cwd:process.cwd(),exe:process.execPath})); console.error('launcher fixture stderr'); process.exit(23);`);
+    rmSync(join(s.skill,'scripts/runtime-compat.mjs'));
+    rmSync(join(s.skill,'scripts/windows'),{recursive:true});
+    const before=snapshot(toolsRoot(f.root));
+    const args=['two words','','--help','tail\\','a & b','a^b','!literal!','two "quotes"'];
+    const result=s.invoke(args,{PATH:''},{input:'launcher stdin',cwd:s.target});
     assert.equal(result.status,23,result.stderr);
-    const report = json(result); assert.deepEqual(report.args,['config','set','tools.node.source',value,...s.args]);
-    assert.equal(report.input,'stage0 stdin'); sameDirectory(report.cwd,s.target); assert.equal(report.exe,process.execPath);
-    assert.match(result.stderr,/stage0 fixture stderr/); assert.equal(existsSync(toolsRoot(f.root)),false);
-  } finally { f.dispose(); }
+    const report=json(result); assert.deepEqual(report.args,args);
+    assert.equal(report.input,'launcher stdin'); sameDirectory(report.cwd,s.target); assert.equal(report.exe,process.execPath);
+    assert.match(result.stderr,/launcher fixture stderr/);
+    assert.deepEqual(snapshot(toolsRoot(f.root)),before);
+    // The shared launcher runs a different repository's script, without rebinding.
+    const other=join(f.root,'other repo/.agents/skills/gidd'); copySkill(other);
+    const otherCmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
+    assert.match(ok(run(otherCmd,['/d','/s','/c',`""${join(other,'gidd.cmd')}" help en"`],{windowsVerbatimArguments:true,env:{PATH:''}})).stdout,/target repository/);
+  } finally {f.dispose();}
 });
 
-test('stage0 and JS agree on source priority, short circuit, minima and integrity', { timeout: 60000 }, async () => {
-  const f = fixture(), previous = process.env.PATH;
+test('bootstrap alone selects managed Bun, managed Node, PATH Bun, PATH Node and validates before execution', () => {
+  const f=fixture();
   try {
-    const exe = compile(f.root), root = toolsRoot(f.root), bin = join(f.root,'path'), log = join(f.root,'probes.log');
-    const config = join(f.root,'.agents/skills/gidd/config.toml');
-    const configure = runtime => write(config,`schema_version = 1\n[bootstrap]\nruntime = "${runtime}"\n`);
-    const invoke = () => adapter(f.root,{ action: 'bootstrap', repositoryRoot: f.root, responses: {}, downloads: {} },{ env: { PATH: bin, GIDD_TEST_PROBE_LOG: log } });
-    process.env.PATH = bin;
-    const expect = async (name,source) => {
-      rmSync(log,{ force: true });
-      const result = json(ok(invoke())); assert.equal(result.id,`tool.${name}`); assert.equal(result.details.source,source);
-      const js = await selectRuntime(resolveStorage(f.root)); assert.equal(js.id,result.id); assert.equal(js.details.source,source);
-      return readFileSync(log,'utf8');
+    const exe=compile(f.root), root=toolsRoot(f.root), bin=join(f.root,'bin'), log=join(f.root,'probes.log');
+    const invoke=(extra={},path=bin)=>adapter(f.root,{action:'bootstrap',repositoryRoot:f.root,responses:{},downloads:{},...extra},{env:{PATH:path,GIDD_TEST_PROBE_LOG:log}});
+    const expect=(name,source,extra={})=>{
+      rmSync(log,{force:true}); const r=json(ok(invoke(extra))).runtime;
+      assert.equal(r.id,`tool.${name}`); assert.equal(r.details.source,source); return readFileSync(log,'utf8');
     };
-    configure('bun'); stub(exe,join(root,'node/node.exe'),undefined,true); stub(exe,join(bin,'bun.exe'));
-    assert.ok(!(await expect('node','managed')).includes(join(bin,'bun.exe')), 'Managed Node short circuits PATH Bun');
+    stub(exe,join(root,'node/node.exe'),undefined,true); stub(exe,join(bin,'bun.exe'));
+    assert.ok(!expect('node','managed').includes(join(bin,'bun.exe')));
     stub(exe,join(root,'bun/bun.exe'),undefined,true);
-    assert.ok(!(await expect('bun','managed')).includes('node.exe'), 'Default Bun short circuits managed Node');
-    configure('node'); assert.ok(!(await expect('node','managed')).includes('bun.exe'));
-    write(join(root,'node/install.json'),'corrupt');
-    const probes = await expect('bun','managed'); assert.ok(!probes.includes('node.exe'), 'Corrupt candidate is never executed');
-    rmSync(root,{ recursive: true }); stub(exe,join(bin,'node.exe'));
-    await expect('node','path'); configure('bun'); await expect('bun','path');
-    write(join(bin,'bun.exe.mode'),'1.0.0'); await expect('node','path');
-    write(config,'schema_version = 1\n[tools]\nnode = { version = "99.0.0", source = "https://nodejs.org/dist" }\n');
-    const result = invoke(); assert.notEqual(result.status,0); assert.match(result.stderr,/unexpected_metadata_request/);
-    assert.equal(existsSync(join(root,'bun')),false);
-    write(config,'schema_version = 1\n[bootstrap]\nruntime = ""\n'); assert.match(invoke().stderr,/config_invalid_bootstrap_runtime/);
-    // Finding the managed path through PATH still requires the installation record.
-    configure('bun'); rmSync(root,{ recursive: true, force: true });
+    assert.ok(!expect('bun','managed').includes('node.exe'));
+    assert.ok(!expect('node','managed',{node:true}).includes('bun.exe'));
+    write(join(root,'bun/install.json'),'corrupt');
+    assert.ok(!expect('node','managed').includes('bun.exe'));
+    rmSync(root,{recursive:true}); stub(exe,join(bin,'node.exe'));
+    expect('bun','path'); expect('node','path',{node:true});
+    write(join(bin,'bun.exe.mode'),'1.0.0'); expect('node','path');
     stub(exe,join(root,'bun/bun.exe'),undefined,true); write(join(root,'bun/install.json'),'corrupt');
-    const bypass = adapter(f.root,{ action: 'bootstrap', repositoryRoot: f.root, responses: {}, downloads: {} },{ env: { PATH: join(root,'bun'), GIDD_TEST_PROBE_LOG: log } });
-    assert.match(bypass.stderr,/occupied_or_version_conflicting_target:bun/);
-  } finally { if (previous === undefined) delete process.env.PATH; else process.env.PATH = previous; f.dispose(); }
+    assert.equal(json(ok(invoke({},join(root,'bun')))).runtime,null,'Managed candidates found through PATH still need integrity validation');
+    assert.match(invoke({yes:true},join(root,'bun')).stderr,/occupied_or_unknown_target:bun/);
+  } finally {f.dispose();}
 });
 
-test('stage0 installs the configured default using verified fixtures and reuses it on retry', { timeout: 60000 }, () => {
-  const f = fixture();
+test('bootstrap installs, repairs and rolls back managed runtimes before publishing the launcher', {timeout:120000}, () => {
+  const f=fixture();
   try {
-    const exe = compile(f.root), config = join(f.root,'.agents/skills/gidd/config.toml');
+    const exe=compile(f.root), config=join(f.root,'.agents/skills/gidd/config.toml');
     for (const name of ['bun','node']) {
-      const home = join(f.root,name), version = name === 'bun' ? '1.4.2' : '24.19.0'; mkdirSync(home);
-      const archiveName = name === 'bun' ? 'bun-windows-x64.zip' : `node-v${version}-win-x64.zip`;
-      const archive = join(f.root,archiveName), license = join(f.root,`${name}-LICENSE`); write(license,'fixture license\n');
-      const entry = name === 'bun' ? 'bun-windows-x64/bun.exe' : `node-v${version}-win-x64/node.exe`;
-      makeZip(f.root,archive,[{ name: entry, source: exe }, ...(name === 'node' ? [{ name: `node-v${version}-win-x64/LICENSE`, source: license }] : [])]);
-      const checksum = name === 'bun' ? `https://github.com/oven-sh/bun/releases/download/bun-v${version}/SHASUMS256.txt` : `https://nodejs.org/dist/v${version}/SHASUMS256.txt`;
-      const url = name === 'bun' ? `https://github.com/oven-sh/bun/releases/download/bun-v${version}/${archiveName}` : `https://nodejs.org/dist/v${version}/${archiveName}`;
-      const licenseUrl = `https://raw.githubusercontent.com/oven-sh/bun/bun-v${version}/LICENSE.md`;
-      const responses = { [checksum]: `${hash(archive)}  ${archiveName}\n`, [licenseUrl]: readFileSync(license,'utf8') }, downloads = { [url]: archive, [licenseUrl]: license };
-      write(config,`schema_version = 1\n[bootstrap]\nruntime = "${name}"\n[tools]\n${name} = { version = "${version}", source = "${name === 'bun' ? 'https://github.com/oven-sh/bun/releases' : 'https://nodejs.org/dist'}" }\n`);
-      const before = hash(config), spec = { action: 'bootstrap', repositoryRoot: f.root, responses, downloads }, env = { PATH: '', USERPROFILE: home };
-      assert.equal(json(ok(adapter(f.root,spec,{ env }))).id,`tool.${name}`);
-      assert.equal(hash(config),before); assert.equal(existsSync(join(toolsRoot(home),name,'install.json')),true);
-      assert.equal(existsSync(join(toolsRoot(home),name === 'bun' ? 'node' : 'bun')),false);
-      const snapshotBefore = snapshot(home);
-      ok(adapter(f.root,{ ...spec, responses: {}, downloads: {} },{ env }));
-      assert.deepEqual(snapshot(home),snapshotBefore, 'Next launch is read only and needs no metadata/download');
-      const failedHome = join(f.root,`${name}-failed`); mkdirSync(failedHome);
-      const bad = { ...responses, [checksum]: `${'0'.repeat(64)}  ${archiveName}\n` };
-      assert.match(adapter(f.root,{ ...spec, responses: bad },{ env: { ...env, USERPROFILE: failedHome } }).stderr,/download_hash_mismatch/);
-      assert.equal(existsSync(join(toolsRoot(failedHome),name)),false);
-      ok(adapter(f.root,spec,{ env: { ...env, USERPROFILE: failedHome } }));
+      const home=join(f.root,name), version=name==='bun'?'1.4.2':'24.19.0'; mkdirSync(home);
+      const archiveName=name==='bun'?'bun-windows-x64.zip':`node-v${version}-win-x64.zip`;
+      const archive=join(f.root,archiveName), license=join(f.root,`${name}-LICENSE`); write(license,'fixture license\n');
+      const entry=name==='bun'?'bun-windows-x64/bun.exe':`node-v${version}-win-x64/node.exe`;
+      makeZip(f.root,archive,[{name:entry,source:exe},...(name==='node'?[{name:`node-v${version}-win-x64/LICENSE`,source:license}]:[])]);
+      const checksum=name==='bun'?`https://github.com/oven-sh/bun/releases/download/bun-v${version}/SHASUMS256.txt`:`https://nodejs.org/dist/v${version}/SHASUMS256.txt`;
+      const url=name==='bun'?`https://github.com/oven-sh/bun/releases/download/bun-v${version}/${archiveName}`:`https://nodejs.org/dist/v${version}/${archiveName}`;
+      const licenseUrl=`https://raw.githubusercontent.com/oven-sh/bun/bun-v${version}/LICENSE.md`;
+      const metadata=name==='bun'?{'https://api.github.com/repos/oven-sh/bun/releases/latest':JSON.stringify({tag_name:`bun-v${version}`,draft:false,prerelease:false})}:
+        {'https://nodejs.org/dist/index.json':JSON.stringify([{version:`v${version}`,lts:'Fixture',files:['win-x64-zip']}])};
+      const responses={...metadata,[checksum]:`${hash(archive)}  ${archiveName}\n`,[licenseUrl]:readFileSync(license,'utf8')}, downloads={[url]:archive,[licenseUrl]:license};
+      write(config,'schema_version = 1\n[tools]\n');
+      const spec={action:'bootstrap',repositoryRoot:f.root,responses,downloads,yes:true,node:name==='node'}, env={PATH:'',USERPROFILE:home};
+      const invoke=(extra={})=>adapter(f.root,{...spec,...extra},{env});
+      const before=hash(config), result=json(ok(invoke())), root=toolsRoot(home), target=join(root,name), launcher=join(root,'js_exec.cmd');
+      assert.equal(result.runtime.id,`tool.${name}`); assert.equal(hash(config),before); assert.equal(existsSync(join(root,name==='bun'?'node':'bun')),false);
+      const healthy=snapshot(home); assert.equal(json(ok(invoke({responses:{},downloads:{}}))).runtime_action,'reused');
+      assert.deepEqual(snapshot(home),healthy);
+      const launcherHash=hash(launcher), executable=join(target,`${name}.exe`);
+      write(executable,'damaged GIDD executable');
+      assert.equal(json(ok(invoke())).runtime_action,'installed'); assert.equal(hash(executable),hash(exe));
+      assert.equal(hash(launcher),launcherHash); assert.equal(existsSync(join(root,`.cache/previous-${name}`)),false);
+      write(executable,'damaged before committed cleanup failure');
+      const committed=json(ok(invoke({failCleanup:true})));
+      assert.equal(committed.cleanup_pending,true); assert.equal(hash(executable),hash(exe),'Post-publication cleanup must not restore the damaged executable');
+      ok(invoke());
+      const old=snapshot(target);
+      assert.match(invoke({reinstall:true,failPublish:true}).stderr,/fixture_publish_failed/);
+      assert.deepEqual(snapshot(target),old); assert.equal(hash(launcher),launcherHash);
+      assert.match(invoke({reinstall:true,responses:{...responses,[checksum]:`${'0'.repeat(64)}  ${archiveName}\n`}}).stderr,/download_hash_mismatch/);
+      assert.deepEqual(snapshot(target),old); assert.equal(hash(launcher),launcherHash);
+      ok(invoke({reinstall:true}));
+      const definition=json(ok(adapter(f.root,{action:'release',name,version,source:name==='bun'?'https://github.com/oven-sh/bun/releases':'https://nodejs.org/dist',pinnedPath:'',responses})));
+      const definitionPath=join(f.root,`${name}-definition.json`); write(definitionPath,JSON.stringify(definition));
+      if(name==='bun') write(join(f.root,`bun-${version}-LICENSE.md`),readFileSync(license,'utf8'));
+      const interrupted=adapter(f.root,{action:'install',root,definitionPath,fixtureDirectory:f.root,stopAt:'backed_up',replace:true},{env});
+      assert.notEqual(interrupted.status,0); assert.equal(existsSync(target),false);
+      assert.equal(existsSync(join(root,`.cache/previous-${name}`)),true);
+      const interruptedTree=snapshot(root);
+      assert.equal(json(ok(invoke({yes:false}))).status,'needs_bootstrap');
+      assert.deepEqual(snapshot(root),interruptedTree,'Read-only bootstrap must not recover or discard a backup');
+      assert.match(json(product(['setup',name,'--repository',f.root],{env})).reason,/pending_runtime_recovery/);
+      ok(invoke({responses:{},downloads:{}}));
+      assert.deepEqual(snapshot(target),old); assert.equal(hash(launcher),launcherHash);
+      assert.equal(existsSync(join(root,`.cache/previous-${name}`)),false);
+      assert.equal(existsSync(join(root,`.cache/${name}`)),false);
+      write(join(target,'user.txt'),'keep');
+      assert.match(invoke({reinstall:true}).stderr,/occupied_or_unknown_target/); assert.equal(readFileSync(join(target,'user.txt'),'utf8'),'keep');
     }
-  } finally { f.dispose(); }
+  } finally {f.dispose();}
+});
+
+test('generated launcher pins an external Unicode/percent path and does not search again', () => {
+  const f=fixture();
+  try {
+    const s=installation(f,false), name=process.versions.bun?'bun':'node';
+    const home=join(f.root,'用户 %GIDD_PATH_SENTINEL% ! profile'), bin=join(f.root,'运行时 %GIDD_PATH_SENTINEL% ! bin');
+    mkdirSync(home); stub(process.execPath,join(bin,`${name}.exe`));
+    const env={USERPROFILE:home,PATH:bin,GIDD_PATH_SENTINEL:'unexpected-expansion'};
+    const report=json(ok(s.invoke(['bootstrap','--yes',...s.args],env)));
+    assert.equal(report.runtime.details.source,'path');
+    const launcher=join(toolsRoot(home),'js_exec.cmd'), previous=hash(launcher);
+    const log=join(f.root,'unexpected-probe.log'), fake=compile(f.root);
+    stub(fake,join(toolsRoot(home),'bun/bun.exe'),undefined,true);
+    assert.match(ok(s.invoke(['help','en'],{...env,PATH:'',GIDD_TEST_PROBE_LOG:log})).stdout,/target repository/);
+    assert.equal(hash(launcher),previous); assert.equal(existsSync(log),false);
+    rmSync(join(bin,`${name}.exe`));
+    assert.notEqual(s.invoke(['help','en'],{...env,GIDD_TEST_PROBE_LOG:log}).status,0);
+    assert.equal(existsSync(log),false,'A missing bound runtime must not fall back to managed Bun');
+  } finally {f.dispose();}
 });
 
 test('installed shell entry provides help and doctor reuse a PATH runtime without writes', { timeout: 30000 }, () => {
@@ -148,11 +218,11 @@ test('shell setup selects only bun, node or gh and keeps storage independent of 
     stub(exe, join(bin, 'bun.exe'));
     const bun = json(ok(product(['setup','bun',...s.args], { env: { PATH: bin } })));
     assert.deepEqual(bun.tools.map(t => [t.name, t.action]), [['bun','reused']]);
-    assert.equal(existsSync(toolsRoot(f.root)), false);
+    assert.equal(existsSync(join(toolsRoot(f.root),'bun')), false);
     stub(exe, join(bin, 'node.exe'));
     const node = json(ok(product(['setup','node',...s.args], { env: { PATH: bin } })));
     assert.deepEqual(node.tools.map(t => [t.name, t.action]), [['node','reused']]);
-    assert.equal(existsSync(toolsRoot(f.root)), false);
+    assert.equal(existsSync(join(toolsRoot(f.root),'bun')), false);
     const tools = toolsRoot(f.root);
     stub(exe, join(tools,'gh/gh.exe'), undefined, true);
     write(join(tools,'bun/keep.txt'), 'unrelated damaged installation');
@@ -179,6 +249,7 @@ test('repository installation locates its own Git worktree independently of cwd'
     ok(run(git, ['-C',target,'-c','user.name=Fixture','-c','user.email=fixture@example.test','commit','--allow-empty','-m','fixture']));
     ok(run(git, ['-C',target,'worktree','add','-b','fixture',worktree]));
     const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
+    ok(adapter(f.root,{action:'bootstrap',repositoryRoot:f.root,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
     const unbound = join(f.root,'user profile/.agents/skills/gidd');
     copySkill(unbound);
     const rejected = run(cmd, ['/d','/s','/c', `""${join(unbound,'gidd.cmd')}" doctor"`], {
@@ -272,9 +343,9 @@ test('config shell command creates and edits defaults; identity/auth reject miss
     const text = readFileSync(join(target,'.agents/skills/gidd/config.toml'),'utf8');
     assert.match(text,/hostname = "github.com"/); assert.match(text,/remote = "origin"/);
     assert.match(text,/account = "Octocat"/);
-    // Pin both runtimes to an unavailable version; config editing must still work.
+    // Runtime version pins are retired; unrelated configuration remains editable.
     for (const key of ['tools.node.version','tools.bun.version']) {
-      ok(s.invoke(['config','set',key,'999.0.0',...s.args],env));
+      assert.equal(s.invoke(['config','set',key,'999.0.0',...s.args],env).status,2);
     }
     assert.equal(s.invoke(['config','set','tools.directory','custom',...s.args],env).status,2);
     const direct = ps(join(s.skill,'scripts/windows/config.ps1'),

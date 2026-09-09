@@ -3,7 +3,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { join, resolve, sep } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { compareVersions, executableName, hashFile, inspectToolTree, managedToolValid, plainPath, platformName, validateToolSettings, versionPattern } from './storage.mjs';
-import { findTool, minimums, patterns, selectRuntime } from './tools.mjs';
+import { findTool, minimums, patterns } from './tools.mjs';
 import { runCommand } from './github.mjs';
 
 export function durableFile(path, bytes) {
@@ -197,6 +197,7 @@ export async function installTool(root, definition, { receive = download, onPhas
   const name = definition.name;
   if (!['bun','node','gh'].includes(name) || !versionPattern.test(definition.version)) throw new Error('invalid_tool_definition');
   const target = join(root, name); plainPath(target);
+  if (['bun','node'].includes(name) && existsSync(join(root,'.cache',`previous-${name}`))) throw new Error(`pending_runtime_recovery:${name}`);
   if (existsSync(target)) {
     if (!managedToolValid(target,name)) throw new Error(`occupied_or_invalid_target:${name}`);
     if (JSON.parse(readFileSync(join(target,'install.json'),'utf8')).version !== definition.version) throw new Error(`installed_version_conflict:${name}`);
@@ -233,13 +234,14 @@ export async function installTool(root, definition, { receive = download, onPhas
 }
 
 export async function setupTools(storage, selected) {
-  const runtime = await selectRuntime(storage);
-  const names = selected ? [selected] : [runtime.status === 'ready' ? runtime.id.slice(5) : storage.bootstrap.runtime, 'gh'];
-  const tools = [], root = storage.tools_root;
+  const names = selected ? [selected] : ['gh'];
+  const tools = selected ? [] : [{ name: process.versions.bun ? 'bun' : 'node', action: 'reused', path: process.execPath }];
+  const root = storage.tools_root;
   const manifest = JSON.parse(readFileSync(new URL('../assets/runtimes.json',import.meta.url),'utf8'));
   let release;
   try {
     for (const name of names) {
+      if (['bun','node'].includes(name) && existsSync(join(root,'.cache',`previous-${name}`))) throw new Error(`pending_runtime_recovery:${name}`);
       let candidate = await findTool(name,{ root, requested: storage.tools[name].version });
       if (candidate.status !== 'ready' || candidate.details.source === 'managed') {
         release ||= acquireInstallLock(root); writeInstallationGuide(root);

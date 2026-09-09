@@ -8,9 +8,7 @@ export const defaults = Object.freeze({
   bun: { version: 'latest', source: 'https://github.com/oven-sh/bun/releases' },
   gh: { version: 'latest', source: 'https://github.com/cli/cli/releases' },
 });
-export const requirements = JSON.parse(readFileSync(new URL('../assets/runtime-requirements.json', import.meta.url), 'utf8'));
 export const versionPattern = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/;
-if (requirements.schema !== 'gidd.runtime-requirements/v1' || !['bun','node'].every(name => versionPattern.test(requirements.minimum?.[name]))) throw new Error('invalid_runtime_requirements');
 export const stringPattern = String.raw`(?:"(?:[^"\\]|\\["\\])*"|'[^']*')`;
 export const decodeString = text => text[0] === "'" ? text.slice(1, -1) : JSON.parse(text);
 export const platformName = () => process.platform === 'win32' && process.arch === 'x64' ? 'windows-x64' : `${process.platform}-${process.arch}`;
@@ -54,14 +52,15 @@ export function validateToolSettings(name, settings) {
 // parsing never rewrites comments or invents GitHub identity fields.
 export function parseConfiguration(text) {
   if (Buffer.byteLength(text) > 16384) throw new Error('config_too_large');
-  const result = { tools: structuredClone(defaults), bootstrap: { runtime: 'bun' }, github: {} };
+  const result = { tools: structuredClone(defaults), github: {} };
   const tables = new Set(), seen = new Set();
   let section = '', schema = false;
   for (const [index, input] of text.replace(/^\uFEFF/, '').split('\n').entries()) {
     const line = input.replace(/\r$/, '');
     if (/[\x00-\x08\x0b-\x1f\x7f]/.test(line)) throw new Error(`config_control_character:${index + 1}`);
     if (/^[ \t]*(?:#.*)?$/.test(line)) continue;
-    const table = /^[ \t]*\[(tools|github|bootstrap)\][ \t]*(?:#.*)?$/.exec(line);
+    if (/^[ \t]*\[bootstrap\]/.test(line)) throw new Error('config_retired_field:bootstrap');
+    const table = /^[ \t]*\[(tools|github)\][ \t]*(?:#.*)?$/.exec(line);
     if (table) {
       section = table[1];
       if (tables.has(section)) throw new Error(`config_duplicate_${section}_table`);
@@ -71,15 +70,14 @@ export function parseConfiguration(text) {
       if (schema) throw new Error('config_duplicate_schema_version');
       schema = true; continue;
     }
-    if (section === 'github' || section === 'bootstrap') {
-      const names = section === 'github' ? 'hostname|account|remote' : 'runtime';
+    if (section === 'github') {
+      const names = 'hostname|account|remote';
       const field = new RegExp(`^[ \\t]*(${names})[ \\t]*=[ \\t]*(${stringPattern})[ \\t]*(?:#.*)?$`).exec(line);
       if (!field) throw new Error(`config_unsupported_syntax_or_field:${index + 1}`);
       const key = `${section}.${field[1]}`;
       if (seen.has(key)) throw new Error(`config_duplicate_key:${key}`);
       seen.add(key);
       const value = decodeString(field[2]);
-      if (section === 'bootstrap' && !['bun', 'node'].includes(value)) throw new Error('config_invalid_bootstrap_runtime');
       result[section][field[1]] = value; continue;
     }
     const tool = section === 'tools' && /^[ \t]*(node|bun|gh)[ \t]*=[ \t]*\{(.*?)\}[ \t]*(?:#.*)?$/.exec(line);
@@ -91,14 +89,15 @@ export function parseConfiguration(text) {
       while (tail) {
         const field = new RegExp(`^(version|source)[ \\t]*=[ \\t]*(${stringPattern})[ \\t]*(.*)$`).exec(tail);
         if (!field) throw new Error(`config_invalid_tool_table:${name}`);
+        if (name !== 'gh' && field[1] === 'version') throw new Error(`config_retired_field:tools.${name}.version`);
         if (Object.hasOwn(settings, field[1])) throw new Error(`config_duplicate_tool_field:${name}:${field[1]}`);
         settings[field[1]] = decodeString(field[2]);
         if (!field[3]) break;
         if (!field[3].startsWith(',') || !field[3].slice(1).trim()) throw new Error(`config_invalid_tool_table:${name}`);
         tail = field[3].slice(1).trim();
       }
-      if (!Object.hasOwn(settings, 'version') || !Object.hasOwn(settings, 'source')) throw new Error(`config_missing_tool_field:${name}`);
-      result.tools[name] = validateToolSettings(name, settings); continue;
+      if ((name === 'gh' && !Object.hasOwn(settings, 'version')) || !Object.hasOwn(settings, 'source')) throw new Error(`config_missing_tool_field:${name}`);
+      result.tools[name] = validateToolSettings(name, { ...defaults[name], ...settings }); continue;
     }
     throw new Error(`config_unsupported_syntax_or_field:${index + 1}`);
   }
@@ -147,7 +146,7 @@ export function resolveStorage(repository) {
   const path = repository ? configurationPath(repository) : null;
   if (path) plainPath(path);
   const configured = !!path && existsSync(path);
-  const settings = configured ? parseConfiguration(readConfigurationText(path)) : { tools: structuredClone(defaults), bootstrap: { runtime: 'bun' }, github: {} };
+  const settings = configured ? parseConfiguration(readConfigurationText(path)) : { tools: structuredClone(defaults), github: {} };
   const root = toolsRoot(); inspectToolTree(root);
   return { tools_root: root, config_path: path, configured, ...settings };
 }

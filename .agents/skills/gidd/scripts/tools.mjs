@@ -1,10 +1,12 @@
 import { existsSync } from 'node:fs';
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
 import { runCommand } from './github.mjs';
-import { compareVersions, executableName, managedToolValid, requirements, versionPattern } from './storage.mjs';
+import { compareVersions, executableName, managedToolValid, versionPattern } from './storage.mjs';
 
 export const check = (id, status, reason, details = {}) => ({ id, status, reason, details });
-export const minimums = { ...requirements.minimum, git: '2.0.0', gh: '2.98.0' };
+// Runtime discovery here is diagnostic/installation work, not a startup gate.
+// Compatibility policy lives only in runtime-compat.mjs, invoked by bootstrap.
+export const minimums = { bun: '0.0.0', node: '0.0.0', git: '2.0.0', gh: '2.98.0' };
 export const patterns = { bun: /^(\d+\.\d+\.\d+)$/, node: /^v(\d+\.\d+\.\d+)$/, gh: /^gh version (\d+\.\d+\.\d+)(?:\s|$)/, git: /^git version (\d+\.\d+\.\d+)/ };
 
 export function pathCandidates(name, env = process.env) {
@@ -33,17 +35,4 @@ export async function findTool(name, { root = '', requested = '', minimum = mini
     rejected.push({ ...candidate, reason, version });
   }
   return check(`tool.${name}`, candidates.length ? 'invalid' : 'missing', 'no_usable_candidate', { minimum, requested_version: requested, rejected });
-}
-
-export async function selectRuntime(storage, { ignorePins = false, execute = runCommand } = {}) {
-  const preferred = storage.bootstrap.runtime, order = [preferred, preferred === 'bun' ? 'node' : 'bun'];
-  const attempts = [];
-  for (const source of ['managed', 'path']) {
-    for (const name of order) {
-      const result = await findTool(name, { root: storage.tools_root, source, requested: ignorePins ? '' : storage.tools[name].version, execute });
-      attempts.push(result);
-      if (result.status === 'ready') return { ...result, attempts };
-    }
-  }
-  return check('runtime', 'missing', 'requires_node_or_bun', { attempts });
 }

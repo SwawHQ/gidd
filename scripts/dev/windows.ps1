@@ -14,13 +14,13 @@ $storage = $null
 $lock = $null
 function Get-DevTool {
     param([string]$Name, [ValidateSet('auto','managed','system')][string]$Source = 'auto')
-    $minimum = switch ($Name) { bun { [version]'1.4.2' } node { [version]'24.19.0' } gh { [version]'2.98.0' } }
+    $minimum = if ($Name -eq 'gh') { [version]'2.98.0' } else { [version]'0.0.0' }
     $pattern = switch ($Name) { bun { '^(\d+\.\d+\.\d+)$' } node { '^v(\d+\.\d+\.\d+)$' } gh { '^gh version (\d+\.\d+\.\d+)' } }
     $savedPath = $env:PATH
     try {
         if ($Source -eq 'managed') { $env:PATH = '' }
         $managedPath = if ($Source -eq 'system') { '' } else { Join-Path $toolsRoot "$Name/$Name.exe" }
-        $check = Find-Tool $Name $minimum $pattern $managedPath $storage.tools[$Name].version
+        $check = Find-Tool $Name $minimum $pattern $managedPath $storage.tools[$Name].version -CheckCompatibility:($Name -in @('bun','node'))
     } finally { $env:PATH = $savedPath }
     return $check
 }
@@ -111,11 +111,11 @@ try {
                     if (Test-Path -LiteralPath (Join-Path $toolsRoot $name)) { throw "occupied_or_version_conflicting_target:$name" }
                     $pinned = @(@($manifest.tools) + @($devManifest.tools) | Where-Object name -eq $name)[0]
                     $definition = Resolve-GiddRelease $name $storage.tools[$name] $pinned
-                    $minimum = switch ($name) { bun { [version]'1.4.2' } node { [version]'24.19.0' } gh { [version]'2.98.0' } }
-                    if ([version]$definition.version -lt $minimum) { throw "configured_version_below_minimum:$name" }
                     [void](Install-GiddTool $toolsRoot $definition {
                         param($phase)
                         [Console]::Error.WriteLine("Development ${name}: $phase")
+                    } -ValidatePayload { param($path,$runtimeName)
+                        if ((Invoke-GiddRuntimeCompatibility $path $runtimeName).status -ne 'compatible') { throw 'runtime_incompatible' }
                     })
                 }
                 $checks[$name] = Get-DevTool $name

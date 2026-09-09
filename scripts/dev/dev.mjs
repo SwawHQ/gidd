@@ -1,5 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const [command, argument = '', ...extra] = process.argv.slice(2);
@@ -28,14 +32,20 @@ for (const file of files) {
   const env = { ...process.env };
   // A parent node:test worker's context suppresses a nested --test runner.
   delete env.NODE_TEST_CONTEXT;
+  const completion = join(tmpdir(), `gidd-test-${randomUUID()}.complete`);
   const result = spawnSync(process.execPath, runnerArgs, {
     cwd: root, stdio: 'inherit', env: {
       ...env,
       GIDD_LIVE_TEST: command === '.test-live' ? '1' : '',
+      GIDD_TEST_COMPLETION: completion,
     },
   });
   if (result.error) console.error(result.error.message);
-  const passed = !result.error && result.status === 0;
+  let completed = false;
+  try { completed = existsSync(completion) && readFileSync(completion, 'utf8') === 'completed'; }
+  finally { rmSync(completion, { force: true }); }
+  if (!completed) console.error(`Test worker did not complete: ${file}`);
+  const passed = !result.error && result.status === 0 && completed;
   const seconds = ((performance.now() - suiteStarted) / 1000).toFixed(2);
   results.push({ file, passed, seconds });
   console.log(`${passed ? 'PASS' : 'FAIL'} ${file} (${seconds}s)`);

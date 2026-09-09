@@ -8,18 +8,14 @@ const fields = new Set(['hostname', 'account', 'remote']);
 const stringLiteral = String.raw`(?:"(?:[^"\\]|\\["\\])*"|'[^']*')`;
 const assignment = new RegExp(`^([ \\t]*)(hostname|account|remote)([ \\t]*=[ \\t]*)(${stringLiteral})([ \\t]*(?:#.*)?)$`);
 const decode = literal => literal[0] === "'" ? literal.slice(1, -1) : JSON.parse(literal);
-const editableKey = /^(?:bootstrap\.runtime|github\.(?:hostname|account|remote)|tools\.(?:node|bun|gh)\.(?:version|source))$/;
+const editableKey = /^(?:github\.(?:hostname|account|remote)|tools\.(?:node|bun|gh)\.source|tools\.gh\.version)$/;
 
 function validateSetting(key, value) {
   if (!editableKey.test(key || '')) throw new Error('config_unknown_key');
-  if (key === 'bootstrap.runtime') {
-    if (!['bun', 'node'].includes(value)) throw new Error('config_invalid_bootstrap_runtime');
-    return;
-  }
   if (key.startsWith('github.')) return validateGitHubField(key.slice(7), value);
   if (typeof value !== 'string' || !value || /[\x00-\x1f\x7f]/.test(value)) throw new Error('config_invalid_tool_value');
   if (key.endsWith('.version')) {
-    if (!/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(value) && value !== 'latest' && !(key === 'tools.node.version' && value === 'lts')) throw new Error('config_invalid_tool_version');
+    if (!/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(value) && value !== 'latest') throw new Error('config_invalid_tool_version');
   } else if (key.endsWith('.source')) {
     let url;
     try { url = new URL(value); } catch { throw new Error('config_invalid_tool_source'); }
@@ -57,7 +53,7 @@ function parseTools(text) {
       const offset = match.index + match[1].length + match[2].length + match[3].length + match[4].length;
       entry.fields[match[3]] = { offset, literal: match[5], value: decode(match[5]) };
     }
-    if (consumed !== inline[3].length || !entry.fields.version || !entry.fields.source) throw new Error('config_invalid_tool_table');
+    if (consumed !== inline[3].length || (name === 'gh' && !entry.fields.version) || !entry.fields.source || (name !== 'gh' && entry.fields.version)) throw new Error('config_invalid_tool_table');
     entries[name] = entry;
   }
   return { lines, start, end, entries };
@@ -73,24 +69,6 @@ function insertSetting(text, doc, section, setting) {
 
 export function editConfiguration(text, key, value) {
   validateSetting(key, value);
-  if (key === 'bootstrap.runtime') {
-    parseConfiguration(text);
-    const lines = text.split('\n');
-    let section = '', start = -1, end = lines.length, index = -1;
-    for (let i = 0; i < lines.length; i++) {
-      const table = /^[ \t]*\[([^\]]+)\]/.exec(lines[i]);
-      if (table) {
-        if (section === 'bootstrap') end = i;
-        section = table[1]; if (section === 'bootstrap') start = i;
-      } else if (section === 'bootstrap' && /^[ \t]*runtime[ \t]*=/.test(lines[i])) index = i;
-    }
-    if (index < 0) text = insertSetting(text, { lines, start, end }, 'bootstrap', `runtime = ${JSON.stringify(value)}`);
-    else {
-      lines[index] = lines[index].replace(new RegExp(`^([ \\t]*runtime[ \\t]*=[ \\t]*)${stringLiteral}`), (_, prefix) => prefix + JSON.stringify(value));
-      text = lines.join('\n');
-    }
-    parseConfiguration(text); return text;
-  }
   if (key.startsWith('github.')) return editGitHub(text, key.slice(7), value);
   const doc = parseTools(text), [, name, field] = key.split('.'), entry = doc.entries[name];
   const literal = JSON.stringify(value);
@@ -103,9 +81,9 @@ export function editConfiguration(text, key, value) {
   } else {
     // A missing inline table gets its companion field from the published template.
     const defaults = parseTools(readFileSync(new URL('../assets/config.example.toml', import.meta.url), 'utf8')).entries[name].fields;
-    const version = field === 'version' ? value : defaults.version.value;
+    const version = field === 'version' ? value : defaults.version?.value;
     const source = field === 'source' ? value : defaults.source.value;
-    const setting = `${name} = { version = ${JSON.stringify(version)}, source = ${JSON.stringify(source)} }`;
+    const setting = `${name} = { ${name === 'gh' ? `version = ${JSON.stringify(version)}, ` : ''}source = ${JSON.stringify(source)} }`;
     text = insertSetting(text, doc, 'tools', setting);
   }
   parseGitHub(text);
@@ -188,6 +166,7 @@ export function configurationHint(reason) {
   const missing = /^config_missing_github_(hostname|account|remote)$/.exec(reason);
   if (missing) return `Set github.${missing[1]} with: gidd.cmd config set github.${missing[1]} <value>`;
   if (reason === 'config_missing') return 'Create repository config with: gidd.cmd config set github.account <login>';
+  if (reason.startsWith('config_retired_field:')) return 'Remove [bootstrap] and Bun/Node version fields from config.toml; bootstrap owns runtime compatibility and selection.';
   if (reason.startsWith('config_')) return 'Check repository config.toml and use gidd.cmd config show/set. No login or configuration fallback was performed.';
   return '';
 }
