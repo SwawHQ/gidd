@@ -6,6 +6,8 @@ license: MIT
 
 # GIDD
 
+For development of the accepted stage0 migration, read [references/bootstrap.md](references/bootstrap.md). It defines fixed shared storage, managed-before-PATH runtime selection, Bun as the configurable default, and automatic runtime preparation before JavaScript. That migration is not implemented yet; the commands below describe the current executable behavior.
+
 Use the installed skill's `gidd.cmd` on Windows. Run `gidd.cmd help en` (or `help zh`) for usage; help, diagnosis and tool preparation work without Node.js or Bun. An entry at `<repository>/.agents/skills/gidd/` locates that repository using its own path and a local `.git` marker, independently of the working directory. `--help` and `-h` are aliases of `help`. Linux/macOS launchers are not yet implemented or verified.
 
 ```powershell

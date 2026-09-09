@@ -1,5 +1,7 @@
 # Windows 工具初始化
 
+已确认的 stage0 修订见 [bootstrap.md](bootstrap.md)：系统 Shell 将只准备启动所需的 Bun/Node，优先共享目录，再检查 PATH；均无合格候选时自动准备默认运行时。gh 准备将归 JavaScript。迁移尚未实现；以下为现有安装入口与恢复协议。
+
 先按 [doctor.md](doctor.md) 检查。用户已授权准备缺失工具后，从实际技能目录执行：
 
 ```powershell

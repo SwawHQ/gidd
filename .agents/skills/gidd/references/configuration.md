@@ -1,5 +1,7 @@
 # 仓库配置 v1
 
+已确认的 stage0 配置修订见 [bootstrap.md](bootstrap.md)：计划增加 bootstrap.runtime（默认 bun），最低支持版本仍由技能维护，不增加安装目录或 bin 字段。该字段尚未实现，现有模板和仓库实例暂不写入它；以下描述当前解析器支持的配置。
+
 模板为 `assets/config.example.toml`，实例唯一位置为 `<目标仓库>/.agents/skills/gidd/config.toml`。技能安装位置与安装方式由 Agent 客户端处理；GIDD 不在配置中记录“用户级/仓库级”模式，也不需要客户端用户技能根目录来定位下载工具。
 
 ## 配置命令与 GitHub 身份

@@ -1,5 +1,7 @@
 # Windows 基础诊断
 
+已确认的目标边界见 [bootstrap.md](bootstrap.md)：完整 doctor 将迁入 JavaScript，系统入口先复用共享目录或 PATH 中的运行时，必要时自动准备默认运行时。迁移尚未实现；以下为当前 PowerShell doctor 的行为，不能将首次调用永远只读的旧约定沿用到新入口。
+
 公开入口：`gidd.cmd doctor`。当前验证平台为 Windows x64、Windows PowerShell 5.1；不要求先安装 Bun、Node 或 gh。
 
 从目标仓库的 `.agents/skills/gidd/` 安装目录执行：

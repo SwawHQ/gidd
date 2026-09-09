@@ -1,5 +1,7 @@
 # 仓库开发
 
+产品 stage0 的已确认边界与验收范围见 [bootstrap 协议](.agents/skills/gidd/references/bootstrap.md)。当前仍在设计修订阶段；本文命令说明对应现有实现。产品迁移需同步审阅 dev.cmd 对共用脚本的调用，保留显式 managed/sys 模式和离线测试隔离。
+
 `dev.cmd` 管理 GIDD 源码仓库自身的开发环境。已验证目标为 Windows x64 和 Windows PowerShell 5.1；它不代表在这个仓库启用了 GIDD。
 
 技能发布入口为 `.agents/skills/gidd/gidd.cmd`，可先运行 `.\.agents\skills\gidd\gidd.cmd help zh`。产品用法见 [技能说明](.agents/skills/gidd/SKILL.md)；统一入口的开发验收使用 `.\dev.cmd .test entry`。帮助、诊断和工具准备使用系统 Shell，身份检查和授权由 Shell 启动共用 JavaScript。
