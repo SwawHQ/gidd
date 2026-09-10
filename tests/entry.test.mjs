@@ -131,7 +131,15 @@ test('bootstrap installs, repairs and rolls back managed runtimes before publish
       write(executable,'damaged before committed cleanup failure');
       const committed=json(ok(invoke({failCleanup:true})));
       assert.equal(committed.cleanup_pending,true); assert.equal(hash(executable),hash(exe),'Post-publication cleanup must not restore the damaged executable');
-      ok(invoke());
+      const committedTree=snapshot(root);
+      assert.equal(json(ok(invoke({yes:false,responses:{},downloads:{}}))).status,'ready');
+      assert.deepEqual(snapshot(root),committedTree,'Read-only checks must leave committed cleanup pending');
+      assert.match(invoke({failCleanup:true,responses:{},downloads:{}}).stderr,/fixture_cleanup_failed/);
+      assert.deepEqual(snapshot(root),committedTree,'A second cleanup failure must preserve the published runtime and its backup');
+      const retried=json(ok(invoke({responses:{},downloads:{}})));
+      assert.equal(retried.runtime_action,'reused'); assert.equal(retried.cleanup_pending,false);
+      assert.equal(hash(executable),hash(exe)); assert.equal(hash(launcher),launcherHash);
+      assert.equal(existsSync(join(root,`.cache/previous-${name}`)),false);
       const old=snapshot(target);
       assert.match(invoke({reinstall:true,failPublish:true}).stderr,/fixture_publish_failed/);
       assert.deepEqual(snapshot(target),old); assert.equal(hash(launcher),launcherHash);

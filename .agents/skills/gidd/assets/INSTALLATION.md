@@ -28,7 +28,11 @@ For launcher/runtime recovery run gidd.cmd bootstrap (read only), then --yes
 when preparation is authorized. --reinstall --yes replaces managed Bun; --node
 selects Node. Verified new payloads precede replacement. .cache/previous-bun or
 previous-node retain an old installation until launcher publication; the next
-bootstrap --yes restores interrupted backups before rechecking. Unknown files
+bootstrap --yes checks the current launcher and new installation before recovery.
+An intact new installation with the expected launcher binding is retained, and
+only backup cleanup is retried, without downloading. Repeated cleanup failure
+stops further changes while retaining the working runtime and backup. Other
+interrupted backups are restored before rechecking. Unknown files
 or malformed ownership records are preserved. JS setup never overwrites tools
 or publishes a launcher. External tools are never replaced.
 After publication, old backups are renamed .cache/retired-<name>-<UUID> before

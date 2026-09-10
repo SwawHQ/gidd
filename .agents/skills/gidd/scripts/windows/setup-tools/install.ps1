@@ -122,8 +122,3 @@ function Restore-GiddRuntimeBackup {
     }
     [IO.Directory]::Move($backup,$target)
 }
-
-function Restore-GiddInterruptedRuntime {
-    param([string]$Root, [string]$Name)
-    Restore-GiddRuntimeBackup $Root $Name
-}

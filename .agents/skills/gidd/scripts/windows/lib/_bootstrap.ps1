@@ -47,6 +47,27 @@ function Write-GiddLauncher {
     return 'published'
 }
 
+function Restore-GiddInterruptedRuntime {
+    param([string]$Root, [string]$Name)
+    $backup = Get-GiddRuntimeBackupPath $Root $Name
+    if (-not (Test-Path -LiteralPath $backup)) { return }
+    if (-not (Test-GiddOwnedRuntime $backup $Name)) { throw "unknown_runtime_backup:$Name" }
+    $launcher = Join-Path $Root 'js_exec.cmd'
+    Assert-GiddPlainPath $launcher
+    $candidate = @{ id="tool.$Name"; details=@{ source='managed' } }
+    # The launcher is the durable commit evidence, including an unchanged binding
+    # reused during repair. Never undo that state just because cleanup failed.
+    if ((Test-GiddManagedTool (Join-Path $Root $Name) $Name) -and
+        [IO.File]::Exists($launcher) -and [IO.File]::ReadAllText($launcher) -ceq (Get-GiddLauncherText $candidate)) {
+        # If cleanup still fails, stop before another installation or launcher
+        # switch can obscure this evidence; leave the working runtime intact.
+        Remove-GiddRuntimeBackup $Root $Name
+        Remove-GiddStage $Root $Name
+        return
+    }
+    Restore-GiddRuntimeBackup $Root $Name
+}
+
 function Invoke-GiddBootstrap {
     param($Storage, [switch]$Yes, [switch]$Node, [switch]$Reinstall)
     if ($Reinstall -and -not $Yes) { throw 'reinstall_requires_yes' }
