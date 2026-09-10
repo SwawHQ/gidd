@@ -6,8 +6,11 @@ live('official Bun/gh downloads, post-install doctor and reuse', { timeout: 3000
   const f=fixture();
   try {
     const preferred = process.versions.bun ? 'bun' : 'node';
-    write(join(f.root,'.agents/skills/gidd/config.toml'),`schema_version = 1\n[bootstrap]\nruntime = "${preferred}"\n[tools]\n`);
+    write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n[tools]\n');
     const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
+    const prepared=run(cmd,['/d','/s','/c',`""${join(repo,'.agents/skills/gidd/gidd.cmd')}" bootstrap --yes ${preferred==='node'?'--node':''} --repository "${f.root}""`],
+      {windowsVerbatimArguments:true,env:{PATH:''},timeout:300000});
+    assert.equal(json(ok(prepared)).runtime.id,`tool.${preferred}`);
     const invoke=tool => run(cmd,['/d','/s','/c',`""${join(repo,'.agents/skills/gidd/gidd.cmd')}" setup ${tool} --repository "${f.root}""`],
       {windowsVerbatimArguments:true,env:{PATH:''},timeout:300000});
     for (const tool of ['gh','bun']) {
@@ -39,11 +42,15 @@ live('official Node download and reuse through the public shell entry', { timeou
   const f=fixture();
   try {
     const root=toolsRoot(f.root);
-    write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n[bootstrap]\nruntime = "node"\n[tools]\n');
+    write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n[tools]\n');
     const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
+    const bootstrap=()=>run(cmd,['/d','/s','/c',`""${join(repo,'.agents/skills/gidd/gidd.cmd')}" bootstrap --node --yes --repository "${f.root}""`],
+      {windowsVerbatimArguments:true,env:{PATH:''},timeout:300000});
+    assert.equal(json(ok(bootstrap())).runtime.id,'tool.node');
     const invoke=() => run(cmd,['/d','/s','/c',`""${join(repo,'.agents/skills/gidd/gidd.cmd')}" setup node --repository "${f.root}""`],
       {windowsVerbatimArguments:true,env:{PATH:''},timeout:300000});
     assert.deepEqual(json(ok(invoke())).tools.map(t=>[t.name,t.action]),[['node','reused']]);
+    assert.equal(json(ok(bootstrap())).launcher_action,'reused');
     assert.equal(existsSync(join(root,'bun')),false);
     assert.equal(existsSync(join(root,'gh')),false);
     assert.equal(existsSync(join(root,'node/npm.cmd')),false);

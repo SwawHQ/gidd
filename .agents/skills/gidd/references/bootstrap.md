@@ -1,63 +1,54 @@
-# stage0 与 JavaScript 的边界
+# 显式 bootstrap 与共享 JavaScript 启动器
 
-状态：Windows x64 / PowerShell 5.1 的 stage0 与共用 JavaScript 已实现；Linux/macOS 启动器仍待实现与验证。
+Windows x64 / Windows PowerShell 5.1；本轮由 [Issue #23](https://github.com/SwawHQ/gidd/issues/23) 跟踪，基于 #21 的 JavaScript 迁移。Linux/macOS 的 js_exec.sh 尚未实现或验证。
 
-设计由 [Issue #19](https://github.com/SwawHQ/gidd/issues/19) 确认，实现与迁移由 [Issue #21](https://github.com/SwawHQ/gidd/issues/21) 跟踪。
+## 命令
 
-## 固定位置与配置
+| 命令 | 行为 |
+| --- | --- |
+| `gidd.cmd bootstrap` | 只读检查兼容运行时及共享启动器是否与选择一致 |
+| `gidd.cmd bootstrap --yes` | 允许准备缺失运行时，并生成或更新共享启动器 |
+| `gidd.cmd bootstrap --node` | 只读检查 Node 候选和启动器 |
+| `gidd.cmd bootstrap --node --yes` | 选择或准备 Node，并发布供所有仓库共用的 Node 启动器 |
+| `gidd.cmd bootstrap --reinstall --yes` | 重新下载受管 Bun，验证后替换并发布；可追加 --node 改为 Node |
 
-GIDD 下载的工具永久使用当前用户家目录下的 `~/.agents/skills.tools/gidd/`，Bun、Node、gh 分别使用 `bun/`、`node/`、`gh/`。这不是可覆盖的默认值，不提供配置、命令行或专用环境变量来定制安装位置。系统家目录的正常解析及测试隔离不属于工具目录配置。
+不带 --yes 不联网、不安装、不写配置、不创建目录或启动器。即使 PATH 已有兼容工具，首次生成启动器仍须 --yes。已有启动器与本次选择一致时返回 ready；无候选、启动器缺失或不一致时返回 needs_bootstrap。检查只说明本次实际执行的范围，不代表完整 doctor、GitHub 登录或仓库启用。
 
-目标配置固定为 `<目标仓库>/.agents/skills/gidd/config.toml`。支持可选字段：
+## 选择与兼容性
 
-```toml
-[bootstrap]
-# 同一来源内优先选择此运行时；两处均无合格候选时安装它。
-# 允许 bun 或 node。共享目录始终优先于 PATH。
-runtime = "bun"
+bootstrap 的固定顺序是受管 Bun、受管 Node、PATH Bun、PATH Node；每个来源内找到兼容候选立即停止，不为了 Bun 偏好额外下载。--node 将候选限制为 Node。无候选且有 --yes 时默认下载稳定 Bun；--node 下载 Node LTS。--reinstall 显式跳过健康复用，为选定种类准备新的受管副本，不修改外部 PATH 安装。
+
+受管文件先验证 install.json 的文件集合、长度和 SHA-256，再执行 scripts/runtime-compat.mjs。经 PATH 再次发现同一受管路径也不能绕过完整性校验。兼容规则集中在该独立 JS 方法；PowerShell 只读取它的结果，不维护另一套最低版本。检查脚本无法执行、超时或结果不兼容时继续其他候选。兼容检查不依赖完整业务模块。
+
+配置不提供运行时优先项、最低版本、固定版本或 bin 路径。tools.bun/node 仅有 source；稳定 Bun 与 Node LTS 是内部下载策略，实际版本与来源仍记入 install.json。gh 的 version/source 配置独立保留。旧 [bootstrap]、tools.bun.version、tools.node.version 报 config_retired_field；升级时移除这些字段，保留其他配置与注释。完整配置规则见 [configuration.md](configuration.md)。
+
+## 普通启动
+
+```text
+gidd.cmd bootstrap → PowerShell → 检查/准备 → 发布 js_exec.cmd
+gidd.cmd 其他命令 → js_exec.cmd → 选定运行时 → 当前技能的 scripts/gidd.mjs
 ```
 
-省略 bootstrap 表或 runtime 字段时使用 bun，保持旧配置可读；显式空值或其他值报错，不静默改为默认值。模板和新建配置写明默认值。现有 tools.node/tools.bun 内联表继续配置 version/source；source 是下载来源，不是安装位置。
+工具目录永久固定为当前用户的 ~/.agents/skills.tools/gidd/，不提供覆盖。js_exec.cmd 是该目录中的生成安装数据，不提交到源码，也不是技能。它只绑定一个运行时，不包含仓库或技能路径；由调用入口提供脚本路径。受管 executable 相对启动器定位，PATH 工具使用已解析的绝对路径。普通启动不解析 TOML、不调用 PowerShell、不搜索候选、不执行兼容检查、不下载或自动回退。
 
-最低支持版本随技能发布并由技能维护，Shell 与 JavaScript 读取同一份运行时要求；仓库不增加 min_version 或 bin 字段。最低版本保存在 assets/runtime-requirements.json：Bun 1.4.2、Node 24.19.0；此前已用这两个版本完成基线双运行时验收。后续补丁版本仍须通过项目测试，不以版本号代替验证。
+启动器不存在时入口输出 gidd.cli/v1、reason=bootstrap_required、退出 2，提示 bootstrap --yes。绑定的 executable 后来被外部移除或损坏时，执行可能直接失败；重新 bootstrap 恢复，不自动换运行时重跑业务。原始参数、工作目录、stdin/stdout/stderr 和退出码直接透传；Windows 使用批处理尾转发避免 CALL 的二次参数展开。读取 UTF-8 外部路径期间临时切换并恢复控制台代码页。
 
-## 启动顺序
+兼容性只在 bootstrap（及开发测试）验证。技能升级后应先重新 bootstrap；安装/修复/切换运行时也重新验证。生成时通过不等于以后每次执行前重新校验。js_exec.cmd 是用户级共享选择，--node 发布会影响使用此目录的全部仓库；双运行时测试使用 dev.cmd bun/node，不必切换共享启动器。
 
-1. 读取技能最低版本要求、目标仓库的 Bun/Node 配置和 bootstrap.runtime。
-2. 检查固定共享目录：先默认运行时，再另一种；受管安装必须先验证完整性再执行版本探测。
-3. 有合格候选立即启动 JavaScript，不再为了运行时选择检查 PATH。
-4. 否则检查 PATH：先默认运行时，再另一种；每种运行时按 PATH 候选顺序探测。
-5. 有合格候选立即启动 JavaScript，不为了默认偏好额外下载工具。
-6. 两处均无合格候选时，自动下载、校验并安装默认运行时，验证后启动 JavaScript。失败则报告本次失败，不自动改装另一种运行时。
+## 发布、修复与恢复
 
-合格候选必须可执行、达到技能最低版本，并满足该工具配置的固定版本要求。latest/lts 沿用当前含义：已有合格工具直接复用，只在缺失需要下载时解析版本，不在启动时自动升级或联网证明既有 Node 属于 LTS。配置非法时报告错误，不忽略非法版本或下载来源来安装。help 与 config 编辑是既有版本约束的例外：只要求候选达到技能最低版本，便于修改尚未安装的新 pin；来源顺序和完整性要求不变。无候选时仍按配置准备默认运行时。
+--yes 在共享 .cache/install.lock 锁内重新选择，防止并发 bootstrap 或 JS 安装相互覆盖。即使只复用 PATH，也可以建立共享目录及 INSTALLATION.md 来保存启动器。健康安装复用；启动器文本相同则不重写。新文本先写唯一临时文件并刷盘，再原子替换 js_exec.cmd。失败保留已有启动器。
 
-来源优先于偏好。例如默认 bun 时，共享目录中的合格 Node 优先于 PATH 中的 Bun；共享目录没有合格候选且 PATH 只有合格 Node 时，直接用 Node；两者都缺失才下载 Bun。用户改为 node 时交换每一来源内的检查顺序，仍保持共享目录优先。
+无合格候选时，默认目标存在且可确认属于 GIDD，则重新准备；发现其他合格候选时仍优先复用它。需要指定修复受管 Bun/Node 可用 --reinstall --yes。GIDD 归属要求 install.json 的结构可读且有效、实际目录无额外文件/子目录或链接；文件内容可以损坏或缺失。缺少/损坏安装记录、未知占用或额外用户文件一律保留并报错。
 
-受管目录损坏或版本冲突时不执行该候选，保留文件并记录拒绝原因，可以继续寻找其他合格候选。同一个受管 executable 即使通过 PATH 找到也不能绕过完整性校验。需要下载的正式目录已被占用时报告冲突，不覆盖、不删除、不静默换位置。
+先在 .cache/<name>/payload 完成下载、官方 SHA-256、受控解压、版本与兼容检查，再把旧目录移动到 .cache/previous-<name>，发布新目录及启动器。失败时恢复旧目录；启动器发布成功后才清理备份。强制中断留下的备份由下次 bootstrap --yes 在锁内判断：已发布则重试清理，未发布则恢复后重新检查；只读 bootstrap 不执行恢复。未知备份或恢复目标损坏时保留并报告冲突。Windows 文件占用可能使替换失败，不能承诺正在使用的运行时都能热替换。
 
-## 两层职责
+启动器发布是提交点；之后的缓存清理失败以 cleanup_pending=true 报告，不回滚已发布安装。下次 bootstrap --yes 恢复前先检查新目录的完整性及现有启动器文本；若启动器已是绑定该受管运行时的预期文本（包括修复时复用原有绑定），只重试清理备份，离线也可复用新副本。清理再次失败则停止本次操作，保留新副本和备份，避免后续安装或切换覆盖提交证据。只读 bootstrap 不执行清理。旧备份清理前先更名为 .cache/retired-<name>-<UUID>，避免部分清理的目录被当作可恢复备份；被运行进程占用的残留可在退出后清理。
 
-Shell 负责启动所需的配置读取、运行时探测、首次运行时下载及其校验、受控解压、锁、发布与中断恢复，并启动 JavaScript。安装器须在锁内重新检查状态，避免多个仓库同时首次启动时重复发布。只有进入安装准备时才创建共享工具目录，复用 PATH 工具不创建空目录。
+JS setup bun/node/gh 仍只准备指定工具，不发布或切换 js_exec.cmd；已有目录损坏或 gh 固定版本冲突仍保留并报错。运行时存在 previous-<name> 恢复备份时，安装器在下载前报 pending_runtime_recovery，先执行 bootstrap --yes 恢复。完整安装和共享锁规则见 [setup.md](setup.md)。
 
-JavaScript 负责完整配置校验与编辑、完整 doctor、gh 准备、GitHub 身份检查和设备授权，后续 Issue/PR 业务也归 JavaScript。setup gh 也先经过运行时 bootstrap；stage0 不安装 gh、不启动登录、不启用仓库。
+## 输出与验收
 
-Shell 用已选定的 executable 直接启动 JS，透传参数、标准输入输出和退出码。JS 通过 process.execPath 获取当前运行时；来源等本次启动元数据需要时用内部参数或子进程环境传递，不写入仓库配置，也不创建 bootstrap.txt/stage0.txt。每次启动重新探测。
+bootstrap stdout 为 gidd.bootstrap/v1：ready 退出 0，needs_bootstrap 退出 1，参数/配置/安装错误退出 2。结果包含 read_only、runtime、attempts 与 launcher；写入成功包含 launcher_action、runtime_action。stderr 用于进度与错误。普通命令保持各自 JS 协议。
 
-## 安装与诊断流程
-
-运行时检查 → 必要时自动下载并准备运行时 → 启动 JS → doctor → 按请求补齐其他工具或配置。
-
-所有公开命令（包括 help）先经过 stage0。完整 doctor 不再承担无运行时诊断。JS doctor 本身只读、不联网安装；通过系统入口首次调用 doctor 时，前置 stage0 可以联网和写入共享运行时目录，帮助文案必须说明这一点。stage0 失败返回 gidd.cli/v1、退出 2，并通过 reason 报告配置、下载、校验或锁错误，不能输出仿造的 doctor 成功或把未执行检查视为通过。
-
-运行时准备不修改 config.toml、不修改系统 PATH、不授权 GitHub、不代表仓库启用。缺少配置时采用已公开的启动默认值即可，配置创建和编辑仍归 JS；不得用自动 bootstrap 推断缺失 GitHub 身份字段。
-
-## 迁移验收
-
-- 默认 Bun，以及显式默认 Node 的每种来源内顺序；共享 Node 优先 PATH Bun，反向偏好也遵守来源优先级。
-- 合格候选立即启动，后续候选不探测，不下载、不改配置；最低版本和固定版本不符的候选拒绝。
-- 完整性失败的受管候选不执行；经 PATH 再次发现同一路径也不能绕过检查。
-- 无运行时自动安装默认运行时；下载失败、哈希失败、占用冲突、并发启动和中断重试保留现有边界。
-- JS 接收到原始参数、标准输入输出和退出码；不生成 bin 配置或启动路径文件。
-- JS doctor、配置及 GitHub 逻辑在 Node/Bun 两种运行时验证；首次启动下载用隔离 fixture 验证，普通离线测试不访问真实网络、工具目录或登录状态。
-- 更新 SKILL.md、配置模板与本仓库实例、help 及各 references；当前实现与目标设计状态始终明确。Linux/macOS 未实测前不得宣称支持。
+测试覆盖固定来源顺序、Node 选择、只读不写、旧字段拒绝、真实 Node/Bun 兼容方法、启动器共享与参数转发、普通命令不调用 PowerShell/兼容方法、失败不回退重跑、损坏安装修复、下载/发布失败回滚、未知文件保留、安装锁及中断恢复。官方归档验证使用隔离家目录，不触碰真实工具或凭据。

@@ -29,27 +29,29 @@ test('doctor: dependency matrix, repository states, read-only checks and redacti
     };
     runCase('all dependencies missing', emptyBin, (r, status) => {
       assert.equal(status, 1);
-      for (const id of ['tool.git','tool.node','tool.bun','tool.gh','runtime']) assert.equal(check(r,id).status,'missing');
+      for (const id of ['tool.git','tool.node','tool.bun','tool.gh']) assert.equal(check(r,id).status,'missing');
+      assert.equal(check(r,'runtime').status,'ready');
+      assert.equal(check(r,'runtime').details.compatibility_checked,false);
       assert.equal(check(r,'repository').status,'not_checked');
     });
     stub(exe, join(fakeBin,'node.exe'),'v24.19.0'); stub(exe, join(fakeBin,'gh.exe'),'gh version 2.98.0 (test)');
     rmSync(config);
     runCase('Node alone, unborn repository, missing config',toolPath,(r,status) => {
-      assert.equal(status,1); assert.equal(check(r,'runtime').details.selected,'tool.node');
+      assert.equal(status,1); assert.equal(check(r,'runtime').details.selected,process.versions.bun?'tool.bun':'tool.node');
       assert.equal(check(r,'repository.history').reason,'unborn_branch'); assert.equal(check(r,'repository.config').status,'missing');
     });
     write(config,validConfig);
     stub(exe,join(toolsRoot(f.root),'bun/bun.exe'),'1.4.2',true);
     stub(exe,join(toolsRoot(f.root),'gh/gh.exe'),'gh version 2.98.0 (test)',true);
     runCase('Bun alone from managed tools',gitOnly,r => {
-      assert.equal(check(r,'runtime').details.selected,'tool.bun'); assert.equal(check(r,'tool.gh').details.source,'managed');
+      assert.equal(check(r,'runtime').details.selected,process.versions.bun?'tool.bun':'tool.node'); assert.equal(check(r,'tool.gh').details.source,'managed');
     });
-    runCase('managed Bun preferred over PATH Node',toolPath,r => assert.equal(check(r,'runtime').details.selected,'tool.bun'));
+    runCase('managed and PATH observations do not change the current runtime',toolPath,r => assert.equal(check(r,'runtime').details.selected,process.versions.bun?'tool.bun':'tool.node'));
     stub(exe,join(fakeBin,'bun.exe'),'1.4.2');
-    runCase('PATH Bun tie preference',toolPath,r => assert.equal(check(r,'runtime').details.selected,'tool.bun'));
+    runCase('PATH observations preserve the current runtime',toolPath,r => assert.equal(check(r,'runtime').details.selected,process.versions.bun?'tool.bun':'tool.node'));
     write(join(fakeBin,'node.exe.mode'),'v18.0.0'); write(join(fakeBin,'bun.exe.mode'),'fail'); write(join(fakeBin,'gh.exe.mode'),'not gh');
     runCase('old, failing and malformed PATH tools fall back',toolPath,r => {
-      assert.equal(check(r,'tool.node').status,'invalid');
+      assert.equal(check(r,'tool.node').status,'ready');
       for (const id of ['tool.bun','tool.gh']) assert.equal(check(r,id).details.source,'managed');
       assert.ok(!JSON.stringify(r).includes('private-test-secret'));
     });

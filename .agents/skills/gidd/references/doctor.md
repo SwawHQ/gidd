@@ -1,8 +1,8 @@
 # Windows 基础诊断
 
-完整 doctor 位于 scripts/doctor.mjs，本身只读。系统入口先按 [bootstrap.md](bootstrap.md) 复用共享目录或 PATH 中的运行时；必要时自动准备默认运行时，因此首次调用可能联网、写入共享工具目录。stage0 失败时 doctor 尚未执行。
+完整 doctor 位于 scripts/doctor.mjs，本身只读、离线。系统入口直接调用 [bootstrap](bootstrap.md) 已生成的 js_exec.cmd；启动器缺失时提示 bootstrap --yes，doctor 尚未执行。
 
-公开入口：`gidd.cmd doctor`。当前验证平台为 Windows x64、Windows PowerShell 5.1；不要求先安装 Bun、Node 或 gh。
+公开入口：`gidd.cmd doctor`。当前验证平台为 Windows x64、Windows PowerShell 5.1；需要 bootstrap 已准备共享运行时启动器；不要求 gh 已安装。
 
 从目标仓库的 `.agents/skills/gidd/` 安装目录执行：
 
@@ -10,15 +10,15 @@
 .\gidd.cmd doctor
 ```
 
-仓库内 `.agents/skills/gidd/` 的入口自动定位含 `.git` 标记的目标根（含 worktree），不依赖工作目录。Git 可用时另行验证工作树；配置不继承用户级文件。工具固定存放于 `~/.agents/skills.tools/gidd/`，独立于技能安装位置，JS doctor 不建立工具目录；前置 stage0 的准备另计。
+仓库内 `.agents/skills/gidd/` 的入口自动定位含 `.git` 标记的目标根（含 worktree），不依赖工作目录。Git 可用时另行验证工作树；配置不继承用户级文件。工具固定存放于 `~/.agents/skills.tools/gidd/`，独立于技能安装位置，JS doctor 不建立工具目录。
 
 ## 源码归属
 
-scripts/doctor.mjs 组合诊断；scripts/tools.mjs 负责工具探测；scripts/storage.mjs 负责配置、固定路径与完整性校验；scripts/github.mjs 的共用进程执行器提供超时、输出上限和错误脱敏。scripts/windows/doctor.ps1 仅为经 stage0 转发的兼容入口。
+scripts/doctor.mjs 组合诊断；scripts/tools.mjs 负责工具探测；scripts/storage.mjs 负责配置、固定路径与完整性校验；scripts/github.mjs 的共用进程执行器提供超时、输出上限和错误脱敏。scripts/windows/doctor.ps1 仅为经共享启动器转发的旧 PowerShell 兼容入口。
 
 ## 工具选择
 
-先检查固定共享目录中的同名 executable，再检查 PATH 候选。固定版本必须精确匹配，否则该候选报告 configured_version_mismatch；lts/latest 只用于需要下载时解析，doctor 不联网查询最新版本或 LTS 状态。仅执行 `--version`，每个子进程最多等待 5 秒，stdin 关闭。首版不运行 `.cmd` 包装器，不修改 PATH。
+先检查固定共享目录中的同名 executable，再检查 PATH 候选。gh 固定版本必须精确匹配，否则该候选报告 configured_version_mismatch；内部下载策略只用于需要下载时解析，doctor 不联网查询最新版本或 LTS 状态。仅执行 `--version`，每个子进程最多等待 5 秒，stdin 关闭。首版不运行 `.cmd` 包装器，不修改 PATH。
 
 共享工具须先通过同目录 `install.json` 的文件集合、长度、SHA-256 检查，再运行版本查询；缺少清单或文件损坏时报告 `managed_integrity_failed`，不执行该候选。此校验不适用于外部管理的普通 PATH 工具。若将 GIDD 的同一工具路径加入 PATH，仍需通过共享工具完整性检查。
 
@@ -27,11 +27,11 @@ scripts/doctor.mjs 组合诊断；scripts/tools.mjs 负责工具探测；scripts
 | 工具 | 基础版本门槛 | 受管候选（先于 PATH） |
 | --- | --- | --- |
 | Git | 2.0 | 无 |
-| Node.js | 24.19.0 | `<工具根>/node/node.exe`；可用 `gidd.cmd setup node` 准备 |
-| Bun | 1.4.2 | `<工具根>/bun/bun.exe` |
+| Node.js | 只观察版本，不检查兼容性 | `<工具根>/node/node.exe`；可用 `gidd.cmd setup node` 准备 |
+| Bun | 只观察版本，不检查兼容性 | `<工具根>/bun/bun.exe` |
 | gh | 2.98.0 | `<工具根>/gh/gh.exe` |
 
-Node 和 Bun 任一种可用即可满足 `runtime`。共享运行时优先于 PATH；来源相同时按 bootstrap.runtime（缺省 Bun）选择。`tool.node` 缺失而 Bun 可用，不阻止总体本地就绪。拒绝的候选及原因保留在 `details.rejected`。
+runtime 描述当前正在执行 doctor 的进程：path、version、selected 与 compatibility_checked=false。不重新选择运行时，也不执行兼容方法。tool.node/bun 是对安装文件和 --version 的独立观察，候选拒绝原因保留在 details.rejected；这不等于 bootstrap 的兼容结果。
 
 上述版本是诊断门槛，不证明所有对应版本的未来业务兼容性。JavaScript 业务代码须使用 Node/Bun 共同支持的标准 API，同一功能在两者上验证；doctor 由共用 JavaScript 执行，测试同时覆盖 Node 与 Bun。
 
@@ -45,7 +45,7 @@ stdout 为单个 UTF-8 JSON 对象：
   "status": "needs_setup",
   "repository": "D:\\work\\project",
   "checks": [
-    { "id": "runtime", "status": "missing", "reason": "requires_node_or_bun", "details": { "depends_on": ["tool.node", "tool.bun"] } }
+    { "id": "runtime", "status": "ready", "reason": "current_process", "details": { "selected": "tool.bun", "compatibility_checked": false } }
   ]
 }
 ```
@@ -74,7 +74,7 @@ remote 检查只读取本地配置，不访问网络。只对常见 `https://git
 ## Agent 如何使用结果
 
 - 用户说“当前仓库启用 GIDD”：先对明确的目标仓库诊断。已有运行时通过时直接复用，不要求同时安装 Node 和 Bun。
-- 启动失败：报告 stage0 的实际错误及固定共享工具位置。完整 doctor 尚未执行，不把未检查项报告为通过。直接调用 JS doctor 可验证缺少运行时的诊断情况；doctor 自身不下载。
+- 启动失败：报告共享启动器或运行时执行错误，提示重新 bootstrap。完整 doctor 尚未执行，不把未检查项报告为通过。
 - `repository.config` 缺失：说明该仓库尚无固定位置配置，再按用户授权进入配置流程；不要用目录存在代替启用记录。
 - `github.identity` 未检查：说明尚未检查，不能说“未登录”。用户要求检查当前账号时使用独立的 [身份检查入口](identity.md)，该入口会联网。需要登录时另行展示 URL 与一次性代码，当前 doctor 不启动登录。
 - 初始化或修复后重新诊断。退出码 1 不是脚本崩溃；不要无条件重复执行或把结果当作自动安装授权。

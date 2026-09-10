@@ -127,9 +127,9 @@ test(`setup ${engine}: install, integrity, interrupted publication, locks, prese
         write(join(f.root,'.agents/skills/gidd/config.toml'),`schema_version = 1\n[tools]\n`);
         const report=json(ok(product(['setup','--repository',f.root],{env:{PATH:external,USERPROFILE:home}})));
         assert.equal(report.status,'ready'); assert.equal(report.tools.length,2);
-        for (const name of [runtime,'gh']) {
+        for (const name of [process.versions.bun ? 'bun' : 'node','gh']) {
           const matches=report.tools.filter(tool=>tool.name===name); assert.equal(matches.length,1);
-          assert.equal(matches[0].action,'reused'); assert.equal(matches[0].path,join(external,`${name}.exe`));
+          assert.equal(matches[0].action,'reused'); assert.equal(matches[0].path,name==='gh'?join(external,'gh.exe'):process.execPath);
         }
         if (!existing) assert.equal(existsSync(toolsRoot(home)),false);
       }

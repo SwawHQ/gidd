@@ -2,7 +2,7 @@ import { existsSync, lstatSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configurationPath, repositoryRoot, resolveStorage } from './storage.mjs';
-import { check, findTool, selectRuntime } from './tools.mjs';
+import { check, findTool } from './tools.mjs';
 import { runCommand } from './github.mjs';
 
 export async function doctor(target) {
@@ -17,9 +17,8 @@ export async function doctor(target) {
   for (const name of ['git', 'node', 'bun', 'gh']) checks.push(await findTool(name, {
     root: name === 'git' ? '' : storage?.tools_root, requested: storage?.tools[name]?.version || '',
   }));
-  const runtime = storage ? await selectRuntime(storage) : checks.find(item => ['tool.bun','tool.node'].includes(item.id) && item.status === 'ready');
-  checks.push(runtime?.status === 'ready' ? check('runtime', 'ready', 'usable', { selected: runtime.id, path: runtime.details.path }) :
-    check('runtime', 'missing', 'requires_node_or_bun', { depends_on: ['tool.node', 'tool.bun'] }));
+  checks.push(check('runtime', 'ready', 'current_process', { selected: process.versions.bun ? 'tool.bun' : 'tool.node',
+    path: process.execPath, version: process.versions.bun || process.versions.node, compatibility_checked: false }));
   const git = checks.find(item => item.id === 'tool.git');
   let root;
   const invoke = args => runCommand(git.details.path, ['-C', target, ...args], { timeoutMs: 5000 });

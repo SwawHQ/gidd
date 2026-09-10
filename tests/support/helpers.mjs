@@ -5,6 +5,13 @@ import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, re
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { after } from 'node:test';
+
+// An exit code of zero alone does not prove that a test worker reached its end.
+// In particular, Node on this Windows host can terminate during native fixtures.
+after(() => {
+  if (process.env.GIDD_TEST_COMPLETION) writeFileSync(process.env.GIDD_TEST_COMPLETION, 'completed');
+});
 
 export const repo = fileURLToPath(new URL('../../', import.meta.url));
 export const code = join(repo, '.agents/skills/gidd/scripts/windows');

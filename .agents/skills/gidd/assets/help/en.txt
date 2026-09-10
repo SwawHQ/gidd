@@ -1,14 +1,19 @@
 GIDD (Windows x64 / PowerShell 5.1)
 
-Startup: managed runtime first, then PATH; if absent, download the configured default (Bun).
-This also applies before help/doctor. The JavaScript doctor itself is read-only and offline.
+Runtime preparation (explicit; ordinary commands never check or download their runtime):
+  gidd.cmd bootstrap                                Read-only runtime and shared launcher check.
+  gidd.cmd bootstrap --yes                          Prepare missing runtime and publish shared launcher; default Bun.
+  gidd.cmd bootstrap --node --yes                   Select/prepare Node for the launcher shared by all repositories.
+  gidd.cmd bootstrap --reinstall --yes              Reinstall managed Bun; add --node for Node.
+
+Rerun bootstrap after skill updates. Ordinary commands execute JS through js_exec.cmd.
 
 Help and diagnosis:
   gidd.cmd help [en|zh]                              Show help; aliases: --help, -h. Also shown with no arguments.
   gidd.cmd doctor                                    Check environment and target repository; read-only, offline.
 
-Tool setup (after automatic runtime preparation):
-  gidd.cmd setup bun                                 Reuse usable Bun or download the configured version.
+Tool setup (requires shared launcher; does not switch runtimes):
+  gidd.cmd setup bun                                 Reuse Bun or download a stable release.
   gidd.cmd setup node                                Prepare Node; defaults to LTS, without npm.
   gidd.cmd setup gh                                  Prepare gh 2.98.0+; does not log in.
 

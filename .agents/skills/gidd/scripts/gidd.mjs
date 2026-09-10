@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configure, configurationHint, readGitHubConfiguration } from './config.mjs';
@@ -12,6 +12,7 @@ import { setupTools } from './install.mjs';
 export async function main(args) {
   let command = (args.shift() || 'help').toLowerCase();
   const schemas = { config: 'gidd.config/v1', doctor: 'gidd.doctor/v1', setup: 'gidd.setup-tools/v1', identity: 'gidd.identity/v1', auth: 'gidd.auth/v1' };
+  let schema = 'gidd.cli/v1';
   try {
     if (['help','--help','-h'].includes(command)) {
       if (args.length > 1) throw new Error('invalid_arguments');
@@ -35,8 +36,15 @@ export async function main(args) {
     if (args.length) {
       if (args.length !== 2 || args[0] !== '--repository' || !args[1]) throw new Error('invalid_arguments');
       repository = args[1];
-    } else repository = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
+    } else {
+      const scripts = dirname(fileURLToPath(import.meta.url));
+      repository = resolve(scripts, '../../../..');
+      if (resolve(repository, '.agents/skills/gidd/scripts').toLowerCase() !== scripts.toLowerCase() || !existsSync(resolve(repository,'.git'))) {
+        throw new Error('repository_required_for_unbound_entry');
+      }
+    }
     repository = repositoryRoot(repository);
+    schema = schemas[command];
     let report;
     if (command === 'doctor') report = await doctor(repository);
     else if (command === 'config') report = configure(repository,action,key,value);
@@ -63,8 +71,8 @@ export async function main(args) {
   } catch (error) {
     const reason = /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : 'operation_failed';
     const hint = configurationHint(reason); if (hint) console.error(hint);
-    console.log(JSON.stringify({ schema: schemas[command] || 'gidd.cli/v1', status: 'error', reason }));
-    return command === 'setup' ? 1 : 2;
+    console.log(JSON.stringify({ schema, status: 'error', reason }));
+    return command === 'setup' && schema !== 'gidd.cli/v1' ? 1 : 2;
   }
 }
 
