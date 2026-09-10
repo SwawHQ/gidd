@@ -114,7 +114,7 @@ dev .setup 复用外部工具不创建共享目录；产品 bootstrap --yes 仍�
 
 `bun run test` 使用相同的双运行时入口；`bun run test:bun`、`bun run test:node` 分别选择一种。已有 npm 时也可以使用相应的 `npm run` 命令，但便携安装不提供 npm。
 
-测试保留诊断只读、依赖缺失、PATH/受管工具选择、Node/Bun 复用、凭据脱敏、损坏目标保留、SHA/ZIP/版本拒绝、junction 拒绝、并发锁、强制终止恢复和共享超时期限等场景。`github` 组使用离线 fixture 验证 API 账号匹配、独立失败、凭据脱敏、进程超时和只读 Git 作者检查；不会触碰真实登录。产品身份检查用法见 [身份检查协议](.agents/skills/gidd/references/identity.md)，该入口需显式调用才会联网。其他空 JavaScript 文件仍是规划位置。
+测试保留诊断只读、依赖缺失、PATH/受管工具选择、Node/Bun 复用、凭据脱敏、损坏目标保留、SHA/ZIP/版本拒绝、junction 拒绝、并发锁、强制终止恢复和共享超时期限等场景。`github` 组使用离线 fixture 验证 API 账号匹配、独立失败、凭据脱敏、进程超时和只读 Git 作者检查；不会触碰真实登录。产品身份检查用法见 [身份检查协议](.agents/skills/gidd/references/identity.md)，该入口需显式调用才会联网。
 
 官方归档验证需要显式运行：
 
