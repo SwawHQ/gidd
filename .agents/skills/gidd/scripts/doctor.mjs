@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { configurationPath, parseConfiguration, readConfigurationText, repositoryRoot, resolveStorage } from './storage.mjs';
 import { validateGitHubField } from './config.mjs';
 import { check, findTool, toolEnvironment } from './tools.mjs';
+import { readBindings } from './bindings.mjs';
+import { bindingMatches } from './bootstrap-tools.mjs';
 import { runCommand } from './github.mjs';
 
 const safeReason = (error, fallback) => /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : fallback;
@@ -101,9 +103,17 @@ export async function doctor(target) {
   // GitHub field values can be malformed; tool diagnostics need only tool settings.
   const { github: omitted, ...storageDetails } = storage || {};
   checks.push(storage ? check('tools.storage', 'ready', 'resolved', storageDetails) : check('tools.storage', 'invalid', storageError, { managed_tools_checked: false }));
+  let bindings={};
+  try {if(storage)bindings=readBindings(storage.tools_root).tools;} catch {}
   for (const name of ['git', 'node', 'bun', 'gh']) checks.push(await findTool(name, {
-    root: storage?.tools_root, requested: storage?.tools[name]?.version || '',
+    root: storage?.tools_root, extraPaths:bindings[name]?.source==='path' && existsSync(bindings[name].path)?[bindings[name].path]:[],
   }));
+  for(const name of ['git','gh']) {
+    const candidate=checks.find(c=>c.id==='tool.'+name);
+    const pending=storage && existsSync(resolve(storage.tools_root,'.cache','previous-'+name));
+    const matches=storage && candidate.status==='ready' && bindingMatches(storage.tools_root,name,candidate.details);
+    checks.push(check('binding.'+name,!pending && matches?'ready':'invalid',pending?'tool_recovery_pending':matches?'bound_candidate_verified':'bootstrap_required'));
+  }
   checks.push(check('runtime', 'ready', 'current_process', { selected: process.versions.bun ? 'tool.bun' : 'tool.node',
     path: process.execPath, version: process.versions.bun || process.versions.node, compatibility_checked: false }));
   const git = checks.find(item => item.id === 'tool.git');
@@ -132,7 +142,7 @@ export async function doctor(target) {
   if (!root) for (const id of ['repository.history', 'repository.remotes', 'repository.remote']) checks.push(check(id, 'not_checked', 'repository_unavailable'));
   checks.push(...configuration.checks);
   for (const id of ['github.identity', 'git.authentication']) checks.push(check(id, 'not_checked', 'offline_diagnostic'));
-  const required = ['platform', 'tools.storage', 'tool.git', 'runtime', 'tool.gh', 'repository', 'repository.history',
+  const required = ['binding.git','binding.gh','platform', 'tools.storage', 'tool.git', 'runtime', 'tool.gh', 'repository', 'repository.history',
     'repository.remotes', 'repository.remote', 'repository.config', 'repository.config.validation', 'repository.config.github'];
   return { schema: 'gidd.doctor/v1', status: required.every(id => checks.some(item => item.id === id && item.status === 'ready')) ? 'local_ready' : 'needs_setup', repository: target, checks };
 }

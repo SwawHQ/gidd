@@ -1,20 +1,16 @@
 GIDD (Windows x64 / PowerShell 5.1)
 
-Runtime preparation (explicit; ordinary commands never check or download their runtime):
-  gidd.cmd bootstrap                                Read-only runtime and shared launcher check.
-  gidd.cmd bootstrap --yes                          Prepare missing runtime and publish shared launcher; default Bun.
-  gidd.cmd bootstrap --node --yes                   Select/prepare Node for the launcher shared by all repositories.
-  gidd.cmd bootstrap --reinstall --yes              Reinstall managed Bun; add --node for Node.
+Tool preparation (explicit):
+  gidd.cmd bootstrap                                Prepare/repair a JS runtime, Git and gh; publish shared bindings.
+  gidd.cmd bootstrap --check                        Check runtime, Git, gh and bindings; no downloads or writes.
+  gidd.cmd bootstrap --node                         Select/prepare Node LTS instead of the default Bun preference.
+  gidd.cmd bootstrap --reinstall                    Reinstall managed Bun; add --node for Node.
 
-Rerun bootstrap after skill updates. Ordinary commands execute JS through js_exec.cmd.
+Rerun bootstrap after skill updates or tool path changes. Ordinary commands use shared bindings.
 
 Help and diagnosis:
   gidd.cmd help [en|zh]                              Show help; aliases: --help, -h. Also shown with no arguments.
   gidd.cmd doctor                                    Check environment and target repository; read-only, offline.
-
-Tool setup (requires shared launcher):
-  gidd.cmd setup git                                 Reuse Git or prepare official MinGit; no repository changes.
-  gidd.cmd setup gh                                  Prepare gh 2.98.0+; does not log in.
 
 Repository config:
   gidd.cmd config show                               Read config.toml without changing it.

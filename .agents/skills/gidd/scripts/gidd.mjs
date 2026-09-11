@@ -3,15 +3,14 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configure, configurationHint, readGitHubConfiguration } from './config.mjs';
 import { doctor } from './doctor.mjs';
-import { checkIdentity, runCommand } from './github.mjs';
+import { checkIdentity } from './github.mjs';
 import { authorize } from './auth.mjs';
 import { resolveStorage, repositoryRoot } from './storage.mjs';
-import { findTool, toolEnvironment } from './tools.mjs';
-import { setupTool } from './install.mjs';
+import { boundTools, boundExecutor } from './bindings.mjs';
 
 export async function main(args) {
   let command = (args.shift() || 'help').toLowerCase();
-  const schemas = { config: 'gidd.config/v1', doctor: 'gidd.doctor/v1', setup: 'gidd.setup-tools/v1', identity: 'gidd.identity/v1', auth: 'gidd.auth/v1' };
+  const schemas = { config: 'gidd.config/v1', doctor: 'gidd.doctor/v1', identity: 'gidd.identity/v1', auth: 'gidd.auth/v1' };
   let schema = 'gidd.cli/v1';
   try {
     if (['help','--help','-h'].includes(command)) {
@@ -21,17 +20,13 @@ export async function main(args) {
       const language = /^zh(?:$|[-_])/.test(choice) ? 'zh-CN' : 'en';
       console.log(readFileSync(new URL(`./help/${language}.txt`,import.meta.url),'utf8')); return 0;
     }
+    if (command === 'setup') throw new Error('setup_removed_use_bootstrap');
     if (!Object.hasOwn(schemas,command)) throw new Error('unknown_command');
     if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');
-    let action, key, value, tool = 'gh';
+    let action, key, value;
     if (command === 'config') {
       action = args.shift(); if (!['show','set'].includes(action)) throw new Error('invalid_arguments');
       if (action === 'set') { key = args.shift(); value = args.shift(); if (value === undefined) throw new Error('invalid_arguments'); }
-    }
-    if (command === 'setup' && args.length && !args[0].startsWith('--')) {
-      tool = args.shift();
-      if (['bun','node'].includes(tool)) throw new Error('runtime_setup_removed');
-      if (!['gh','git'].includes(tool)) throw new Error('invalid_setup_tool');
     }
     if (['identity','auth'].includes(command) && args.some(arg => ['--hostname','--account','--remote'].includes(arg) || !arg.startsWith('--') && args.indexOf(arg) === 0)) throw new Error('github_parameters_moved_to_config');
     let repository;
@@ -53,22 +48,18 @@ export async function main(args) {
     if (command === 'doctor') report = await doctor(repository);
     else if (command === 'config') report = configure(repository,action,key,value);
     else {
-      const storage = resolveStorage(repository);
-      if (command === 'setup') report = await setupTool(storage, tool);
-      else {
+      const storage = resolveStorage(repository,{inspect:false});
+      {
         const github = readGitHubConfiguration(repository,command === 'identity' ? ['hostname','account','remote'] : ['hostname','account']);
-        const gh = await findTool('gh',{ root: storage.tools_root, requested: storage.tools.gh.version });
-        if (command === 'auth' && gh.status !== 'ready') throw new Error('gh_unavailable');
-        const git = await findTool('git', { root: storage.tools_root });
-        const gitPath = git.status === 'ready' ? git.details.path : undefined;
-        const env = toolEnvironment(gitPath);
-        const options = { repository, ...github, gh: gh.status === 'ready' ? gh.details.path : undefined };
+        const bindings = boundTools(storage.tools_root,command === 'auth' ? ['gh'] : ['git','gh']);
+        const execute = boundExecutor(bindings);
+        const options = { repository, ...github, gh:bindings.gh?.path, git:bindings.git?.path };
         if (command === 'identity') {
-          report = await checkIdentity({ ...options, git: gitPath }, runCommand, env);
+          report = await checkIdentity(options, execute);
         } else {
           const controller = new AbortController(), cancel = () => controller.abort();
           process.on('SIGINT',cancel); process.on('SIGTERM',cancel);
-          try { report = await authorize(options,{ env, signal: controller.signal, onEvent: event => console.error(JSON.stringify(event)) }); }
+          try { report = await authorize(options,{ execute, signal: controller.signal, onEvent: event => console.error(JSON.stringify(event)) }); }
           finally { process.removeListener('SIGINT',cancel); process.removeListener('SIGTERM',cancel); }
         }
       }
@@ -77,10 +68,10 @@ export async function main(args) {
     return ['ready','local_ready','checks_passed'].includes(report.status) ? 0 : 1;
   } catch (error) {
     const reason = /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : 'operation_failed';
-    if (reason === 'runtime_setup_removed') console.error('Use gidd.cmd bootstrap --yes (or bootstrap --node --yes for Node). Bootstrap updates the shared launcher.');
+    if (reason.startsWith('tool_binding') || reason === 'setup_removed_use_bootstrap') console.error('Run gidd.cmd bootstrap to prepare tools and rebuild bindings.');
     const hint = configurationHint(reason); if (hint) console.error(hint);
     console.log(JSON.stringify({ schema, status: 'error', reason }));
-    return command === 'setup' && schema !== 'gidd.cli/v1' ? 1 : 2;
+    return 2;
   }
 }
 

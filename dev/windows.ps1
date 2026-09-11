@@ -40,7 +40,7 @@ try {
         $Argument = ''; $Extra = @()
     }
     if ($Command -eq '.setup') {
-        if ($Argument -and $Argument -notin @('bun','node','gh')) { throw 'Use dev.cmd .setup bun, .setup node or .setup gh.' }
+        if ($Argument -and $Argument -notin @('bun','node')) { throw 'Use dev.cmd .setup bun/node for development runtimes; use gidd.cmd bootstrap for Git/gh.' }
     }
     if ($Extra.Count -and $Command -notin @('bun','node')) { throw 'Unexpected arguments. Use dev.cmd .help.' }
     if ($Command -in @('.help','--help','-h','/?')) {
@@ -65,10 +65,6 @@ try {
     if ($Command -eq '.info' -and $Argument) { throw '.info takes no arguments.' }
     if ($Command -eq '.test-live' -and $Argument) { throw '.test-live takes no arguments.' }
     if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev','config','github','entry')) { throw 'Unknown test suite.' }
-    if ($Command -eq '.setup' -and $Argument -eq 'gh') {
-        . (Join-Path $codeRoot 'lib/_entry.ps1')
-        Invoke-GiddEntry -CommandArguments @('setup','gh','--repository',$repoRoot)
-    }
     if ($Command -eq '.auth') {
         . (Join-Path $codeRoot 'lib/_entry.ps1')
         Invoke-GiddEntry -CommandArguments @('auth','--repository',$repoRoot)

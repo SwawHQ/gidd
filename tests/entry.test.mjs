@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { statSync, readFileSync, readdirSync, lstatSync, symlinkSync } from 'node:fs';
-import { adapter, code, hash, makeZip, rmSync, product, toolsRoot, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, ps, run, snapshot, stub, write } from './support/helpers.mjs';
+import { bindFixture, adapter, code, hash, makeZip, rmSync, product, toolsRoot, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, ps, run, snapshot, stub, write } from './support/helpers.mjs';
 import { checkRuntime } from '../.agents/skills/gidd/scripts/runtime-compat.mjs';
 
 // Encode for the native Windows argv boundary, including terminal backslashes.
@@ -13,11 +13,13 @@ function installation(f, prepare = true) {
   assert.equal(existsSync(join(skill, 'config.example.toml')), true, 'Installation must include the configuration template');
   mkdirSync(target);
   write(join(target, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\n');
+  const entryBin=join(f.root,'entry-tools'), entryExe=compile(f.root);
+  stub(entryExe,join(entryBin,'git.exe')); stub(entryExe,join(entryBin,'gh.exe'));
   const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
   const invoke = (args, env = {}, options = {}) => run(cmd, ['/d','/s','/c', `""${join(skill, 'gidd.cmd')}" ${args.map(quote).join(' ')}"`], {
-    cwd: skill, windowsVerbatimArguments: true, ...options, env: { PATH: dirname(process.execPath), GIDD_LANG: '', LC_ALL: 'en_US.UTF-8', ...env },
+    cwd: skill, windowsVerbatimArguments: true, ...options, env: { PATH: [dirname(process.execPath),entryBin].join(';'), GIDD_LANG: '', LC_ALL: 'en_US.UTF-8', ...env },
   });
-  if (prepare) ok(invoke(['bootstrap','--yes','--repository',target]));
+  if (prepare) ok(invoke(['bootstrap','--repository',target]));
   return { skill, target, invoke, args: ['--repository', target] };
 }
 
@@ -33,26 +35,24 @@ test('compatibility is a standalone bootstrap method with internal version polic
   assert.equal(json(ok(run(process.execPath,[join(code,'../runtime-compat.mjs')]))).status,'compatible');
 });
 
-test('bootstrap is read only without yes; ordinary commands require the generated launcher', () => {
+test('bootstrap defaults to preparation; --check is read only and reports missing bindings', () => {
   const f=fixture();
   try {
-    const s=installation(f,false), before=snapshot(f.root);
-    const report=json(s.invoke(['bootstrap',...s.args],{PATH:''}));
-    assert.equal(report.status,'needs_bootstrap'); assert.equal(report.runtime,null);
-    assert.equal(report.read_only,true); assert.deepEqual(snapshot(f.root),before);
-    const compatible=json(s.invoke(['bootstrap',...s.args]));
-    assert.equal(compatible.runtime.status,'ready'); assert.equal(compatible.launcher_matches,false);
-    assert.equal(json(s.invoke(['help'])).reason,'bootstrap_required');
-    assert.equal(json(s.invoke(['bootstrap','--reinstall'])).reason,'reinstall_requires_yes');
-    for (const args of [['--yes','--yes'],['--unknown'],['--repository']]) assert.equal(s.invoke(['bootstrap',...args]).status,2);
-    assert.deepEqual(snapshot(f.root),before);
-    const published=json(ok(s.invoke(['bootstrap','--yes',...s.args])));
-    assert.equal(published.launcher_action,'published');
-    const launcher=join(toolsRoot(f.root),'js_exec.cmd'), mtime=statSync(launcher).mtimeMs;
-    assert.doesNotMatch(readFileSync(launcher,'utf8'), /chcp|[^\x00-\x7f]/i, 'Ordinary startup must not change the console code page');
-    assert.equal(json(ok(s.invoke(['bootstrap',...s.args]))).launcher_matches,true);
-    assert.equal(json(ok(s.invoke(['bootstrap','--yes',...s.args]))).launcher_action,'reused');
-    assert.equal(statSync(launcher).mtimeMs,mtime);
+    const s=installation(f,false),before=snapshot(f.root);
+    const missing=json(s.invoke(['bootstrap','--check',...s.args],{PATH:''}));
+    assert.equal(missing.status,'needs_bootstrap'); assert.equal(missing.runtime,null);
+    assert.equal(missing.read_only,true); assert.deepEqual(snapshot(f.root),before);
+    const checked=json(s.invoke(['bootstrap','--check',...s.args]));
+    assert.equal(checked.status,'needs_bootstrap'); assert.deepEqual(snapshot(f.root),before);
+    for(const args of [['--yes'],['--check','--check'],['--check','--reinstall'],['--unknown'],['--repository']])
+      assert.equal(s.invoke(['bootstrap',...args]).status,2);
+    const prepared=json(ok(s.invoke(['bootstrap',...s.args])));
+    assert.equal(prepared.launcher_action,'published'); assert.equal(prepared.tools.length,2);
+    const installed=snapshot(toolsRoot(f.root));
+    assert.equal(json(ok(s.invoke(['bootstrap','--check',...s.args]))).status,'ready');
+    assert.deepEqual(snapshot(toolsRoot(f.root)),installed);
+    assert.equal(json(ok(s.invoke(['bootstrap',...s.args]))).launcher_action,'reused');
+    assert.deepEqual(snapshot(toolsRoot(f.root)),installed);
   } finally {f.dispose();}
 });
 
@@ -167,7 +167,7 @@ test('bootstrap installs, repairs and rolls back managed runtimes before publish
       const interruptedTree=snapshot(root);
       assert.equal(json(ok(invoke({yes:false}))).status,'needs_bootstrap');
       assert.deepEqual(snapshot(root),interruptedTree,'Read-only bootstrap must not recover or discard a backup');
-      assert.equal(json(product(['setup',name,'--repository',f.root],{env})).reason,'runtime_setup_removed');
+      assert.equal(json(product(['setup',name,'--repository',f.root],{env})).reason,'setup_removed_use_bootstrap');
       assert.deepEqual(snapshot(root),interruptedTree,'Removed setup must preserve the pending runtime backup');
       ok(invoke({responses:{},downloads:{}}));
       assert.deepEqual(snapshot(target),old); assert.equal(hash(launcher),launcherHash);
@@ -185,26 +185,27 @@ test('generated launcher pins an external Unicode/percent path and does not sear
     const s=installation(f,false), name=process.versions.bun?'bun':'node';
     const home=join(f.root,'用户 %GIDD_PATH_SENTINEL% ! profile'), bin=join(f.root,'运行时 %GIDD_PATH_SENTINEL% ! bin');
     mkdirSync(home); stub(process.execPath,join(bin,`${name}.exe`));
+    for(const tool of ['git','gh'])stub(join(f.root,'tool.exe'),join(bin,tool+'.exe'));
     const env={USERPROFILE:home,PATH:bin,GIDD_PATH_SENTINEL:'unexpected-expansion'};
-    const report=json(ok(s.invoke(['bootstrap','--yes',...s.args],env)));
+    const report=json(ok(s.invoke(['bootstrap',...s.args],env)));
     assert.equal(report.runtime.details.source,'path');
     const launcher=join(toolsRoot(home),'js_exec.cmd'), previous=hash(launcher);
     assert.doesNotMatch(readFileSync(launcher,'utf8'), /chcp|[^\x00-\x7f]/i);
     const root=toolsRoot(home), binding=join(root,readdirSync(root).find(n=>n.startsWith('.runtime-path-')));
     assert.equal(lstatSync(binding).isSymbolicLink(),true); sameDirectory(binding,bin);
-    assert.equal(json(ok(s.invoke(['bootstrap',...s.args],env))).launcher_matches,true);
+    assert.equal(json(ok(s.invoke(['bootstrap','--check',...s.args],env))).launcher_matches,true);
     rmSync(binding); // Remove the junction itself, never its external contents.
     assert.equal(existsSync(join(bin,`${name}.exe`)),true);
-    assert.equal(json(s.invoke(['bootstrap',...s.args],env)).launcher_matches,false);
+    assert.equal(json(s.invoke(['bootstrap','--check',...s.args],env)).launcher_matches,false);
     assert.equal(existsSync(binding),false,'Read-only checks must not repair a missing link');
     write(binding,'unknown file');
-    assert.equal(json(s.invoke(['bootstrap','--yes',...s.args],env)).reason,'occupied_runtime_binding');
+    assert.equal(json(s.invoke(['bootstrap',...s.args],env)).reason,'occupied_runtime_binding');
     assert.equal(readFileSync(binding,'utf8'),'unknown file'); assert.equal(hash(launcher),previous);
     rmSync(binding);
     const wrong=join(f.root,'wrong target'); mkdirSync(wrong); symlinkSync(wrong,binding,'junction');
-    assert.equal(json(s.invoke(['bootstrap','--yes',...s.args],env)).reason,'occupied_runtime_binding');
+    assert.equal(json(s.invoke(['bootstrap',...s.args],env)).reason,'occupied_runtime_binding');
     sameDirectory(binding,wrong); assert.equal(hash(launcher),previous); rmSync(binding);
-    assert.equal(json(ok(s.invoke(['bootstrap','--yes',...s.args],env))).launcher_action,'reused');
+    assert.equal(json(ok(s.invoke(['bootstrap',...s.args],env))).launcher_action,'reused');
     sameDirectory(binding,bin);
     write(join(bin,'SKILL.md'),'external content, not GIDD storage');
     assert.equal(json(s.invoke(['doctor',...s.args],{...env,PATH:''})).schema,'gidd.doctor/v1');
@@ -223,7 +224,7 @@ test('generated launcher pins an external Unicode/percent path and does not sear
     assert.equal(existsSync(log),false,'A missing bound runtime must not fall back to managed Bun');
     rmSync(join(root,'bun'),{recursive:true});
     stub(process.execPath,join(root,name,`${name}.exe`),undefined,true);
-    assert.equal(json(ok(s.invoke(['bootstrap','--yes',...s.args],{...env,PATH:''}))).runtime.details.source,'managed');
+    assert.equal(json(ok(s.invoke(['bootstrap',...s.args],{...env,PATH:''}))).runtime.details.source,'managed');
     assert.doesNotMatch(readFileSync(launcher,'utf8'),/chcp|[^\x00-\x7f]/i);
     assert.match(ok(s.invoke(['--help','en'],{...env,PATH:''})).stdout,/target repository/);
 
@@ -276,47 +277,16 @@ test('removed runtime setup commands fail without changing configuration or tool
     const s = installation(f);
     write(join(s.target,'.agents/skills/gidd/config.toml'),'invalid configuration');
     const before = snapshot(f.root);
-    for (const name of ['bun','node']) {
+    for (const name of ['bun','node','git','gh']) {
       for (const invoke of [args => s.invoke(args,{PATH:''}), args => product(args,{env:{PATH:''}})]) {
         const result = invoke(['setup',name,...s.args]);
         assert.equal(result.status,2);
-        assert.equal(json(result).reason,'runtime_setup_removed');
-        assert.match(result.stderr,/bootstrap --yes/);
-        assert.match(result.stderr,/shared launcher/);
-      }
+        assert.equal(json(result).reason,'setup_removed_use_bootstrap');
+        assert.match(result.stderr,/bootstrap/);
+        }
       assert.notEqual(ps(join(s.skill,'scripts/windows/setup-tools.ps1'),['-RepositoryPath',s.target,'-Tool',name],{env:{PATH:''}}).status,0);
     }
     assert.deepEqual(snapshot(f.root),before,'Rejected commands must not read invalid config, install, or switch the launcher');
-  } finally { f.dispose(); }
-});
-
-test('product setup selects gh or git and keeps storage independent of installation', { timeout: 30000 }, () => {
-  const f = fixture();
-  try {
-    const s = installation(f), exe = compile(f.root), bin = join(f.root, 'bin');
-    stub(exe, join(bin, 'gh.exe'));
-    stub(exe, join(bin, 'git.exe'));
-    const before = snapshot(f.root);
-    for (const args of [['setup','gh'],['setup'],['setup','git']]) {
-      const report = json(ok(s.invoke([...args,...s.args], { PATH: bin })));
-      assert.deepEqual(report.tools.map(t => [t.name, t.action]), [[args[1] || 'gh','reused']]);
-    }
-    const legacy = json(ok(ps(join(s.skill,'scripts/windows/setup-tools.ps1'),['-RepositoryPath',s.target,'-Tool','gh'],{env:{PATH:bin}})));
-    assert.deepEqual(legacy.tools.map(t => [t.name, t.action]), [['gh','reused']]);
-    assert.deepEqual(snapshot(f.root),before,'PATH gh reuse must not write or switch the launcher');
-    const tools = toolsRoot(f.root);
-    stub(exe, join(tools,'gh/gh.exe'), undefined, true);
-    write(join(tools,'bun/keep.txt'), 'unrelated damaged installation');
-    const beforeSkill = snapshot(s.skill), beforeBun = snapshot(join(tools,'bun'));
-    const gh = json(ok(s.invoke(['setup','gh',...s.args])));
-    assert.deepEqual(gh.tools.map(t => t.name), ['gh']);
-    sameDirectory(gh.tools_root, tools);
-    assert.deepEqual(snapshot(join(tools,'bun')), beforeBun);
-    assert.deepEqual(snapshot(s.skill), beforeSkill);
-    write(join(s.target,'.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\ngh = { version = "2.99.0", source = "https://github.com/cli/cli/releases" }\n');
-    const conflict = s.invoke(['setup','gh',...s.args]);
-    assert.equal(conflict.status, 1);
-    assert.match(json(conflict).reason, /occupied_or_version_conflicting_target:gh/);
   } finally { f.dispose(); }
 });
 
@@ -370,6 +340,7 @@ test('shell identity and auth preserve JavaScript results, events and exit codes
       ['remote','add','fixture','git@github.com:owner/repo.git']]) ok(run(git, ['-C',s.target,...args]));
     const compiled = compile(f.root,'auth-gh.cs'), gh = join(f.root,'bin/gh.exe');
     stub(compiled, gh, 'existing');
+    bindFixture(f.root,{gh,git});
     const env = { PATH: [dirname(process.execPath),dirname(git),dirname(gh)].join(';'), GH_CONFIG_DIR: join(f.root,'credentials'),
       GH_TOKEN:'', GITHUB_TOKEN:'', GH_ENTERPRISE_TOKEN:'', GITHUB_ENTERPRISE_TOKEN:'' };
     const before = snapshot(s.target);

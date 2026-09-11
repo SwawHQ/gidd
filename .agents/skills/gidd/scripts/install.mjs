@@ -3,7 +3,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { dirname, join, resolve, sep } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
 import { compareVersions, hashFile, inspectToolTree, managedToolValid, managedExecutable, payloadFiles, safePayloadName, plainPath, platformName, validateToolSettings, versionPattern } from './storage.mjs';
-import { findTool, minimums, patterns } from './tools.mjs';
+import { patterns } from './tools.mjs';
 import { runCommand } from './github.mjs';
 
 export function durableFile(path, bytes) {
@@ -222,12 +222,15 @@ export function extractPayload(bytes, destination, definition) {
   }
 }
 
-export async function installTool(root, definition, { receive = download, onPhase = () => {} } = {}) {
+export async function installTool(root, definition, { receive = download, onPhase = () => {}, replace = false } = {}) {
   const name = definition.name;
   if (!['bun','node','gh','git'].includes(name) || !versionPattern.test(definition.version)) throw new Error('invalid_tool_definition');
   const target = join(root, name); plainPath(target);
   if (['bun','node'].includes(name) && existsSync(join(root,'.cache',`previous-${name}`))) throw new Error(`pending_runtime_recovery:${name}`);
-  if (existsSync(target)) {
+  if (replace && (!['git','gh'].includes(name) || !managedToolValid(target,name,{allowDamaged:true}))) throw new Error('unknown_tool_ownership:' + name);
+  const backup = join(root,'.cache','previous-' + name);
+  if (replace && existsSync(backup)) throw new Error('pending_tool_recovery:' + name);
+  if (existsSync(target) && !replace) {
     if (!managedToolValid(target,name)) throw new Error(`occupied_or_invalid_target:${name}`);
     if (JSON.parse(readFileSync(join(target,'install.json'),'utf8')).version !== definition.version) throw new Error(`installed_version_conflict:${name}`);
     removeStage(root,name); return { name, action: 'reused', path: join(target, managedExecutable(name)) };
@@ -253,39 +256,15 @@ export async function installTool(root, definition, { receive = download, onPhas
   if (!probe.ok || patterns[name].exec(probe.text)?.[1] !== definition.version ||
       (name === 'git' && probe.text !== 'git version ' + definition.reported_version)) throw new Error('installed_version_mismatch');
   const files = payloadFiles(payload, name === 'git').map(name => ({ name, length: lstatSync(join(payload,name)).size, sha256: hashFile(join(payload,name)) }));
-  durableFile(join(payload,'install.json'),JSON.stringify({ schema: name === 'git' ? 'gidd.install/v2' : 'gidd.install/v1', name, release_tag: definition.release_tag, platform: platformName(), version: definition.version,
+  durableFile(join(payload,'install.json'),JSON.stringify({ schema: name === 'git' ? 'gidd.install/v2' : 'gidd.install/v1', name, installation_id: ['git','gh'].includes(name) ? randomUUID() : undefined, release_tag: definition.release_tag, platform: platformName(), version: definition.version,
     source: definition.url, archive_sha256: definition.sha256, files, metadata_sources: definition.metadata_sources }));
   if (!managedToolValid(payload,name)) throw new Error('staged_integrity_failed'); await onPhase('verified');
   // Caller holds the common install lock; unknown occupied destinations survive.
-  if (existsSync(target)) throw new Error(`occupied_or_invalid_target:${name}`);
+  if (replace) {
+    if (!managedToolValid(target,name,{allowDamaged:true})) throw new Error('unknown_tool_ownership:' + name);
+    renameSync(target,backup); await onPhase('backed_up');
+  } else if (existsSync(target)) throw new Error(`occupied_or_invalid_target:${name}`);
   renameSync(payload,target); await onPhase('published');
   if (!managedToolValid(target,name)) throw new Error('published_integrity_failed'); removeStage(root,name);
   return { name, action: 'installed', path: join(target, managedExecutable(name)) };
-}
-
-export async function setupTool(storage, name = 'gh') {
-  if (!['gh','git'].includes(name)) throw new Error('invalid_setup_tool');
-  const root = storage.tools_root, requested = storage.tools[name]?.version || '';
-  const manifest = JSON.parse(readFileSync(new URL('./runtimes.json', import.meta.url), 'utf8'));
-  let release;
-  try {
-    let candidate = await findTool(name, { root, requested });
-    if (candidate.status !== 'ready' || candidate.details.source === 'managed') {
-      release = acquireInstallLock(root); writeInstallationGuide(root);
-      candidate = await findTool(name, { root, requested });
-    }
-    let tool;
-    if (candidate.status === 'ready') {
-      if (release) removeStage(root, name);
-      tool = { name, action: 'reused', path: candidate.details.path };
-    } else {
-      if (existsSync(join(root, name))) throw new Error('occupied_or_version_conflicting_target:' + name);
-      const definition = await resolveRelease(name, storage.tools[name], manifest.tools.find(item => item.name === name));
-      if (compareVersions(definition.version, minimums[name]) < 0) throw new Error('configured_version_below_minimum:' + name);
-      console.error('GIDD download: ' + name + ' ' + definition.version + ' ' + definition.url);
-      tool = await installTool(root, definition, { onPhase: phase => console.error('GIDD install: ' + phase) });
-      if ((await findTool(name, { root, requested })).status !== 'ready') throw new Error('post_install_check_failed');
-    }
-    return { schema: 'gidd.setup-tools/v1', status: 'ready', tools: [tool], tools_root: root, storage };
-  } finally { release?.(); }
 }

@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { statSync, symlinkSync, unlinkSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { configure, editConfiguration, editGitHub, parseGitHub, readGitHubConfiguration } from '../.agents/skills/gidd/scripts/config.mjs';
-import { diagnosis as runDiagnosis, product, jsAdapter, toolsRoot, adapter as shellAdapter, assert, code, compile, existsSync, findGit, fixture, hash, join, json, mkdirSync, ok, ps, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
+import { diagnosis as runDiagnosis, product, prepare, jsAdapter, toolsRoot, adapter as shellAdapter, assert, code, compile, existsSync, findGit, fixture, hash, join, json, mkdirSync, ok, ps, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
 
 const configText = () => `# preserved comment\nschema_version = 1\n[tools]\n`;
 
@@ -12,13 +12,14 @@ test('retired runtime configuration is rejected without writes; sources remain e
   try {
     const path=join(f.root,'.agents/skills/gidd/config.toml');
     write(path,configText());
-    for(const key of ['bootstrap.runtime','tools.bun.version','tools.node.version']) {
+    for(const key of ['bootstrap.runtime','tools.bun.version','tools.node.version','tools.gh.version']) {
       assert.throws(()=>configure(f.root,'set',key,'node'),/config_unknown_key/);
       assert.equal(readFileSync(path,'utf8'),configText());
     }
     for(const text of ['schema_version = 1\n[bootstrap]\nruntime="bun"\n',
       configText()+'bun = { version="latest", source="https://github.com/oven-sh/bun/releases" }\n',
-      configText()+'node = { version="lts", source="https://nodejs.org/dist" }\n']) {
+      configText()+'node = { version="lts", source="https://nodejs.org/dist" }\n',
+      configText()+'gh = { version="latest", source="https://github.com/cli/cli/releases" }\n']) {
       write(path,text);
       assert.throws(()=>configure(f.root,'show'),/config_retired_field/);
       assert.match(shellAdapter(f.root,{action:'configuration',repositoryRoot:f.root}).stderr,/config_retired_field/);
@@ -39,14 +40,14 @@ test('config set edits tool fields without changing companions or installing too
     assert.equal(existsSync(join(fresh,'.agents/skills/gidd/config.toml')),false);
     const path = join(f.root,'.agents/skills/gidd/config.toml');
     const original = '\uFEFF' + configText().replaceAll('\n','\r\n') +
-      "  gh = { source = 'https://github.com/cli/cli/releases' , version = 'latest' } # keep gh comment\r\n" +
+      "  gh = { source = 'https://github.com/cli/cli/releases' } # keep gh comment\r\n" +
       '[github]\r\nhostname = "github.com"\r\naccount = "Octocat"\r\nremote = "origin"\r\n';
     write(path,original);
-    configure(f.root,'set','tools.gh.version','2.98.0');
-    assert.equal(readFileSync(path,'utf8'),original.replace("'latest'",'"2.98.0"'));
+    assert.throws(()=>configure(f.root,'set','tools.gh.version','2.98.0'),/config_unknown_key/);
+    assert.equal(readFileSync(path,'utf8'),original);
     assert.throws(() => configure(f.root,'set','tools.gh.source','https://mirror.example/node,a#bad'),/config_invalid_tool_source/);
     configure(f.root,'set','tools.gh.source','https://mirror.example/node,a');
-    assert.match(readFileSync(path,'utf8'),/source = "https:\/\/mirror.example\/node,a" , version = "2.98.0" \} # keep gh comment/);
+    assert.match(readFileSync(path,'utf8'),/source = "https:\/\/mirror.example\/node,a" \} # keep gh comment/);
     for (const tool of ['bun','node']) {
       configure(f.root,'set',`tools.${tool}.source`,`https://mirror.example/${tool}`);
     }
@@ -160,7 +161,7 @@ test('configured setup reuses gh without knowing a skill installation directory'
     const path=join(f.root,'.agents/skills/gidd/config.toml'), tools=toolsRoot(f.root);
     write(path,configText()); const before=hash(path), exe=compile(f.root);
     stub(exe,join(tools,'node/node.exe'),undefined,true); stub(exe,join(tools,'gh/gh.exe'),undefined,true);
-    const invoke=() => product(['setup','--repository',f.root],{env:{PATH:''}});
+    const invoke=() => prepare(f.root,'gh',{env:{PATH:''}});
     assert.notEqual(ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root,'-ArchiveDirectory',f.root],{env:{PATH:''}}).status,0);
     const report=json(ok(invoke())); samePath(report.tools_root,tools);
     assert.deepEqual(report.tools.map(x=>x.name),['gh']); assert.ok(report.tools.every(x=>x.action==='reused'));
@@ -181,8 +182,8 @@ test('inline tool configuration validates versions and visible sources without n
   try {
     const path=join(f.root,'.agents/skills/gidd/config.toml');
     const resolve=() => adapter(f.root,{action:'configuration',repositoryRoot:f.root},{env:{PATH:''}});
-    const line='gh = { version = "latest", source = "https://nodejs.org/dist" }';
-    for (const input of [line, line+' # comment with {braces}', 'gh = { source = \'https://nodejs.org/dist/\', version = \'2.98.0\' } # comment']) {
+    const line='gh = { source = "https://nodejs.org/dist" }';
+    for (const input of [line, line+' # comment with {braces}', 'gh = { source = \'https://nodejs.org/dist/\' } # comment']) {
       write(path,configText()+input+'\n'); const before=hash(path);
       const storage=json(ok(resolve()));
       assert.equal(storage.tools.gh.source,'https://nodejs.org/dist');
@@ -190,14 +191,12 @@ test('inline tool configuration validates versions and visible sources without n
       assert.equal(hash(path),before);
     }
     for (const invalid of [
-      line+'\n'+line, line.replace('"latest"','"canary"'), line.replace('"latest"','"24"'),
-      line.replace('"latest"','"024.1.0"'), line.replace('"latest"','"24.19.0-beta"'),
-      line.replace('https:','http:'), line.replace('nodejs.org','user:secret@nodejs.org'),
+      line+'\n'+line, line.replace('https:','http:'), line.replace('nodejs.org','user:secret@nodejs.org'),
       line.replace('/dist','/dist?token=secret'), line.replace('/dist','/dist#fragment'),
-      line.replace('version =','Version ='), line.replace('source =','url ='),
+      line.replace('source =','Source ='), line.replace('source =','url ='),
       'node = {}', 'node = { version = "latest" }', line.replace(' }',', }'),
-      line.replace(' }',', version = "latest" }'), line.replace('"latest"','true'),
-      line.replace('gh =','bun ='), line.replace('gh =','node ='),
+      line.replace(' }',', version = "latest" }'), line.replace('"https://nodejs.org/dist"','true'),
+      line.replace(' }',', source = "https://example.test" }'),
     ]) {
       write(path,configText()+invalid+'\n'); assert.notEqual(resolve().status,0,invalid);
     }

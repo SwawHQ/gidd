@@ -82,9 +82,18 @@ export function adapter(root, spec, options) {
   finally { rmSync(path, { force: true }); }
 }
 export function product(args, options) { return run(process.execPath, [join(code,'../gidd.mjs'),...args], options); }
+// Test-only access to the JS preparation stage; public preparation is bootstrap.
+export function prepare(repository, name = 'gh', options = {}) {
+  return jsAdapter(repository,{action:'prepare',repositoryRoot:repository,names:[name]},options);
+}
+export function bindFixture(home, tools) {
+  const bindings={schema:'gidd.tool-bindings/v1',platform:'windows-x64',tools:{}};
+  for(const [name,path] of Object.entries(tools)) if(path) bindings.tools[name]={path,source:'path',version:name==='gh'?'2.98.0':'2.55.0'};
+  write(join(toolsRoot(home),'tool-bindings.json'),JSON.stringify(bindings));
+}
 export function diagnosis(target, options) { return run(process.execPath,[join(code,'../doctor.mjs'),target],options); }
 export function jsAdapter(root, spec, options) {
-  if (!['configuration','release','validate','find','stage','guide','install'].includes(spec.action)) return adapter(root,spec,options);
+  if (!['configuration','release','validate','find','stage','guide','install','prepare'].includes(spec.action)) return adapter(root,spec,options);
   const path = request(root,spec);
   try { return run(process.execPath,[join(support,'javascript.mjs'),path],options); }
   finally { rmSync(path,{ force: true }); }

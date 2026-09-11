@@ -1,3 +1,4 @@
+import { bindFixture, prepare } from './support/helpers.mjs';
 import { test } from 'node:test';
 import { copyFileSync, cpSync, mkdirSync } from 'node:fs';
 import { checkIdentity, runCommand } from '../.agents/skills/gidd/scripts/github.mjs';
@@ -119,9 +120,8 @@ test('CLI reads real Git author and remains read-only in an isolated repository'
     const valid = snapshot(f.root);
     const bootstrapped = ps(join(repo, '.agents/skills/gidd/scripts/windows/check-identity.ps1'), ['-RepositoryPath', f.root],
       { env: { PATH: [dirname(process.execPath), dirname(git)].join(';') } });
-    assert.equal(bootstrapped.status, 1, bootstrapped.stdout + bootstrapped.stderr);
-    assert.equal(byId(json(bootstrapped), 'github.api').reason, 'gh_unavailable');
-    assert.equal(byId(json(bootstrapped), 'git.author').details.name, 'Fixture Author');
+    assert.equal(bootstrapped.status, 2, bootstrapped.stdout + bootstrapped.stderr);
+    assert.equal(json(bootstrapped).reason,'tool_bindings_missing');
     assert.deepEqual(snapshot(f.root), valid, 'Identity must use the existing launcher without writes');
   } finally { f.dispose(); }
 });
@@ -167,7 +167,7 @@ test('authorization streams this attempt device code, verifies account and redac
     const gh = compile(f.root, 'auth-gh.cs');
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN)$/i.test(key)));
     env.GH_CONFIG_DIR = join(f.root, 'credentials');
-    for (const mode of ['success', 'plaintext', 'mismatch', 'verify-fail', 'failure', 'no-challenge', 'bad-url', 'old']) {
+    for (const mode of ['success', 'plaintext', 'mismatch', 'verify-fail', 'failure', 'no-challenge', 'bad-url']) {
       // Each mode gets an independent fixture executable and login state.
       const executable = join(f.root, mode, 'gh.exe');
       mkdirSync(dirname(executable)); copyFileSync(gh, executable); write(executable + '.mode', mode);
@@ -175,7 +175,7 @@ test('authorization streams this attempt device code, verifies account and redac
       const result = await authorize({ ...options, gh: executable, repository: f.root }, { env, timeoutMs: 2000, onEvent: event => events.push(event) });
       const expected = { success: 'authenticated', plaintext: 'authenticated', mismatch: 'authorized_account_mismatch',
         'verify-fail': 'identity_verification_failed', failure: 'command_failed', 'no-challenge': 'device_challenge_not_observed',
-        'bad-url': 'unsupported_authorization_url', old: 'requires_gh_2_98_or_newer' }[mode];
+        'bad-url': 'unsupported_authorization_url' }[mode];
       assert.equal(result.reason, expected, JSON.stringify(result));
       assert.ok(!JSON.stringify({ result, events }).includes('PRIVATE_TOKEN'));
       if (['old','no-challenge','bad-url'].includes(mode)) assert.equal(events.length, 0);
@@ -206,7 +206,7 @@ test('authorization cancels or times out a pending login without marking it succ
   } finally { f.dispose(); }
 });
 
-test('authorization bootstrap skips old PATH gh and honors configured versions', { timeout: 15000 }, () => {
+test('authorization uses bindings, rejects retired gh versions and never discovers PATH tools', { timeout: 15000 }, () => {
   const f = fixture();
   try {
     const executable = compile(f.root, 'auth-gh.cs'), oldBin = join(f.root, 'old-bin');
@@ -219,12 +219,13 @@ test('authorization bootstrap skips old PATH gh and honors configured versions',
     const env = { PATH: [oldBin, dirname(process.execPath)].join(';'), GH_CONFIG_DIR: join(f.root, 'credentials'),
       GH_TOKEN: '', GITHUB_TOKEN: '', GH_ENTERPRISE_TOKEN: '', GITHUB_ENTERPRISE_TOKEN: '' };
     const invoke = () => ps(join(repo, '.agents/skills/gidd/scripts/windows/authorize.ps1'), ['-RepositoryPath', f.root], { env });
-    assert.equal(json(invoke()).reason, 'gh_unavailable');
+    assert.equal(json(invoke()).reason, 'tool_bindings_missing');
     assert.equal(existsSync(join(toolsRoot(f.root),'gh')), false, 'Missing compatible gh must not trigger installation');
     stub(executable, managedGh, 'success', true);
     write(config, configText + 'gh = { version = "2.99.0", source = "https://github.com/cli/cli/releases" }\n' + githubConfig);
-    assert.equal(json(invoke()).reason, 'gh_unavailable', 'The version floor must not bypass exact configuration');
+    assert.equal(json(invoke()).reason, 'config_retired_field:tools.gh.version');
     write(config, configText + githubConfig);
+    ok(prepare(f.root,'gh',{env:{PATH:oldBin}}));
     assert.equal(json(ok(invoke())).reason, 'authenticated');
     assert.equal(existsSync(managedGh + '.started'), true);
     assert.equal(existsSync(oldGh + '.started'), false);
@@ -242,6 +243,7 @@ test('dev.cmd .auth requires identity config and uses shared storage', { timeout
     for (const configured of [false,true]) {
       if (configured) write(join(checkout,'.agents/skills/gidd/config.toml'),`schema_version = 1\n[tools]\n` + githubConfig);
       stub(compiled,join(toolsRoot(f.root),'gh/gh.exe'),'existing',true);
+      bindFixture(f.root,{gh:join(toolsRoot(f.root),'gh/gh.exe')});
       const before = snapshot(checkout);
       const result = run(cmd,['/d','/s','/c',`""${join(checkout,'dev.cmd')}" .auth"`], {
         windowsVerbatimArguments:true,
@@ -264,6 +266,7 @@ test('dev.cmd .auth dispatches real JavaScript with one runtime and never instal
     ok(adapter(f.root,{action:'bootstrap',repositoryRoot:checkout,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
     const compiled = compile(f.root, 'auth-gh.cs'), gh = join(f.root, 'bin/gh.exe');
     mkdirSync(dirname(gh)); copyFileSync(compiled, gh); write(gh + '.mode', 'success');
+    bindFixture(f.root,{gh});
     const env = { PATH: [dirname(process.execPath), dirname(gh)].join(';'), GH_CONFIG_DIR: join(f.root, 'credentials'),
       GH_TOKEN: '', GITHUB_TOKEN: '', GH_ENTERPRISE_TOKEN: '', GITHUB_ENTERPRISE_TOKEN: '' };
     const entry = join(checkout, 'dev.cmd'), cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');

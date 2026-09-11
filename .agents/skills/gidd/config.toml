@@ -7,7 +7,7 @@ schema_version = 1
 # Bun 稳定版与 Node LTS 由内部下载策略决定；兼容性只在 bootstrap 检查。
 node = { source = "https://nodejs.org/dist" }
 bun = { source = "https://github.com/oven-sh/bun/releases" }
-gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
+gh = { source = "https://github.com/cli/cli/releases" }
 
 [github]
 hostname = "github.com"

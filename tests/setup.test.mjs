@@ -4,7 +4,80 @@ import { resolveGitRelease, extractPayload } from '../.agents/skills/gidd/script
 import { managedToolValid } from '../.agents/skills/gidd/scripts/storage.mjs';
 import { findTool, toolEnvironment } from '../.agents/skills/gidd/scripts/tools.mjs';
 import { checkIdentity } from '../.agents/skills/gidd/scripts/github.mjs';
-import { product, jsAdapter, toolsRoot, adapter as shellAdapter, assert, code, compile, dirname, existsSync, fixture, hash, installSpec, join, json, makeZip, mkdirSync, ok, ps, readFileSync, startAdapter as startShellAdapter, stub, until, write } from './support/helpers.mjs';
+import { prepareTools } from '../.agents/skills/gidd/scripts/bootstrap-tools.mjs';
+import { boundTools, boundExecutor, readBindings } from '../.agents/skills/gidd/scripts/bindings.mjs';
+import { defaults } from '../.agents/skills/gidd/scripts/storage.mjs';
+import { prepare, product, jsAdapter, toolsRoot, adapter as shellAdapter, assert, code, compile, dirname, existsSync, fixture, hash, installSpec, join, json, makeZip, mkdirSync, ok, ps, readFileSync, startAdapter as startShellAdapter, stub, until, write } from './support/helpers.mjs';
+
+test('bootstrap bindings and repair survive interruption without overwriting unknown files', {timeout:120000}, async()=>{
+  const f=fixture();
+  try {
+    const exe=compile(f.root),license=join(f.root,'LICENSE');write(license,'upstream license');
+    for(const name of ['gh','git']) {
+      const root=join(f.root,name+'-storage'),archive=join(f.root,name+'.zip');
+      const entries=name==='gh'?[{name:'bin/gh.exe',source:exe},{name:'LICENSE',source:license}]:
+        [{name:'cmd/git.exe',source:exe},{name:'mingw64/bin/git.exe',source:exe},{name:'LICENSE.txt',source:license}];
+      makeZip(f.root,archive,entries);
+      const url=name==='gh'?'https://github.com/cli/cli/releases/download/v2.98.0/gh_2.98.0_windows_amd64.zip':
+        'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/MinGit-2.55.0.5-64-bit.zip';
+      const responses=name==='gh'?{
+        'https://api.github.com/repos/cli/cli/releases/latest':JSON.stringify({tag_name:'v2.98.0'}),
+        'https://github.com/cli/cli/releases/download/v2.98.0/gh_2.98.0_checksums.txt':hash(archive)+'  gh_2.98.0_windows_amd64.zip',
+      }:{'https://api.github.com/repos/git-for-windows/git/releases/latest':JSON.stringify({tag_name:'v2.55.0.windows.5',
+        assets:[{name:'MinGit-2.55.0.5-64-bit.zip',size:readFileSync(archive).length,digest:'sha256:'+hash(archive),browser_download_url:url}]})};
+      const request={action:'prepare',repositoryRoot:f.root,root,names:[name],responses,downloads:{[url]:archive}};
+      const invoke=patch=>jsAdapter(f.root,{...request,...patch},{env:{PATH:''}});
+      assert.equal(json(ok(invoke())).tools[0].action,'installed');
+      const executable=readBindings(root).tools[name].path,record=join(root,name,'install.json');
+      const first=hash(record);
+      assert.equal(json(ok(invoke({responses:{},downloads:{}}))).tools[0].binding_action,'reused');
+      assert.equal(hash(record),first);
+      assert.equal(json(ok(invoke({checkOnly:true,responses:{},downloads:{}}))).status,'ready');
+      for(const phase of ['extracted','backed_up','published','bound']) {
+        write(executable,'damaged');
+        const oldBinding=hash(join(root,'tool-bindings.json'));
+        const killed=await startShellAdapter(f.root,{...request,stopAt:phase},{javascript:true,env:{PATH:''}}).result;
+        assert.notEqual(killed.status,0);
+        const afterCrash=hash(join(root,'tool-bindings.json'));
+        assert.equal(afterCrash===oldBinding,phase!=='bound');
+        const backup=join(root,'.cache','previous-'+name);
+        assert.equal(existsSync(backup),phase!=='extracted');
+        const readonly=invoke({checkOnly:true,responses:{},downloads:{}});
+        assert.equal(readonly.status,1);assert.equal(hash(join(root,'tool-bindings.json')),afterCrash);
+        const recovered=json(ok(invoke(phase==='bound'?{responses:{},downloads:{}}:{})));
+        assert.equal(recovered.status,'ready');assert.equal(existsSync(backup),false);
+        assert.equal(managedToolValid(join(root,name),name),true);
+        assert.notEqual(hash(record),first,'Same-version replacement has a distinct installation identity');
+      }
+      write(join(root,name,'user.txt'),'keep');write(executable,'damaged');
+      const unknown=invoke({responses:{},downloads:{}});
+      assert.equal(unknown.status,1);assert.equal(json(unknown).checks.at(-1).reason,'unknown_tool_ownership:'+name);
+      assert.equal(readFileSync(join(root,name,'user.txt'),'utf8'),'keep');
+    }
+  } finally {f.dispose();}
+});
+
+test('bound execution does not discover tools or revalidate installed payloads', async()=>{
+  const f=fixture();
+  try {
+    const exe=compile(f.root),root=toolsRoot(f.root),external=join(f.root,'bound/git.exe');stub(exe,external);
+    const storage={tools_root:root,tools:structuredClone(defaults)};
+    const originalPath=process.env.PATH;process.env.PATH=dirname(external);
+    try {assert.equal((await prepareTools(storage,{names:['git']})).status,'ready');}
+    finally {if(originalPath===undefined)delete process.env.PATH;else process.env.PATH=originalPath;}
+    // An unrelated malformed tool tree is not traversed by normal binding reads.
+    write(join(root,'unrelated/SKILL.md'),'not part of execution');
+    const bindings=boundTools(root,['git']);assert.equal(bindings.git.path,external);
+    let calls=0;
+    const execute=boundExecutor(bindings,async(path,args,options)=>{
+      calls++;assert.equal(path,external);assert.deepEqual(args,['status']);
+      assert.ok(options.env.PATH.startsWith(dirname(external)));return {ok:false,reason:'command_failed',text:''};
+    });
+    assert.equal((await execute(external,['status'])).reason,'command_failed');assert.equal(calls,1);
+    await assert.rejects(boundExecutor(bindings,async()=>({ok:false,reason:'process_start_failed'}))(external,['status']),/tool_binding_unusable:git/);
+    write(join(root,'tool-bindings.json'),'broken');assert.throws(()=>boundTools(root),/tool_bindings_invalid/);
+  } finally {f.dispose();}
+});
 
 test('MinGit release selection requires the official regular ZIP and asset digest', async () => {
   for (const revision of [1,5]) {
@@ -45,7 +118,7 @@ test('MinGit nested installation, integrity, recovery, managed selection and ext
     assert.equal((await findTool('git',{root,source:'managed'})).details.path,join(target,'cmd/git.exe'));
     assert.equal(json(ok(jsAdapter(f.root,installSpec(root,definitionPath,join(f.root,'no-download'))))).action,'reused');
     const configured = ['setup','git','--repository',f.root];
-    assert.equal(json(ok(product(configured,{env:{PATH:''}}))).tools[0].action,'reused');
+    assert.equal(json(ok(prepare(f.root,'git',{env:{PATH:''}}))).tools[0].action,'reused');
     const doctor = json(product(['doctor','--repository',f.root],{env:{PATH:''}}));
     assert.equal(doctor.checks.find(item=>item.id==='tool.git').details.source,'managed');
     for (const phase of ['downloaded','extracted','verified','published']) {
@@ -57,16 +130,13 @@ test('MinGit nested installation, integrity, recovery, managed selection and ext
     }
     const dependency = join(target,'mingw64/bin/dependency.dll'); write(dependency,'corrupt dependency');
     assert.equal(managedToolValid(target,'git'),false);
-    for (const searchPath of [join(target,'cmd'),join(target,'mingw64/bin')]) {
-      const report=json(product(configured,{env:{PATH:searchPath}}));
-      assert.equal(report.reason,'occupied_or_version_conflicting_target:git');
-    }
+    assert.equal((await findTool('git',{root,source:'managed'})).status,'invalid');
     assert.equal(readFileSync(dependency,'utf8'),'corrupt dependency');
     const outside = join(f.root,'external'), home = join(f.root,'external-home');
     stub(exe,join(outside,'git.exe'));
-    assert.deepEqual(json(ok(product(configured,{env:{PATH:outside,USERPROFILE:home}}))).tools,
-      [{name:'git',action:'reused',path:join(outside,'git.exe')}]);
-    assert.equal(existsSync(toolsRoot(home)),false);
+    assert.deepEqual(json(ok(prepare(f.root,'git',{env:{PATH:outside,USERPROFILE:home}}))).tools,
+      [{name:'git',action:'reused',path:join(outside,'git.exe'),binding_action:'published'}]);
+    assert.equal(existsSync(join(toolsRoot(home),'tool-bindings.json')),true);
     for (const name of ['../escape','cmd/GIT.exe','cmd/CON.exe','etc/config.toml']) {
       const bad = join(f.root,'bad-'+name.replace(/\W/g,'_')+'.zip'), destination = join(f.root,'bad-'+name.replace(/\W/g,'_'));
       makeZip(f.root,bad,[...entries,{name,source:license}]); mkdirSync(destination);
@@ -225,10 +295,10 @@ test(`setup ${engine}: install, integrity, interrupted publication, locks, prese
     for (const existing of [false,true]) {
       if (existing) mkdirSync(toolsRoot(home),{recursive:true});
       write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n[tools]\n');
-      const report=json(ok(product(['setup','--repository',f.root],{env:{PATH:external,USERPROFILE:home}})));
+      const report=json(ok(prepare(f.root,'gh',{env:{PATH:external,USERPROFILE:home}})));
       assert.equal(report.status,'ready');
-      assert.deepEqual(report.tools,[{ name:'gh', action:'reused', path:join(external,'gh.exe') }]);
-      if (!existing) assert.equal(existsSync(toolsRoot(home)),false);
+      assert.deepEqual(report.tools,[{ name:'gh', action:'reused', path:join(external,'gh.exe'), binding_action:existing?'reused':'published' }]);
+      assert.equal(existsSync(join(toolsRoot(home),'tool-bindings.json')),true);
     }
   } finally { f.dispose(); }
 });

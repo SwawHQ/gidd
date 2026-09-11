@@ -1,20 +1,16 @@
 GIDD（Windows x64 / PowerShell 5.1）
 
-运行时准备（显式执行；普通命令不检查或下载运行时）：
-  gidd.cmd bootstrap                                只读检查运行时和共享启动器。
-  gidd.cmd bootstrap --yes                          准备缺失运行时并发布共享启动器，默认 Bun。
-  gidd.cmd bootstrap --node --yes                   选择或准备 Node；更新所有仓库共用的启动器。
-  gidd.cmd bootstrap --reinstall --yes              重装受管 Bun；追加 --node 改为 Node。
+工具准备（显式执行）：
+  gidd.cmd bootstrap                                准备或修复一个 JS 运行时、Git、gh，并发布共享绑定。
+  gidd.cmd bootstrap --check                        只读检查运行时、Git、gh 和绑定，不下载或写入。
+  gidd.cmd bootstrap --node                         选择或准备 Node LTS；默认优先 Bun。
+  gidd.cmd bootstrap --reinstall                    重装受管 Bun；追加 --node 改为 Node。
 
-技能更新后重新 bootstrap。普通命令直接通过 js_exec.cmd 执行 JavaScript。
+技能更新或工具路径变化后重新 bootstrap。普通命令直接使用共享绑定。
 
 帮助与诊断：
   gidd.cmd help [zh|en]                              显示帮助；别名 --help、-h，无参数也显示帮助。
   gidd.cmd doctor                                    离线检查环境和目标仓库，不修改配置。
-
-工具准备（需要共享启动器）：
-  gidd.cmd setup git                                 复用 Git 或准备官方 MinGit，不修改仓库设置。
-  gidd.cmd setup gh                                  准备 gh 2.98.0+，不发起登录。
 
 仓库配置：
   gidd.cmd config show                               查看 config.toml，只读。

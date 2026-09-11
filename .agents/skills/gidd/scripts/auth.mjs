@@ -28,12 +28,7 @@ export async function authorize(input, { execute = runCommand, env = process.env
   if (Object.entries(env).some(([key, value]) => /^(GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN)$/i.test(key) && value)) {
     return report('failed', 'environment_token_active');
   }
-  // Output parsing follows the verified gh 2.98 device flow. Older versions are
-  // rejected instead of silently starting a different interactive protocol.
-  const version = await execute(options.gh, ['--version'], commandOptions);
-  if (signal?.aborted) return cancelled();
-  const v = version.ok && /^gh version (\d+)\.(\d+)\.(\d+)/.exec(version.text);
-  if (!v || Number(v[1]) < 2 || (Number(v[1]) === 2 && Number(v[2]) < 98)) return report('failed', 'requires_gh_2_98_or_newer');
+  // Bootstrap validates the gh version before publishing the binding.
   let code, url, displayed = false, plaintext = false, protocolFailure = false;
   const login = await execute(options.gh, ['auth', 'login', '--hostname', options.hostname,
     '--web', '--skip-ssh-key', '--clipboard=false'], {
