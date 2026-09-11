@@ -96,7 +96,7 @@ try {
         $needsLocal = $setupTools | Where-Object { $checks[$_].status -ne 'ready' -or (Test-DevManagedTool $checks[$_] $_) }
         if ($needsLocal) {
             foreach ($file in @('setup-tools/_filesystem.ps1','setup-tools/download.ps1','setup-tools/releases.ps1','setup-tools/install.ps1')) { . (Join-Path $codeRoot $file) }
-            $manifest = [IO.File]::ReadAllText((Join-Path $repoRoot '.agents/skills/gidd/assets/runtimes.json')) | ConvertFrom-Json
+            $manifest = [IO.File]::ReadAllText((Join-Path $repoRoot '.agents/skills/gidd/scripts/runtimes.json')) | ConvertFrom-Json
             $devManifest = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'runtimes.json')) | ConvertFrom-Json
             foreach ($item in @($manifest,$devManifest)) {
                 if ($item.schema -ne 'gidd.runtimes/v1' -or $item.platform -ne 'windows-x64') { throw 'invalid_runtime_manifest' }

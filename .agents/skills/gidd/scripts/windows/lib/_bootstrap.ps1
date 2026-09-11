@@ -126,7 +126,7 @@ function Invoke-GiddBootstrap {
             $target = Join-Path $root $name
             $replace = Test-Path -LiteralPath $target
             if ($replace -and -not (Test-GiddOwnedRuntime $target $name)) { throw "occupied_or_unknown_target:$name" }
-            $manifest = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../../../assets/runtimes.json')) | ConvertFrom-Json
+            $manifest = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../../runtimes.json')) | ConvertFrom-Json
             $pinned = @($manifest.tools | Where-Object name -eq $name) | Select-Object -First 1
             $definition = Resolve-GiddRelease $name $Storage.tools[$name] $pinned
             Write-GiddInstallationGuide $root

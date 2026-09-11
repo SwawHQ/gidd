@@ -80,7 +80,7 @@ export function editConfiguration(text, key, value) {
     text = doc.lines.join('\n');
   } else {
     // A missing inline table gets its companion field from the published template.
-    const defaults = parseTools(readFileSync(new URL('../assets/config.example.toml', import.meta.url), 'utf8')).entries[name].fields;
+    const defaults = parseTools(readFileSync(new URL('../config.example.toml', import.meta.url), 'utf8')).entries[name].fields;
     const version = field === 'version' ? value : defaults.version?.value;
     const source = field === 'source' ? value : defaults.source.value;
     const setting = `${name} = { ${name === 'gh' ? `version = ${JSON.stringify(version)}, ` : ''}source = ${JSON.stringify(source)} }`;
@@ -205,7 +205,7 @@ export function configure(repository, action, key, value) {
     try { lock = openSync(lockPath, 'wx'); }
     catch (error) { if (error.code === 'EEXIST') throw new Error('config_locked'); throw error; }
     const original = existsSync(path) ? readText(path) : null;
-    const text = original ?? readFileSync(new URL('../assets/config.example.toml', import.meta.url), 'utf8');
+    const text = original ?? readFileSync(new URL('../config.example.toml', import.meta.url), 'utf8');
     const result = editConfiguration(text, key, value);
     parseConfiguration(result);
     const fd = openSync(temporary, 'wx');

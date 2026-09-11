@@ -135,7 +135,7 @@ test('configuration: fixed shared home, repository independence and read-only va
       assert.equal('directory' in result,false); assert.equal('scope' in result,false);
       assert.equal(hash(path),before); assert.equal(existsSync(root),false);
     }
-    write(path,readFileSync(join(repo,'.agents/skills/gidd/assets/config.example.toml'),'utf8'));
+    write(path,readFileSync(join(repo,'.agents/skills/gidd/config.example.toml'),'utf8'));
     samePath(json(ok(resolve())).tools_root,root);
     samePath(json(ok(resolve(other,{USERPROFILE:join(f.root,'separate home')}))).tools_root,toolsRoot(join(f.root,'separate home')));
     assert.notEqual(resolve(other,{USERPROFILE:'relative'}).status,0);
@@ -248,7 +248,7 @@ test('release resolution selects stable versions, verifies upstream hashes and p
         assert.match(resolve(name,'latest',{...data,[endpoint]:JSON.stringify(bad)}).stderr,/invalid_stable_release/);
       }
     }
-    const pinned=JSON.parse(readFileSync(join(repo,'.agents/skills/gidd/assets/runtimes.json'),'utf8')).tools[0];
+    const pinned=JSON.parse(readFileSync(join(repo,'.agents/skills/gidd/scripts/runtimes.json'),'utf8')).tools[0];
     const pinnedPath=join(f.root,'pinned.json'); write(pinnedPath,JSON.stringify(pinned));
     const original=hash(pinnedPath);
     const verified=json(ok(resolve('bun',pinned.version,{}, {pinnedPath})));

@@ -10,7 +10,7 @@
 - **用户技能根目录**：由 Agent 客户端自行决定；技能安装位置及用户级/仓库级模式不写入 GIDD 配置，也不参与下载工具路径解析。
 - **工具目录**：永久固定为 `~/.agents/skills.tools/gidd/`，`~` 指当前用户家目录。技能与开发入口共用该位置；这是跨仓库共享约定，不是可覆盖的默认值，不提供配置、命令行或专用环境变量来定制安装位置；规则见 `.agents/skills/gidd/references/configuration.md`。
 - 本项目的 `.agents/skills/gidd/` 是唯一技能源码目录，同时采用仓库安装布局；入口可直接定位本仓库。目录及配置存在不代表启用本项目自身的 GIDD 流程。迁移由 Issue #16 跟踪。
-- `.agents/skills/gidd/config.toml` 是本仓库实例，保留并单独审阅；发布或复制技能到其他仓库时排除它及 `config.toml.*` 编辑临时文件，使用 `assets/config.example.toml` 创建目标配置并保留已有实例。下载数据只在固定共享工具目录，完整安装/更新流程由 Issue #14 跟踪。
+- `.agents/skills/gidd/config.toml` 是本仓库实例，保留并单独审阅；发布或复制技能到其他仓库时排除它及 `config.toml.*` 编辑临时文件，使用 `config.example.toml` 创建目标配置并保留已有实例。下载数据只在固定共享工具目录，完整安装/更新流程由 Issue #14 跟踪。
 
 ## Accepted
 
@@ -18,7 +18,7 @@
 
 2. **GIDD-002 — 对话管理与显式启用。** GIDD 的安装、初始化和管理以用户与 Agent 的对话为入口；例如“当前仓库启用 GIDD”“检查此仓库的 GitHub 登录”。安装到用户目录只提供技能，不启用任何仓库。用户明确要求启用某个目标仓库后，Agent 才执行该仓库的初始化；再次初始化应复用有效配置并补齐缺项，不重复登录或重建开发任务。底层脚本提供可验证的操作与结果，首版不另做面向人类的交互式配置向导。
 
-3. **GIDD-003 — 配置唯一且具体归属。** 运行配置 `config.toml` 只保存在 `<目标仓库>/.agents/skills/gidd/`；用户级技能安装目录，若出现 GIDD `config.toml` 属于未定义行为，如何使用看用户如何提示；`config.toml` 不会自动继承或多层覆盖。用户级技能服务的目标仓库也使用上述固定路径；该目录只有配置文件时，不代表已安装完整技能。`config.toml` 使用注释解释字段，允许人类直接编辑，Agent 修改时保留无关字段和注释。工具配置 schema v1 已确定为 `schema_version` 与 tools 下的 node/bun 内联表（source）及 gh 内联表（version、source）；同一 schema 可选增加 [github] 表（hostname、account、remote），模板见 `.agents/skills/gidd/assets/config.example.toml`。启用记录仍未定义，不能凭配置存在执行治理流程。
+3. **GIDD-003 — 配置唯一且具体归属。** 运行配置 `config.toml` 只保存在 `<目标仓库>/.agents/skills/gidd/`；用户级技能安装目录，若出现 GIDD `config.toml` 属于未定义行为，如何使用看用户如何提示；`config.toml` 不会自动继承或多层覆盖。用户级技能服务的目标仓库也使用上述固定路径；该目录只有配置文件时，不代表已安装完整技能。`config.toml` 使用注释解释字段，允许人类直接编辑，Agent 修改时保留无关字段和注释。工具配置 schema v1 已确定为 `schema_version` 与 tools 下的 node/bun 内联表（source）及 gh 内联表（version、source）；同一 schema 可选增加 [github] 表（hostname、account、remote），模板见 `.agents/skills/gidd/config.example.toml`。启用记录仍未定义，不能凭配置存在执行治理流程。
 
 4. **GIDD-004 — 认证由授权事实确认。** `config.toml` 可以记录预期 GitHub 主机与账号，不保存 token、密码或二次验证码；修改账号字段不能视作已登录。有人参与的 gh 登录统一展示本次认证返回的 URL 和一次性用户代码，不自动打开浏览器，由用户在任意设备完成授权；脚本等待并验证实际身份后才报告成功。GitHub API 认证、Git 传输认证和 commit 作者信息分别检查。无 GUI 环境也采用该流程；长期凭据的保存位置由选定认证方式决定，不承诺复制配置即可复制登录状态。
 
