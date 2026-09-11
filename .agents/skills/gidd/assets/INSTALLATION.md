@@ -9,6 +9,11 @@ It is not a skill: do not add SKILL.md or repository config.toml here.
   Normal commands execute it directly without runtime selection or compatibility checks.
   Rerun bootstrap after skill updates, runtime changes or a broken launcher.
   bootstrap --node --yes switches the launcher for every repository of this user.
+- .runtime-path-<SHA256>: directory junctions for external Unicode runtime paths.
+  The ASCII launcher never changes the console code page. These links are not
+  owned tool copies. Old links are retained across launcher changes or failed
+  publication. When removing shared storage, remove each junction itself first;
+  never recurse through it or delete its external target.
 - Repository config.toml selects archive sources and the gh version.
   Bun stable / Node LTS are internal download policies. Official metadata
   supplies checksums even when an archive mirror is selected. Floating versions

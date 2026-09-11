@@ -116,8 +116,13 @@ function Resolve-GiddToolStorage {
         $pending = New-Object 'System.Collections.Generic.Stack[string]'
         $pending.Push($root)
         while ($pending.Count) {
-            foreach ($item in Get-ChildItem -LiteralPath $pending.Pop() -Force) {
-                if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'reparse_tools_directory' }
+            $directory = $pending.Pop()
+            foreach ($item in Get-ChildItem -LiteralPath $directory -Force) {
+                if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                    # Bootstrap validates its selected binding; never traverse external tools.
+                    if ($directory -eq $root -and $item.Name -cmatch '^\.runtime-path-[a-f0-9]{64}$') { continue }
+                    throw 'reparse_tools_directory'
+                }
                 if ($item.Name -in @('SKILL.md','config.toml','.git')) { throw 'tools_directory_contains_project_or_skill' }
                 if ($item.PSIsContainer) { $pending.Push($item.FullName) }
             }

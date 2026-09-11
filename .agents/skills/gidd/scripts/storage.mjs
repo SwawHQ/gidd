@@ -135,7 +135,11 @@ export function inspectToolTree(root) {
   while (pending.length) {
     const directory = pending.pop();
     for (const item of readdirSync(directory, { withFileTypes: true })) {
-      if (item.isSymbolicLink()) throw new Error('reparse_tools_directory');
+      if (item.isSymbolicLink()) {
+        // Bootstrap validates the selected binding; external tool trees are not owned here.
+        if (directory === root && /^\.runtime-path-[a-f0-9]{64}$/.test(item.name)) continue;
+        throw new Error('reparse_tools_directory');
+      }
       if (['skill.md', 'config.toml', '.git'].includes(item.name.toLowerCase())) throw new Error('tools_directory_contains_project_or_skill');
       if (item.isDirectory()) pending.push(join(directory, item.name));
     }

@@ -12,21 +12,56 @@
     return @{ candidate=$null; attempts=$attempts }
 }
 
-function Get-GiddLauncherText {
+function Get-GiddRuntimeBinding {
     param($Candidate)
+    if ($Candidate.details.source -eq 'managed' -or $Candidate.details.path -notmatch '[^\x00-\x7f]') { return $null }
+    $target = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Candidate.details.path))
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $key = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($target))).Replace('-','').ToLowerInvariant() }
+    finally { $sha.Dispose() }
+    return @{ name='.runtime-path-' + $key; target=$target }
+}
+
+function Test-GiddRuntimeBinding {
+    param([string]$Root, $Binding)
+    if (-not $Binding) { return $true }
+    $item = Get-Item -LiteralPath (Join-Path $Root $Binding.name) -Force -ErrorAction SilentlyContinue
+    if (-not $item -or -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.LinkType -ne 'Junction') { return $false }
+    return @($item.Target).Count -eq 1 -and [string]::Equals([IO.Path]::GetFullPath([string]$item.Target[0]), $Binding.target, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Write-GiddRuntimeBinding {
+    param([string]$Root, $Binding)
+    if (-not $Binding) { return }
+    Assert-GiddPlainPath $Root
+    if (Test-GiddRuntimeBinding $Root $Binding) { return }
+    $path = Join-Path $Root $Binding.name
+    if (Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue) { throw 'occupied_runtime_binding' }
+    # This link is installation data, never an owned copy of the external tool.
+    # Retain old links: publication may fail and another launcher may still use them.
+    [void](New-Item -ItemType Junction -Path $path -Target $Binding.target -ErrorAction Stop)
+    if (-not (Test-GiddRuntimeBinding $Root $Binding)) { throw 'runtime_binding_failed' }
+}
+
+function Get-GiddLauncherText {
+    param($Candidate, [switch]$PreviousFormat)
     $name = $Candidate.id.Substring(5)
+    $binding = Get-GiddRuntimeBinding $Candidate
     $executable = if ($Candidate.details.source -eq 'managed') { "%~dp0$name\$name.exe" }
+        elseif ($binding) { "%~dp0$($binding.name)\$name.exe" }
         else { $Candidate.details.path.Replace('%','%%') }
     if ($executable -match '["\r\n]') { throw 'invalid_runtime_path' }
-    # Switch only while reading the UTF-8 path literal, then restore the console.
-    # No CALL: arguments (including percent signs) must only be expanded once.
+    # ASCII source: Unicode paths arrive through cmd's native variable expansion.
+    # No CHCP (console side effects), CALL (double expansion), or runtime search.
     return (@(
         '@echo off'
         'setlocal DisableDelayedExpansion'
-        'for /f "tokens=2 delims=:" %%C in (''"%SystemRoot%\System32\chcp.com"'') do set "GIDD_JS_CODEPAGE=%%C"'
-        '"%SystemRoot%\System32\chcp.com" 65001 >nul'
+        if ($PreviousFormat) {
+            'for /f "tokens=2 delims=:" %%C in (''"%SystemRoot%\System32\chcp.com"'') do set "GIDD_JS_CODEPAGE=%%C"'
+            '"%SystemRoot%\System32\chcp.com" 65001 >nul'
+        }
         ('set "GIDD_JS_EXEC=' + $executable + '"')
-        '"%SystemRoot%\System32\chcp.com" %GIDD_JS_CODEPAGE% >nul'
+        if ($PreviousFormat) { '"%SystemRoot%\System32\chcp.com" %GIDD_JS_CODEPAGE% >nul' }
         '"%GIDD_JS_EXEC%" %*'
         'exit /b %ERRORLEVEL%'
         ''
@@ -55,10 +90,12 @@ function Restore-GiddInterruptedRuntime {
     $launcher = Join-Path $Root 'js_exec.cmd'
     Assert-GiddPlainPath $launcher
     $candidate = @{ id="tool.$Name"; details=@{ source='managed' } }
+    # PreviousFormat is comparison-only evidence for upgrades with pending cleanup.
+    $committedTexts = @((Get-GiddLauncherText $candidate), (Get-GiddLauncherText $candidate -PreviousFormat))
     # The launcher is the durable commit evidence, including an unchanged binding
     # reused during repair. Never undo that state just because cleanup failed.
     if ((Test-GiddManagedTool (Join-Path $Root $Name) $Name) -and
-        [IO.File]::Exists($launcher) -and [IO.File]::ReadAllText($launcher) -ceq (Get-GiddLauncherText $candidate)) {
+        [IO.File]::Exists($launcher) -and $committedTexts -ccontains [IO.File]::ReadAllText($launcher)) {
         # If cleanup still fails, stop before another installation or launcher
         # switch can obscure this evidence; leave the working runtime intact.
         Remove-GiddRuntimeBackup $Root $Name
@@ -74,7 +111,7 @@ function Invoke-GiddBootstrap {
     $root = $Storage.tools_root; $launcher = Join-Path $root 'js_exec.cmd'
     if (-not $Yes) {
         $found = Find-GiddBootstrapRuntime $Storage -Node:$Node
-        $matches = $found.candidate -and [IO.File]::Exists($launcher) -and [IO.File]::ReadAllText($launcher) -ceq (Get-GiddLauncherText $found.candidate)
+        $matches = $found.candidate -and (Test-GiddRuntimeBinding $root (Get-GiddRuntimeBinding $found.candidate)) -and [IO.File]::Exists($launcher) -and [IO.File]::ReadAllText($launcher) -ceq (Get-GiddLauncherText $found.candidate)
         return @{ schema='gidd.bootstrap/v1';status=$(if ($matches) {'ready'} else {'needs_bootstrap'});read_only=$true;
             runtime=$found.candidate;attempts=$found.attempts;launcher=$launcher;launcher_matches=[bool]$matches }
     }
@@ -102,6 +139,7 @@ function Invoke-GiddBootstrap {
             if ($candidate.status -ne 'ready') { throw 'bootstrap_runtime_unusable' }
         }
         Write-GiddInstallationGuide $root
+        Write-GiddRuntimeBinding $root (Get-GiddRuntimeBinding $candidate)
         $action = Write-GiddLauncher $root (Get-GiddLauncherText $candidate)
         $published = $true; $cleanupPending = $false
         if ($candidate.details.source -eq 'managed') {

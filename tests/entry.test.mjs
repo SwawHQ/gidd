@@ -1,5 +1,5 @@
 import { test } from 'node:test';
-import { statSync, readFileSync } from 'node:fs';
+import { statSync, readFileSync, readdirSync, lstatSync, symlinkSync } from 'node:fs';
 import { adapter, code, hash, makeZip, rmSync, product, toolsRoot, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, ps, run, snapshot, stub, write } from './support/helpers.mjs';
 import { checkRuntime } from '../.agents/skills/gidd/scripts/runtime-compat.mjs';
 
@@ -48,6 +48,7 @@ test('bootstrap is read only without yes; ordinary commands require the generate
     const published=json(ok(s.invoke(['bootstrap','--yes',...s.args])));
     assert.equal(published.launcher_action,'published');
     const launcher=join(toolsRoot(f.root),'js_exec.cmd'), mtime=statSync(launcher).mtimeMs;
+    assert.doesNotMatch(readFileSync(launcher,'utf8'), /chcp|[^\x00-\x7f]/i, 'Ordinary startup must not change the console code page');
     assert.equal(json(ok(s.invoke(['bootstrap',...s.args]))).launcher_matches,true);
     assert.equal(json(ok(s.invoke(['bootstrap','--yes',...s.args]))).launcher_action,'reused');
     assert.equal(statSync(launcher).mtimeMs,mtime);
@@ -131,6 +132,16 @@ test('bootstrap installs, repairs and rolls back managed runtimes before publish
       write(executable,'damaged before committed cleanup failure');
       const committed=json(ok(invoke({failCleanup:true})));
       assert.equal(committed.cleanup_pending,true); assert.equal(hash(executable),hash(exe),'Post-publication cleanup must not restore the damaged executable');
+      // An upgrade must recognize the previous launcher as committed cleanup evidence.
+      const currentText=readFileSync(launcher,'utf8');
+      const legacyText=currentText.replace('setlocal DisableDelayedExpansion\r\n', () =>
+        'setlocal DisableDelayedExpansion\r\nfor /f "tokens=2 delims=:" %%C in (\'"%SystemRoot%\\System32\\chcp.com"\') do set "GIDD_JS_CODEPAGE=%%C"\r\n"%SystemRoot%\\System32\\chcp.com" 65001 >nul\r\n')
+        .replace('"%GIDD_JS_EXEC%" %*', () => '"%SystemRoot%\\System32\\chcp.com" %GIDD_JS_CODEPAGE% >nul\r\n"%GIDD_JS_EXEC%" %*');
+      write(launcher,legacyText);
+      const legacyTree=snapshot(root);
+      assert.match(invoke({failCleanup:true,responses:{},downloads:{}}).stderr,/fixture_cleanup_failed/);
+      assert.deepEqual(snapshot(root),legacyTree,'An old published launcher must not restore a damaged backup during upgrade');
+      write(launcher,currentText);
       const committedTree=snapshot(root);
       assert.equal(json(ok(invoke({yes:false,responses:{},downloads:{}}))).status,'ready');
       assert.deepEqual(snapshot(root),committedTree,'Read-only checks must leave committed cleanup pending');
@@ -176,6 +187,31 @@ test('generated launcher pins an external Unicode/percent path and does not sear
     const report=json(ok(s.invoke(['bootstrap','--yes',...s.args],env)));
     assert.equal(report.runtime.details.source,'path');
     const launcher=join(toolsRoot(home),'js_exec.cmd'), previous=hash(launcher);
+    assert.doesNotMatch(readFileSync(launcher,'utf8'), /chcp|[^\x00-\x7f]/i);
+    const root=toolsRoot(home), binding=join(root,readdirSync(root).find(n=>n.startsWith('.runtime-path-')));
+    assert.equal(lstatSync(binding).isSymbolicLink(),true); sameDirectory(binding,bin);
+    assert.equal(json(ok(s.invoke(['bootstrap',...s.args],env))).launcher_matches,true);
+    rmSync(binding); // Remove the junction itself, never its external contents.
+    assert.equal(existsSync(join(bin,`${name}.exe`)),true);
+    assert.equal(json(s.invoke(['bootstrap',...s.args],env)).launcher_matches,false);
+    assert.equal(existsSync(binding),false,'Read-only checks must not repair a missing link');
+    write(binding,'unknown file');
+    assert.equal(json(s.invoke(['bootstrap','--yes',...s.args],env)).reason,'occupied_runtime_binding');
+    assert.equal(readFileSync(binding,'utf8'),'unknown file'); assert.equal(hash(launcher),previous);
+    rmSync(binding);
+    const wrong=join(f.root,'wrong target'); mkdirSync(wrong); symlinkSync(wrong,binding,'junction');
+    assert.equal(json(s.invoke(['bootstrap','--yes',...s.args],env)).reason,'occupied_runtime_binding');
+    sameDirectory(binding,wrong); assert.equal(hash(launcher),previous); rmSync(binding);
+    assert.equal(json(ok(s.invoke(['bootstrap','--yes',...s.args],env))).launcher_action,'reused');
+    sameDirectory(binding,bin);
+    write(join(bin,'SKILL.md'),'external content, not GIDD storage');
+    assert.equal(json(s.invoke(['doctor',...s.args],{...env,PATH:''})).schema,'gidd.doctor/v1');
+    const nextBin=join(f.root,'另一个 runtime'); mkdirSync(nextBin); stub(process.execPath,join(nextBin,`${name}.exe`));
+    const failed=adapter(f.root,{action:'bootstrap',repositoryRoot:s.target,responses:{},downloads:{},yes:true,failPublish:true},
+      {env:{...env,PATH:nextBin}});
+    assert.notEqual(failed.status,0); assert.equal(hash(launcher),previous);
+    assert.match(ok(s.invoke(['help','en'],{...env,PATH:''})).stdout,/target repository/);
+
     const log=join(f.root,'unexpected-probe.log'), fake=compile(f.root);
     stub(fake,join(toolsRoot(home),'bun/bun.exe'),undefined,true);
     assert.match(ok(s.invoke(['help','en'],{...env,PATH:'',GIDD_TEST_PROBE_LOG:log})).stdout,/target repository/);
@@ -183,6 +219,12 @@ test('generated launcher pins an external Unicode/percent path and does not sear
     rmSync(join(bin,`${name}.exe`));
     assert.notEqual(s.invoke(['help','en'],{...env,GIDD_TEST_PROBE_LOG:log}).status,0);
     assert.equal(existsSync(log),false,'A missing bound runtime must not fall back to managed Bun');
+    rmSync(join(root,'bun'),{recursive:true});
+    stub(process.execPath,join(root,name,`${name}.exe`),undefined,true);
+    assert.equal(json(ok(s.invoke(['bootstrap','--yes',...s.args],{...env,PATH:''}))).runtime.details.source,'managed');
+    assert.doesNotMatch(readFileSync(launcher,'utf8'),/chcp|[^\x00-\x7f]/i);
+    assert.match(ok(s.invoke(['--help','en'],{...env,PATH:''})).stdout,/target repository/);
+
   } finally {f.dispose();}
 });
 
