@@ -10,6 +10,7 @@ function installation(f, prepare = true) {
   const skill = join(f.root, 'installed skill & spaces'), target = join(f.root, '目标 repo & spaces');
   copySkill(skill);
   assert.equal(existsSync(join(skill, 'config.toml')), false, 'Installation must not inherit development configuration');
+  assert.equal(existsSync(join(skill, 'config.example.toml')), true, 'Installation must include the configuration template');
   mkdirSync(target);
   write(join(target, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\n');
   const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');

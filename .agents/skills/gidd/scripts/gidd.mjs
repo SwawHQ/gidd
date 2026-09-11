@@ -19,7 +19,7 @@ export async function main(args) {
       const choice = args[0] || process.env.GIDD_LANG || process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || Intl.DateTimeFormat().resolvedOptions().locale;
       if ((args[0] || process.env.GIDD_LANG) && !/^(zh|en)(?:$|[-_])/.test(choice)) throw new Error('unsupported_help_language');
       const language = /^zh(?:$|[-_])/.test(choice) ? 'zh-CN' : 'en';
-      console.log(readFileSync(new URL(`../assets/help/${language}.txt`,import.meta.url),'utf8')); return 0;
+      console.log(readFileSync(new URL(`./help/${language}.txt`,import.meta.url),'utf8')); return 0;
     }
     if (!Object.hasOwn(schemas,command)) throw new Error('unknown_command');
     if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');

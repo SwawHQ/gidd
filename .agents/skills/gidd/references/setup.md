@@ -41,7 +41,7 @@ setup 默认报告当前执行运行时已复用，并准备 gh；显式 setup b
     └── install.json
 ```
 
-config.toml 指定各工具下载根及 gh 版本；默认缺失工具下载 Node LTS 或最新稳定 Bun/gh，解析规则见 [configuration.md](configuration.md)。安装前显示确切版本与完整下载 URL，官方校验信息缺失时报错；镜像归档仍对照官方 SHA-256。`assets/runtimes.json` 保留 Bun 1.2.15、gh 2.98.0 的校验信息。安装清单 `gidd.install/v1` 保存实际文件的名称、长度和 SHA-256，以及工具名、平台、版本和归档来源。第三方工具保持其原许可证，不套用 GIDD 的 MIT。
+config.toml 指定各工具下载根及 gh 版本；默认缺失工具下载 Node LTS 或最新稳定 Bun/gh，解析规则见 [configuration.md](configuration.md)。安装前显示确切版本与完整下载 URL，官方校验信息缺失时报错；镜像归档仍对照官方 SHA-256。`scripts/runtimes.json` 保留 Bun 1.2.15、gh 2.98.0 的校验信息。安装清单 `gidd.install/v1` 保存实际文件的名称、长度和 SHA-256，以及工具名、平台、版本和归档来源。第三方工具保持其原许可证，不套用 GIDD 的 MIT。
 
 scripts/install.mjs 负责 JS 下载、校验、受控 ZIP 解压、安装事务和恢复。scripts/windows/setup-tools/ 保留显式 bootstrap 准备和修复运行时所需实现。两者遵守相同安装清单、锁和固定路径规则；测试对两份实现运行相同 fixture，并验证跨实现争锁。
 

@@ -86,7 +86,7 @@ function Write-GiddInstallationGuide {
     $destination = Join-Path $ToolsRoot 'INSTALLATION.md'
     $temporary = Join-Path $ToolsRoot '.INSTALLATION.tmp'
     Assert-GiddPlainPath $destination
-    $text = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../../../assets/INSTALLATION.md'))
+    $text = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../../../references/INSTALLATION.md'))
     if ([IO.File]::Exists($destination) -and [IO.File]::ReadAllText($destination) -ceq $text) { return }
     Write-GiddDurableFile $temporary ([Text.Encoding]::UTF8.GetBytes($text))
     if ([IO.File]::Exists($destination)) { [IO.File]::Replace($temporary, $destination, [System.Management.Automation.Language.NullString]::Value) }

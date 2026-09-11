@@ -72,7 +72,7 @@ export function removeStage(root, name) {
 export function writeInstallationGuide(root) {
   const path = join(root, 'INSTALLATION.md'), temporary = join(root, `.INSTALLATION-${randomUUID()}.tmp`);
   plainPath(path);
-  const text = readFileSync(new URL('../assets/INSTALLATION.md', import.meta.url));
+  const text = readFileSync(new URL('../references/INSTALLATION.md', import.meta.url));
   if (existsSync(path) && readFileSync(path).equals(text)) return;
   try { durableFile(temporary, text); renameSync(temporary, path); }
   finally { if (existsSync(temporary)) unlinkSync(temporary); }
@@ -237,7 +237,7 @@ export async function setupTools(storage, selected) {
   const names = selected ? [selected] : ['gh'];
   const tools = selected ? [] : [{ name: process.versions.bun ? 'bun' : 'node', action: 'reused', path: process.execPath }];
   const root = storage.tools_root;
-  const manifest = JSON.parse(readFileSync(new URL('../assets/runtimes.json',import.meta.url),'utf8'));
+  const manifest = JSON.parse(readFileSync(new URL('./runtimes.json',import.meta.url),'utf8'));
   let release;
   try {
     for (const name of names) {

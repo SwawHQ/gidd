@@ -42,7 +42,7 @@
 
 `.setup bun`、`.setup node`、`.setup gh` 分别只准备指定工具；不指定工具的 `.setup` 保留同时准备 Bun 和 Node 的行为。分别优先复用共享目录中校验有效的工具，再检查 PATH（Bun 1.4.2、Node 24.19.0、gh 2.98.0）。运行时兼容规则在 scripts/runtime-compat.mjs 集中维护；缺失运行时由 PowerShell 按内部稳定/LTS 策略准备；.setup gh 需要已发布共享启动器，由 JS 安装 gh。`.info` 分别报告两个运行时、配置要求和下载来源，仅当二者均可用时退出 0。
 
-默认 Node 使用最新 LTS、Bun 使用最新稳定版，只在需要下载时解析；已有可用版本继续复用，诊断与测试不检查更新。`.agents/skills/gidd/assets/runtimes.json` 和 `dev/runtimes.json` 保留 Bun/gh 与开发 Node 的已验证版本校验信息。版本解析、官方校验信息、下载、SHA-256 校验、独占锁、版本验证及中断恢复共用技能脚本，不通过 Bun 安装 Node，也不通过 Node 安装 Bun。dev .setup 不覆盖已有损坏目录；运行时修复与显式重装使用产品 bootstrap，见 bootstrap 协议。
+默认 Node 使用最新 LTS、Bun 使用最新稳定版，只在需要下载时解析；已有可用版本继续复用，诊断与测试不检查更新。`.agents/skills/gidd/scripts/runtimes.json` 和 `dev/runtimes.json` 保留 Bun/gh 与开发 Node 的已验证版本校验信息。版本解析、官方校验信息、下载、SHA-256 校验、独占锁、版本验证及中断恢复共用技能脚本，不通过 Bun 安装 Node，也不通过 Node 安装 Bun。dev .setup 不覆盖已有损坏目录；运行时修复与显式重装使用产品 bootstrap，见 bootstrap 协议。
 
 Windows 上的 Bun 1.2.15 存在已复现的子进程兼容问题：启动不存在的程序后，后续 `spawnSync` 可能报告 `Out of memory`；脱离 GIDD 的最小示例也会触发。相同示例在 Bun 1.4.2 和 Node 上未复现，开发验收建议使用已验证的 Bun 1.4.2。普通 bootstrap 复用健康运行时；需要重新准备受管副本时用 bootstrap --reinstall --yes，确认安装后运行完整 .test。
 
@@ -52,7 +52,7 @@ Windows 上的 Bun 1.2.15 存在已复现的子进程兼容问题：启动不存
 
 ## 配置与本地目录
 
-配置模板为 `.agents/skills/gidd/assets/config.example.toml`；实例固定在 `<仓库>/.agents/skills/gidd/config.toml`，格式、默认值和校验范围见 [工具存储配置](.agents/skills/gidd/references/configuration.md)。bootstrap/开发 Shell 使用 scripts/windows/lib/_configuration.ps1，业务 JS 使用 scripts/storage.mjs 读取相同配置；普通 gidd.cmd 不读配置。
+配置模板为 `.agents/skills/gidd/config.example.toml`；实例固定在 `<仓库>/.agents/skills/gidd/config.toml`，格式、默认值和校验范围见 [工具存储配置](.agents/skills/gidd/references/configuration.md)。bootstrap/开发 Shell 使用 scripts/windows/lib/_configuration.ps1，业务 JS 使用 scripts/storage.mjs 读取相同配置；普通 gidd.cmd 不读配置。
 
 本仓库已实例化：
 
@@ -80,7 +80,7 @@ gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 
 dev .setup 复用外部工具不创建共享目录；产品 bootstrap --yes 仍需创建共享启动器；按需下载后保留各工具许可证及 install.json。下载和解压暂存在 `.cache/<工具>/`，安装成功后清理对应暂存，保留缓存根和锁文件。安装时展示版本和完整 URL，使用官方 SHA-256 校验。
 
-源码布局见 [Issue #16](https://github.com/SwawHQ/gidd/issues/16)。仓库 config.toml 单独维护，发布或复制技能时排除它及 config.toml.* 锁/临时文件，保留目标已有配置；新配置使用 assets/config.example.toml。共享工具位于仓库外，不随技能复制或提交。完整安装和更新尚未实现。
+源码布局见 [Issue #16](https://github.com/SwawHQ/gidd/issues/16)。仓库 config.toml 单独维护，发布或复制技能时排除它及 config.toml.* 锁/临时文件，保留目标已有配置；新配置使用 config.example.toml。共享工具位于仓库外，不随技能复制或提交。完整安装和更新尚未实现。
 
 测试在每个 fixture 中设置临时 USERPROFILE，关闭 Bun 自身的编译缓存，结束后恢复环境；子进程按相同固定规则使用临时家目录下的工具根，不访问真实共享安装。测试 worker 内用例须串行。版本冲突测试验证既有安装保留，跨仓库测试验证同一用户共用目录。
 
