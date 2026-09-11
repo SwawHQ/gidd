@@ -167,7 +167,8 @@ test('bootstrap installs, repairs and rolls back managed runtimes before publish
       const interruptedTree=snapshot(root);
       assert.equal(json(ok(invoke({yes:false}))).status,'needs_bootstrap');
       assert.deepEqual(snapshot(root),interruptedTree,'Read-only bootstrap must not recover or discard a backup');
-      assert.match(json(product(['setup',name,'--repository',f.root],{env})).reason,/pending_runtime_recovery/);
+      assert.equal(json(product(['setup',name,'--repository',f.root],{env})).reason,'runtime_setup_removed');
+      assert.deepEqual(snapshot(root),interruptedTree,'Removed setup must preserve the pending runtime backup');
       ok(invoke({responses:{},downloads:{}}));
       assert.deepEqual(snapshot(target),old); assert.equal(hash(launcher),launcherHash);
       assert.equal(existsSync(join(root,`.cache/previous-${name}`)),false);
@@ -269,18 +270,39 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
   } finally { f.dispose(); }
 });
 
-test('shell setup selects only bun, node or gh and keeps storage independent of installation', { timeout: 30000 }, () => {
+test('removed runtime setup commands fail without changing configuration or tools', () => {
+  const f = fixture();
+  try {
+    const s = installation(f);
+    write(join(s.target,'.agents/skills/gidd/config.toml'),'invalid configuration');
+    const before = snapshot(f.root);
+    for (const name of ['bun','node']) {
+      for (const invoke of [args => s.invoke(args,{PATH:''}), args => product(args,{env:{PATH:''}})]) {
+        const result = invoke(['setup',name,...s.args]);
+        assert.equal(result.status,2);
+        assert.equal(json(result).reason,'runtime_setup_removed');
+        assert.match(result.stderr,/bootstrap --yes/);
+        assert.match(result.stderr,/shared launcher/);
+      }
+      assert.notEqual(ps(join(s.skill,'scripts/windows/setup-tools.ps1'),['-RepositoryPath',s.target,'-Tool',name],{env:{PATH:''}}).status,0);
+    }
+    assert.deepEqual(snapshot(f.root),before,'Rejected commands must not read invalid config, install, or switch the launcher');
+  } finally { f.dispose(); }
+});
+
+test('product setup prepares only gh and keeps storage independent of installation', { timeout: 30000 }, () => {
   const f = fixture();
   try {
     const s = installation(f), exe = compile(f.root), bin = join(f.root, 'bin');
-    stub(exe, join(bin, 'bun.exe'));
-    const bun = json(ok(product(['setup','bun',...s.args], { env: { PATH: bin } })));
-    assert.deepEqual(bun.tools.map(t => [t.name, t.action]), [['bun','reused']]);
-    assert.equal(existsSync(join(toolsRoot(f.root),'bun')), false);
-    stub(exe, join(bin, 'node.exe'));
-    const node = json(ok(product(['setup','node',...s.args], { env: { PATH: bin } })));
-    assert.deepEqual(node.tools.map(t => [t.name, t.action]), [['node','reused']]);
-    assert.equal(existsSync(join(toolsRoot(f.root),'bun')), false);
+    stub(exe, join(bin, 'gh.exe'));
+    const before = snapshot(f.root);
+    for (const args of [['setup','gh'],['setup']]) {
+      const report = json(ok(s.invoke([...args,...s.args], { PATH: bin })));
+      assert.deepEqual(report.tools.map(t => [t.name, t.action]), [['gh','reused']]);
+    }
+    const legacy = json(ok(ps(join(s.skill,'scripts/windows/setup-tools.ps1'),['-RepositoryPath',s.target,'-Tool','gh'],{env:{PATH:bin}})));
+    assert.deepEqual(legacy.tools.map(t => [t.name, t.action]), [['gh','reused']]);
+    assert.deepEqual(snapshot(f.root),before,'PATH gh reuse must not write or switch the launcher');
     const tools = toolsRoot(f.root);
     stub(exe, join(tools,'gh/gh.exe'), undefined, true);
     write(join(tools,'bun/keep.txt'), 'unrelated damaged installation');

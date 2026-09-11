@@ -233,31 +233,28 @@ export async function installTool(root, definition, { receive = download, onPhas
   return { name, action: 'installed', path: join(target, executableName(name)) };
 }
 
-export async function setupTools(storage, selected) {
-  const names = selected ? [selected] : ['gh'];
-  const tools = selected ? [] : [{ name: process.versions.bun ? 'bun' : 'node', action: 'reused', path: process.execPath }];
-  const root = storage.tools_root;
-  const manifest = JSON.parse(readFileSync(new URL('./runtimes.json',import.meta.url),'utf8'));
+export async function setupGh(storage) {
+  const name = 'gh', root = storage.tools_root;
+  const manifest = JSON.parse(readFileSync(new URL('./runtimes.json', import.meta.url), 'utf8'));
   let release;
   try {
-    for (const name of names) {
-      if (['bun','node'].includes(name) && existsSync(join(root,'.cache',`previous-${name}`))) throw new Error(`pending_runtime_recovery:${name}`);
-      let candidate = await findTool(name,{ root, requested: storage.tools[name].version });
-      if (candidate.status !== 'ready' || candidate.details.source === 'managed') {
-        release ||= acquireInstallLock(root); writeInstallationGuide(root);
-        candidate = await findTool(name,{ root, requested: storage.tools[name].version });
-      }
-      if (candidate.status === 'ready') {
-        if (release) removeStage(root,name);
-        tools.push({ name, action: 'reused', path: candidate.details.path }); continue;
-      }
-      if (existsSync(join(root,name))) throw new Error(`occupied_or_version_conflicting_target:${name}`);
-      const definition = await resolveRelease(name,storage.tools[name],manifest.tools.find(item => item.name === name));
-      if (compareVersions(definition.version,minimums[name]) < 0) throw new Error(`configured_version_below_minimum:${name}`);
-      console.error(`GIDD download: ${name} ${definition.version} ${definition.url}`);
-      tools.push(await installTool(root,definition,{ onPhase: phase => console.error(`GIDD install: ${phase}`) }));
-      if ((await findTool(name,{ root, requested: storage.tools[name].version })).status !== 'ready') throw new Error('post_install_check_failed');
+    let candidate = await findTool(name, { root, requested: storage.tools.gh.version });
+    if (candidate.status !== 'ready' || candidate.details.source === 'managed') {
+      release = acquireInstallLock(root); writeInstallationGuide(root);
+      candidate = await findTool(name, { root, requested: storage.tools.gh.version });
     }
-    return { schema: 'gidd.setup-tools/v1', status: 'ready', tools, tools_root: root, storage };
+    let tool;
+    if (candidate.status === 'ready') {
+      if (release) removeStage(root, name);
+      tool = { name, action: 'reused', path: candidate.details.path };
+    } else {
+      if (existsSync(join(root, name))) throw new Error('occupied_or_version_conflicting_target:gh');
+      const definition = await resolveRelease(name, storage.tools.gh, manifest.tools.find(item => item.name === name));
+      if (compareVersions(definition.version, minimums.gh) < 0) throw new Error('configured_version_below_minimum:gh');
+      console.error('GIDD download: gh ' + definition.version + ' ' + definition.url);
+      tool = await installTool(root, definition, { onPhase: phase => console.error('GIDD install: ' + phase) });
+      if ((await findTool(name, { root, requested: storage.tools.gh.version })).status !== 'ready') throw new Error('post_install_check_failed');
+    }
+    return { schema: 'gidd.setup-tools/v1', status: 'ready', tools: [tool], tools_root: root, storage };
   } finally { release?.(); }
 }

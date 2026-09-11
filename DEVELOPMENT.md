@@ -6,7 +6,7 @@
 
 技能发布入口为 `.agents/skills/gidd/gidd.cmd`，先运行 `.\.agents\skills\gidd\gidd.cmd bootstrap` 检查，授权准备后追加 --yes，再运行 help zh。产品用法见 [技能说明](.agents/skills/gidd/SKILL.md)；统一入口的开发验收使用 `.\dev.cmd .test entry`。仅显式 bootstrap 使用系统 Shell。普通命令经共享 js_exec.cmd 直接启动共用 JavaScript；不探测运行时或检查兼容性。
 
-`help`、`--help`、`-h` 等价。产品工具命令分别为 `setup bun`、`setup node`、`setup gh`。本项目的唯一技能源码位于 `.agents/skills/gidd/`，与仓库安装布局一致；入口从自身位置定位目标，支持 Git worktree，不依赖调用目录。可直接运行 `.\.agents\skills\gidd\gidd.cmd doctor` 或 `config show`。doctor 无法自动定位目标时仍报告工具和 target_required；显式目标是普通目录时报告 not_git_repository，缺少 Git 时仍诊断目标配置。内部参数 `--repository <目标绝对路径>` 仅供开发和测试指定其他目标，普通调用无需追加，也不展示在 help 中。配置使用 `config show/set` 管理。完整技能安装和更新由 [Issue #14](https://github.com/SwawHQ/gidd/issues/14) 跟踪，工具下载来源与 gh 版本由配置管理，工具目录固定共享；配置增加可选的 github 表，执行身份检查或授权时相关字段必须齐备。doctor 的 local_ready 也要求 hostname/account/remote 完整且所选 remote 的本地主机匹配；这不证明仓库已初始化或登录成功。
+`help`、`--help`、`-h` 等价。产品 `setup gh`（以及不带选择器的 `setup`）只准备 gh；产品运行时准备统一使用 `bootstrap`，开发双运行时继续使用 `dev.cmd .setup bun/node`。本项目的唯一技能源码位于 `.agents/skills/gidd/`，与仓库安装布局一致；入口从自身位置定位目标，支持 Git worktree，不依赖调用目录。可直接运行 `.\.agents\skills\gidd\gidd.cmd doctor` 或 `config show`。doctor 无法自动定位目标时仍报告工具和 target_required；显式目标是普通目录时报告 not_git_repository，缺少 Git 时仍诊断目标配置。内部参数 `--repository <目标绝对路径>` 仅供开发和测试指定其他目标，普通调用无需追加，也不展示在 help 中。配置使用 `config show/set` 管理。完整技能安装和更新由 [Issue #14](https://github.com/SwawHQ/gidd/issues/14) 跟踪，工具下载来源与 gh 版本由配置管理，工具目录固定共享；配置增加可选的 github 表，执行身份检查或授权时相关字段必须齐备。doctor 的 local_ready 也要求 hostname/account/remote 完整且所选 remote 的本地主机匹配；这不证明仓库已初始化或登录成功。
 
 ```powershell
 .\dev.cmd .help zh
@@ -124,6 +124,6 @@ dev .setup 复用外部工具不创建共享目录；产品 bootstrap --yes 仍�
 .\dev.cmd .test-live
 ```
 
-该命令分别在 Bun、Node 下验证官方 Bun/gh/Node 下载、完整性、版本、doctor 识别和已有工具复用。它解析最新稳定 Bun/gh 和 Node LTS，联网下载到隔离临时目录；不接受本地安装包目录。测试后清理隔离目录，不接触真实用户安装与登录。普通 `.test` 通过测试专用的模拟下载响应验证文件读取、哈希、解压和恢复，不联网；本地 fixture 输入只存在于 `tests/support/`。直接执行测试默认跳过联网测试；Bun 1.2.15 不应直接用 `bun test` 批量运行这些文件，请使用开发入口以确保每个文件都实际执行。
+该命令分别在 Bun、Node 下验证 bootstrap 官方 Bun/Node 下载与启动器复用，以及 JS setup gh 下载、完整性、版本和 doctor 识别。它解析最新稳定 Bun/gh 和 Node LTS，联网下载到隔离临时目录；不接受本地安装包目录。测试后清理隔离目录，不接触真实用户安装与登录。普通 `.test` 通过测试专用的模拟下载响应验证文件读取、哈希、解压和恢复，不联网；本地 fixture 输入只存在于 `tests/support/`。直接执行测试默认跳过联网测试；Bun 1.2.15 不应直接用 `bun test` 批量运行这些文件，请使用开发入口以确保每个文件都实际执行。
 
 后续平台增加薄启动入口与平台适配，复用 JavaScript 用例；未提供 `dev.sh` / `dev.mac.sh`，不将 Windows 特有测试的跳过当作其他平台验证通过。产品 JavaScript 仍须仅使用两种运行时共有的标准 API，并在两者中验证同一功能。

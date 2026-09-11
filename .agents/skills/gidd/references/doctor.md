@@ -27,7 +27,7 @@ scripts/doctor.mjs 组合诊断；scripts/tools.mjs 负责工具探测；scripts
 | 工具 | 基础版本门槛 | 受管候选（先于 PATH） |
 | --- | --- | --- |
 | Git | 2.0 | 无 |
-| Node.js | 只观察版本，不检查兼容性 | `<工具根>/node/node.exe`；可用 `gidd.cmd setup node` 准备 |
+| Node.js | 只观察版本，不检查兼容性 | `<工具根>/node/node.exe`；可用 `gidd.cmd bootstrap --node --yes` 准备并选择 |
 | Bun | 只观察版本，不检查兼容性 | `<工具根>/bun/bun.exe` |
 | gh | 2.98.0 | `<工具根>/gh/gh.exe` |
 

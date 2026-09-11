@@ -12,9 +12,7 @@ Help and diagnosis:
   gidd.cmd help [en|zh]                              Show help; aliases: --help, -h. Also shown with no arguments.
   gidd.cmd doctor                                    Check environment and target repository; read-only, offline.
 
-Tool setup (requires shared launcher; does not switch runtimes):
-  gidd.cmd setup bun                                 Reuse Bun or download a stable release.
-  gidd.cmd setup node                                Prepare Node; defaults to LTS, without npm.
+GitHub CLI setup (requires shared launcher):
   gidd.cmd setup gh                                  Prepare gh 2.98.0+; does not log in.
 
 Repository config:

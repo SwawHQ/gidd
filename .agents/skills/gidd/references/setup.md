@@ -1,22 +1,20 @@
-# Windows 工具初始化
+# Windows GitHub CLI 准备
 
-先用显式 [bootstrap](bootstrap.md) 准备共享 js_exec.cmd。setup 普通入口不调用 PowerShell，由 scripts/install.mjs 执行指定工具准备；gh 安装全部在 JavaScript 中。
+先用显式 [bootstrap](bootstrap.md) 准备共享 js_exec.cmd。setup 普通入口不调用 PowerShell，由 scripts/install.mjs 的 setupGh 准备 gh；产品运行时准备统一使用 bootstrap。
 
 先按 [doctor.md](doctor.md) 检查。用户已授权准备缺失工具后，从实际技能目录执行：
 
 ```powershell
-.\gidd.cmd setup bun
-.\gidd.cmd setup node
 .\gidd.cmd setup gh
 ```
 
-只支持已验证的 Windows x64 / Windows PowerShell 5.1，本地盘绝对路径。工具目录可不存在；禁止路径经过 junction/symlink 等 reparse point。技能安装由 Agent 管理，工具初始化不需要其安装模式或安装目录。Node/Bun 任一种可用便复用；gh 可用也复用。所有工具均来自外部 PATH 且工具根不存在时，整个操作不建立目录。
+只支持已验证的 Windows x64 / Windows PowerShell 5.1，本地盘绝对路径。工具目录可不存在；禁止路径经过 junction/symlink 等 reparse point。技能安装由 Agent 管理，工具初始化不需要其安装模式或安装目录。命令通过已发布的共享启动器执行；gh 可用便复用。gh 来自外部 PATH 且工具根不存在时，整个操作不建立目录。
 
 入口位于 `<目标仓库>/.agents/skills/gidd/` 且仓库根有 `.git` 标记时，从自身位置定位目标，支持 Git worktree；不依赖工作目录。先读取目标仓库的固定配置；工具始终使用固定共享目录，配置错误停止安装，规则与模板见 [configuration.md](configuration.md)。工具准备不会自动创建或修改 config.toml。
 
 ## 存储与源码
 
-setup 默认报告当前执行运行时已复用，并准备 gh；显式 setup bun/node/gh 只准备指定工具，不切换或发布共享启动器。没有启动器时先执行 bootstrap --yes；直接选择 Node 使用 bootstrap --node --yes。gh 要求 2.98.0+ 且遵守固定版本；Bun 稳定版与 Node LTS 为内部策略，Node 仅提取 node.exe 和 LICENSE，不含 npm。旧 scripts/windows/setup-tools.ps1 仅经共享启动器转发。
+setup gh 与不带选择器的 setup 都只准备 gh，不切换或发布共享启动器；tools 结果只列 gh。没有启动器时先执行 bootstrap --yes；选择 Node 使用 bootstrap --node --yes。gh 要求 2.98.0+ 且遵守配置版本。旧 scripts/windows/setup-tools.ps1 只接受 gh 或省略 Tool，经共享启动器转发。已移除的运行时 setup 命令返回 runtime_setup_removed，退出 2，提示显式使用 bootstrap；不会自动转发或切换启动器。
 
 工具根固定为 `~/.agents/skills.tools/gidd/`，各仓库和开发入口共用：
 
@@ -31,7 +29,7 @@ setup 默认报告当前执行运行时已复用，并准备 gh；显式 setup b
 │   ├── bun.exe
 │   ├── LICENSE.md
 │   └── install.json
-├── node/                # setup node 按需准备，不含 npm
+├── node/                # bootstrap 或开发入口准备，不含 npm
 │   ├── node.exe
 │   ├── LICENSE
 │   └── install.json
@@ -41,11 +39,11 @@ setup 默认报告当前执行运行时已复用，并准备 gh；显式 setup b
     └── install.json
 ```
 
-config.toml 指定各工具下载根及 gh 版本；默认缺失工具下载 Node LTS 或最新稳定 Bun/gh，解析规则见 [configuration.md](configuration.md)。安装前显示确切版本与完整下载 URL，官方校验信息缺失时报错；镜像归档仍对照官方 SHA-256。`scripts/runtimes.json` 保留 Bun 1.2.15、gh 2.98.0 的校验信息。安装清单 `gidd.install/v1` 保存实际文件的名称、长度和 SHA-256，以及工具名、平台、版本和归档来源。第三方工具保持其原许可证，不套用 GIDD 的 MIT。
+config.toml 指定各工具下载根及 gh 版本；setup gh 按配置版本准备 GitHub CLI，latest 在需要下载时解析，规则见 [configuration.md](configuration.md)。安装前显示确切版本与完整下载 URL，官方校验信息缺失时报错；镜像归档仍对照官方 SHA-256。`scripts/runtimes.json` 保留 Bun 1.2.15、gh 2.98.0 的校验信息。安装清单 `gidd.install/v1` 保存实际文件的名称、长度和 SHA-256，以及工具名、平台、版本和归档来源。第三方工具保持其原许可证，不套用 GIDD 的 MIT。
 
-scripts/install.mjs 负责 JS 下载、校验、受控 ZIP 解压、安装事务和恢复。scripts/windows/setup-tools/ 保留显式 bootstrap 准备和修复运行时所需实现。两者遵守相同安装清单、锁和固定路径规则；测试对两份实现运行相同 fixture，并验证跨实现争锁。
+scripts/install.mjs 的 setupGh 仅准备 gh，底层下载、校验、受控 ZIP 解压及安装事务函数继续复用。scripts/windows/setup-tools/ 保留显式 bootstrap 准备和修复运行时所需实现。两者遵守相同安装清单、锁和固定路径规则；测试对两份实现运行相同 fixture，并验证跨实现争锁。
 
-实际工具根直接包含 `.cache/`、`bun/`、`node/`、`gh/`，按需建立。源码仓库开发入口读取同一配置，可分别准备 Bun、Node 或 gh；技能入口通过 `setup node` 显式准备 Node，未指定工具的 setup 仍只需一种运行时。同一用户的所有仓库和两类入口共用工具目录及安装锁。
+实际工具根直接包含 `.cache/`、`bun/`、`node/`、`gh/`，按需建立。源码仓库开发入口读取同一配置，可分别准备 Bun、Node 或 gh；技能入口通过 bootstrap 准备运行时，setup 只准备 gh。同一用户的所有仓库和两类入口共用工具目录及安装锁。
 
 ## 中断恢复
 
@@ -57,7 +55,7 @@ scripts/install.mjs 负责 JS 下载、校验、受控 ZIP 解压、安装事务
 
 下载包在成功后删除，中断重试重新下载，不提供断点续传。
 
-Bun 与 gh 各自发布：Bun 完成而 gh 失败时，保留已完成的 Bun，下次只补缺项。文件哈希与刷盘用于识别损坏、降低丢失风险，不构成任意硬件和文件系统上断电零丢失的承诺。当前验证包括强制终止与残缺文件模拟，没有实际切断机器电源。
+bootstrap 与 gh 准备各自完成：setup gh 失败时保留已有运行时，下次重试 gh 准备。文件哈希与刷盘用于识别损坏、降低丢失风险，不构成任意硬件和文件系统上断电零丢失的承诺。当前验证包括强制终止与残缺文件模拟，没有实际切断机器电源。
 
 安装清单与 executable 同目录，SHA-256 提供完整性检查，不是对可同时修改两者的本机用户的安全隔离。它不保存 GitHub 凭据或仓库配置。
 
@@ -67,4 +65,4 @@ Bun 与 gh 各自发布：Bun 完成而 gh 失败时，保留已完成的 Bun，
 
 stdout 是 `gidd.setup-tools/v1` JSON；成功退出 0，`status=ready`，`tools` 列出 `installed` 或 `reused` 及实际路径。JS 安装失败退出 1，`status=error`，`reason` 提供原因；已完成的工具保留在磁盘供下次重试复用。启动器缺失使用 gidd.cli/v1、reason=bootstrap_required、退出 2；stderr 显示进度与错误。`install_locked_or_unwritable` 需要确认另一个安装是否在运行；`occupied_or_invalid_target` 需要检查该正式目录，不要直接删除。
 
-成功后再次运行 doctor。`ready` 只表示本次所选工具可用（不指定工具时为一种运行时与 gh）；Git、仓库、配置和认证仍需各自检查。需要检查账号时使用 [身份检查](identity.md)，用户明确要求登录时使用 [设备授权](authorization.md)。配置可用 `config show/set` 管理；完整技能安装、启用记录与完整开发流程尚未实现，不能报告“仓库已启用”。
+成功后再次运行 doctor。`ready` 只表示本次 gh 准备成功；Git、仓库、配置和认证仍需各自检查。需要检查账号时使用 [身份检查](identity.md)，用户明确要求登录时使用 [设备授权](authorization.md)。配置可用 `config show/set` 管理；完整技能安装、启用记录与完整开发流程尚未实现，不能报告“仓库已启用”。
