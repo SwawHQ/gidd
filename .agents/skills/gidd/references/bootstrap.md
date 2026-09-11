@@ -31,7 +31,7 @@ gidd.cmd 其他命令 → js_exec.cmd → 选定运行时 → 当前技能的 sc
 
 工具目录永久固定为当前用户的 ~/.agents/skills.tools/gidd/，不提供覆盖。js_exec.cmd 是该目录中的生成安装数据，不提交到源码，也不是技能。它只绑定一个运行时，不包含仓库或技能路径；由调用入口提供脚本路径。受管 executable 相对启动器定位，PATH 工具使用已解析的绝对路径。普通启动不解析 TOML、不调用 PowerShell、不搜索候选、不执行兼容检查、不下载或自动回退。
 
-启动器不存在时入口输出 gidd.cli/v1、reason=bootstrap_required、退出 2，提示 bootstrap --yes。绑定的 executable 后来被外部移除或损坏时，执行可能直接失败；重新 bootstrap 恢复，不自动换运行时重跑业务。原始参数、工作目录、stdin/stdout/stderr 和退出码直接透传；Windows 使用批处理尾转发避免 CALL 的二次参数展开。读取 UTF-8 外部路径期间临时切换并恢复控制台代码页。
+启动器不存在时入口输出 gidd.cli/v1、reason=bootstrap_required、退出 2，提示 bootstrap --yes。绑定的 executable 后来被外部移除或损坏时，执行可能直接失败；重新 bootstrap 恢复，不自动换运行时重跑业务。原始参数、工作目录、stdin/stdout/stderr 和退出码直接透传；Windows 使用批处理尾转发避免 CALL 的二次参数展开。启动器使用纯 ASCII 文本，普通命令不调用 chcp、不改变控制台代码页或清空显示缓冲区。受管路径通过 %~dp0 展开；包含非 ASCII 字符的外部运行时目录由 bootstrap --yes 创建 .runtime-path-<SHA256> 目录连接，启动器通过该固定连接执行，不搜索 PATH、不复制外部工具。只读 bootstrap 检查连接目标；同名未知文件或错误连接保留并报错。连接创建先于启动器原子发布，发布失败不改变旧启动器；旧连接保留，不自动回收。清理共享存储时只删除连接本身，不递归进入外部目录。
 
 兼容性只在 bootstrap（及开发测试）验证。技能升级后应先重新 bootstrap；安装/修复/切换运行时也重新验证。生成时通过不等于以后每次执行前重新校验。js_exec.cmd 是用户级共享选择，--node 发布会影响使用此目录的全部仓库；双运行时测试使用 dev.cmd bun/node，不必切换共享启动器。
 
