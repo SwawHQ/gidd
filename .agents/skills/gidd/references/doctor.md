@@ -1,6 +1,6 @@
 # Windows 本地诊断
 
-完整 doctor 位于 scripts/doctor.mjs，本身只读、离线。系统入口直接调用 [bootstrap](bootstrap.md) 已生成的 js_exec.cmd；启动器缺失时提示 bootstrap --yes，doctor 尚未执行。
+完整 doctor 位于 scripts/doctor.mjs，本身只读、离线。系统入口直接调用 [bootstrap](bootstrap.md) 已生成的 js_exec.cmd；启动器缺失时提示 bootstrap，doctor 尚未执行。
 
 公开入口：`gidd.cmd doctor`。当前验证平台为 Windows x64、Windows PowerShell 5.1；需要 bootstrap 已准备共享运行时启动器；不要求 gh 已安装。
 
@@ -18,7 +18,7 @@ scripts/doctor.mjs 组合诊断；scripts/tools.mjs 负责工具探测；scripts
 
 ## 工具选择
 
-先检查固定共享目录中的同名 executable，再检查 PATH 候选。gh 固定版本必须精确匹配，否则该候选报告 configured_version_mismatch；内部下载策略只用于需要下载时解析，doctor 不联网查询最新版本或 LTS 状态。仅执行 `--version`，每个子进程最多等待 5 秒，stdin 关闭。首版不运行 `.cmd` 包装器，不修改 PATH。
+先检查受管 executable，再检查有效绑定中的外部路径，最后检查 PATH 候选。所有版本要求由代码维护；内部下载策略只用于需要下载时解析，doctor 不联网查询最新版本或 LTS 状态。仅执行 `--version`，每个子进程最多等待 5 秒，stdin 关闭。首版不运行 `.cmd` 包装器，只在子进程范围使用选定 Git 的 PATH。
 
 共享工具须先通过同目录 `install.json` 的文件集合、长度、SHA-256 检查，再运行版本查询；缺少清单或文件损坏时报告 `managed_integrity_failed`，不执行该候选。此校验不适用于外部管理的普通 PATH 工具。若将 GIDD 的同一工具路径加入 PATH，仍需通过共享工具完整性检查。
 
@@ -26,8 +26,8 @@ scripts/doctor.mjs 组合诊断；scripts/tools.mjs 负责工具探测；scripts
 
 | 工具 | 基础版本门槛 | 受管候选（先于 PATH） |
 | --- | --- | --- |
-| Git | 2.0 | 无 |
-| Node.js | 只观察版本，不检查兼容性 | `<工具根>/node/node.exe`；可用 `gidd.cmd bootstrap --node --yes` 准备并选择 |
+| Git | 2.0 | `<工具根>/git/cmd/git.exe` |
+| Node.js | 只观察版本，不检查兼容性 | `<工具根>/node/node.exe`；可用 `gidd.cmd bootstrap --node` 准备并选择 |
 | Bun | 只观察版本，不检查兼容性 | `<工具根>/bun/bun.exe` |
 | gh | 2.98.0 | `<工具根>/gh/gh.exe` |
 
@@ -68,6 +68,8 @@ stdout 为单个 UTF-8 JSON 对象：
 检查项为 `platform`、`tools.storage`、`tool.git`、`tool.node`、`tool.bun`、`tool.gh`、`runtime`、`repository`、`repository.history`、`repository.remotes`、`repository.remote`、`repository.config`、`repository.config.validation`、`repository.config.github`、`github.identity`、`git.authentication`。无法读取工作树时，history/remotes/remote 为 not_checked；没有 commit 的新仓库报告 unborn_branch。
 
 `repository.config` 检查固定路径文件存在性；`repository.config.validation` 验证 [configuration.md](configuration.md) 的 schema v1；`repository.config.github` 使用共用字段校验器检查 hostname/account/remote，分别列出 missing_fields 与 invalid_fields，不输出字段原值。目标明确时，即使缺少 Git 或尚未建立 Git 仓库，也检查该位置的配置。配置存在和字段完整都不是初始化记录。
+
+`binding.git`、`binding.gh` 校验绑定是否匹配选定工具和受管安装记录；待恢复备份报告 tool_recovery_pending。这两项也参与 local_ready 判定。
 
 `tools.storage` 只报告工具配置和解析位置，不输出 GitHub 字段。配置语法或工具存储错误时该项为 invalid，managed_tools_checked=false，仅继续外部 PATH 探测，不回退默认受管目录。GitHub 字段值错误单独报告，不阻止工具诊断。Git 也优先检查受管 git/cmd/git.exe，再检查 PATH；通过校验的所选路径用于所有仓库探测。source=managed 表示受管工具，实际位置以 tools.storage 为准。GitHub 身份与 Git 传输认证仍为 not_checked；local_ready 不代表仓库启用、账号正确或具备推送权限。
 

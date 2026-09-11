@@ -26,11 +26,11 @@ export function toolEnvironment(git, env = process.env) {
   return result;
 }
 
-export async function findTool(name, { root = '', requested = '', minimum = minimums[name], source = 'auto', execute = runCommand } = {}) {
+export async function findTool(name, { root = '', requested = '', minimum = minimums[name], source = 'auto', extraPaths = [], execute = runCommand } = {}) {
   const managed = root ? join(root, name, managedExecutable(name)) : '';
   const candidates = [];
   if (source !== 'path' && managed && existsSync(managed)) candidates.push({ path: managed, source: 'managed' });
-  if (source !== 'managed') for (const path of pathCandidates(name)) candidates.push({ path, source: 'path' });
+  if (source !== 'managed') for (const path of [...extraPaths, ...pathCandidates(name)]) candidates.push({ path, source: 'path' });
   const rejected = [];
   for (const candidate of candidates) {
     const isManaged = candidate.source === 'managed' || (managed && (resolve(candidate.path).toLowerCase() === resolve(managed).toLowerCase() || name === 'git' && resolve(candidate.path).toLowerCase().startsWith(resolve(root, name).toLowerCase() + sep)));

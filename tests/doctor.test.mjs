@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { statSync } from 'node:fs';
-import { diagnosis, toolsRoot, assert, code, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, ps, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
+import { prepare, diagnosis, toolsRoot, assert, code, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, ps, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
 
 test('doctor: dependency matrix, repository states, read-only checks and redaction', { timeout: 120000 }, () => {
   const f = fixture();
@@ -89,6 +89,7 @@ test('doctor: dependency matrix, repository states, read-only checks and redacti
     ok(run(git,['-C',repository,'remote','add','origin','https://github.com/SwawHQ/gidd.git']));
     ok(run(git,['-C',repository,'remote','add','private','https://username:private-test-secret@example.invalid/private.git']));
     write(config,validConfig);
+    ok(prepare(repository,'git',{env:{PATH:gitBin}})); ok(prepare(repository,'gh',{env:{PATH:''}}));
     runCase('local readiness, explicit target and redacted remote',toolPath,(r,status) => {
       assert.equal(status,0); assert.equal(r.status,'local_ready');
       assert.equal(check(r,'repository.config.validation').status,'ready');

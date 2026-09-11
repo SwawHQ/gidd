@@ -1,54 +1,65 @@
-# 显式 bootstrap 与共享 JavaScript 启动器
+# 工具准备与共享绑定
 
-Windows x64 / Windows PowerShell 5.1；本轮由 [Issue #23](https://github.com/SwawHQ/gidd/issues/23) 跟踪，基于 #21 的 JavaScript 迁移。Linux/macOS 的 js_exec.sh 尚未实现或验证。
-
-## 命令
+Windows x64 / Windows PowerShell 5.1。统一入口由 Issue #39 跟踪；此前运行时启动器由 #23 跟踪。Linux/macOS 启动器尚未实现或验证。
 
 | 命令 | 行为 |
 | --- | --- |
-| `gidd.cmd bootstrap` | 只读检查兼容运行时及共享启动器是否与选择一致 |
-| `gidd.cmd bootstrap --yes` | 允许准备缺失运行时，并生成或更新共享启动器 |
-| `gidd.cmd bootstrap --node` | 只读检查 Node 候选和启动器 |
-| `gidd.cmd bootstrap --node --yes` | 选择或准备 Node，并发布供所有仓库共用的 Node 启动器 |
-| `gidd.cmd bootstrap --reinstall --yes` | 重新下载受管 Bun，验证后替换并发布；可追加 --node 改为 Node |
+| `gidd.cmd bootstrap` | 检查并补齐一个 JS 运行时、Git、gh，发布启动器与工具绑定 |
+| `gidd.cmd bootstrap --check` | 只读检查运行时、工具、绑定和待恢复安装；不下载、不写入 |
+| `gidd.cmd bootstrap --node` | 选择/准备 Node，并完成同样的 Git/gh 准备 |
+| `gidd.cmd bootstrap --reinstall` | 显式重装所选受管运行时，再检查准备 Git/gh；追加 --node 选择 Node |
 
-不带 --yes 不联网、不安装、不写配置、不创建目录或启动器。即使 PATH 已有兼容工具，首次生成启动器仍须 --yes。已有启动器与本次选择一致时返回 ready；无候选、启动器缺失或不一致时返回 needs_bootstrap。检查只说明本次实际执行的范围，不代表完整 doctor、GitHub 登录或仓库启用。
+默认命令现在会下载和写入。旧 --yes 不再接受；旧只读调用改为 --check。--check 与 --reinstall 不可合用。公开 setup 已移除并提示 bootstrap。重新执行 bootstrap 可恢复失效绑定；有效工具继续复用，不检查是否有更新。Git/gh 损坏副本可在归属明确时重新准备，未知文件保留并报告。
 
-## 选择与兼容性
-
-bootstrap 的固定顺序是受管 Bun、受管 Node、PATH Bun、PATH Node；每个来源内找到兼容候选立即停止，不为了 Bun 偏好额外下载。--node 将候选限制为 Node。无候选且有 --yes 时默认下载稳定 Bun；--node 下载 Node LTS。--reinstall 显式跳过健康复用，为选定种类准备新的受管副本，不修改外部 PATH 安装。
-
-受管文件先验证 install.json 的文件集合、长度和 SHA-256，再执行 scripts/runtime-compat.mjs。经 PATH 再次发现同一受管路径也不能绕过完整性校验。兼容规则集中在该独立 JS 方法；PowerShell 只读取它的结果，不维护另一套最低版本。检查脚本无法执行、超时或结果不兼容时继续其他候选。兼容检查不依赖完整业务模块。
-
-配置不提供运行时优先项、最低版本、固定版本或 bin 路径。tools.bun/node 仅有 source；稳定 Bun 与 Node LTS 是内部下载策略，实际版本与来源仍记入 install.json。gh 的 version/source 配置独立保留。旧 [bootstrap]、tools.bun.version、tools.node.version 报 config_retired_field；升级时移除这些字段，保留其他配置与注释。完整配置规则见 [configuration.md](configuration.md)。
-
-## 普通启动
+## 两阶段
 
 ```text
-gidd.cmd bootstrap → PowerShell → 检查/准备 → 发布 js_exec.cmd
-gidd.cmd 其他命令 → js_exec.cmd → 选定运行时 → 当前技能的 scripts/gidd.mjs
+gidd.cmd bootstrap
+  → 原生 Shell：检查/准备兼容运行时，发布 js_exec.cmd
+  → 刚验证的运行时：执行 scripts/bootstrap-tools.mjs
+      → 检查/准备 Git 与 gh
+      → 发布 tool-bindings.json
+  → 汇总两阶段结果
+
+gidd.cmd identity/auth
+  → js_exec.cmd → 当前技能的 scripts/gidd.mjs
+  → 读取绑定，以绝对路径直接执行工具
 ```
 
-工具目录永久固定为当前用户的 ~/.agents/skills.tools/gidd/，不提供覆盖。js_exec.cmd 是该目录中的生成安装数据，不提交到源码，也不是技能。它只绑定一个运行时，不包含仓库或技能路径；由调用入口提供脚本路径。受管 executable 相对启动器定位，PATH 工具使用已解析的绝对路径。普通启动不解析 TOML、不调用 PowerShell、不搜索候选、不执行兼容检查、不下载或自动回退。
+原生 Shell 执行 JS 段时直接使用刚验证的运行时路径，避免 Unicode/百分号路径再经过一次批处理展开；普通命令仍通过共享 js_exec.cmd。阶段报告通过 UTF-8 stdin 交接，JS 接受管道开头的 BOM。--check 在启动器尚未发布时也可使用已验证候选完成 JS 检查；没有兼容候选时报告工具段 not_checked，不下载运行时。
 
-启动器不存在时入口输出 gidd.cli/v1、reason=bootstrap_required、退出 2，提示 bootstrap --yes。绑定的 executable 后来被外部移除或损坏时，执行可能直接失败；重新 bootstrap 恢复，不自动换运行时重跑业务。原始参数、工作目录、stdin/stdout/stderr 和退出码直接透传；Windows 使用批处理尾转发避免 CALL 的二次参数展开。启动器使用纯 ASCII 文本，普通命令不调用 chcp、不改变控制台代码页或清空显示缓冲区。受管路径通过 %~dp0 展开；包含非 ASCII 字符的外部运行时目录由 bootstrap --yes 创建 .runtime-path-<SHA256> 目录连接，启动器通过该固定连接执行，不搜索 PATH、不复制外部工具。只读 bootstrap 检查连接目标；同名未知文件或错误连接保留并报错。连接创建先于启动器原子发布，发布失败不改变旧启动器；旧连接保留，不自动回收。清理共享存储时只删除连接本身，不递归进入外部目录。
+两阶段分别持有并释放同一共享安装锁，不嵌套占用。JS 段失败不撤销已成功准备的运行时。Git 与 gh 各自提交绑定，一项失败仍检查/准备另一项；总体结果只有所有阶段成功才为 ready。bootstrap 不要求目标已执行 git init，不创建仓库、GitHub 配置、作者设置或登录状态。
 
-兼容性只在 bootstrap（及开发测试）验证。技能升级后应先重新 bootstrap；安装/修复/切换运行时也重新验证。生成时通过不等于以后每次执行前重新校验。js_exec.cmd 是用户级共享选择，--node 发布会影响使用此目录的全部仓库；双运行时测试使用 dev.cmd bun/node，不必切换共享启动器。
+## 版本与选择
 
-## 发布、修复与恢复
+版本要求由代码维护，config.toml 的工具表只提供下载 source；所有工具 version 字段和旧 [bootstrap] 表均为退役字段，须移除。当前最低要求为 Bun 1.4.2、Node 24.19.0、gh 2.98.0、Git 2.0.0。运行时规则集中于 scripts/runtime-compat.mjs，Git/gh 规则在 scripts/tools.mjs。
 
---yes 在共享 .cache/install.lock 锁内重新选择，防止并发 bootstrap 或 JS 安装相互覆盖。即使只复用 PATH，也可以建立共享目录及 INSTALLATION.md 来保存启动器。健康安装复用；启动器文本相同则不重写。新文本先写唯一临时文件并刷盘，再原子替换 js_exec.cmd。失败保留已有启动器。
+运行时顺序保持受管 Bun、受管 Node、PATH Bun、PATH Node。缺少合格候选时默认下载稳定 Bun；--node 只选择/准备 Node，缺少时下载最新 LTS。已有兼容 Node 不要求必须是 LTS。不会为了 Bun 偏好替换可用 Node。运行时只需要一种；开发双运行时仍由 dev.cmd .setup 管理。
 
-无合格候选时，默认目标存在且可确认属于 GIDD，则重新准备；发现其他合格候选时仍优先复用它。需要指定修复受管 Bun/Node 可用 --reinstall --yes。GIDD 归属要求 install.json 的结构可读且有效、实际目录无额外文件/子目录或链接；文件内容可以损坏或缺失。缺少/损坏安装记录、未知占用或额外用户文件一律保留并报错。
+Git/gh 优先受管副本，再复用仍有效的已绑定外部路径，再搜索 PATH。缺少合格副本时下载官方稳定 gh 或普通 Windows x64 MinGit。已有合格版本不因上游更新而升级。来源、实际版本和文件哈希记入安装记录；仓库不指定 gh 版本，也不提供 tools.git 字段。
 
-先在 .cache/<name>/payload 完成下载、官方 SHA-256、受控解压、版本与兼容检查，再把旧目录移动到 .cache/previous-<name>，发布新目录及启动器。失败时恢复旧目录；启动器发布成功后才清理备份。强制中断留下的备份由下次 bootstrap --yes 在锁内判断：已发布则重试清理，未发布则恢复后重新检查；只读 bootstrap 不执行恢复。未知备份或恢复目标损坏时保留并报告冲突。Windows 文件占用可能使替换失败，不能承诺正在使用的运行时都能热替换。
+## 普通执行与诊断
 
-启动器发布是提交点；之后的缓存清理失败以 cleanup_pending=true 报告，不回滚已发布安装。下次 bootstrap --yes 恢复前先检查新目录的完整性及现有启动器文本；若启动器已是绑定该受管运行时的预期文本（包括修复时复用原有绑定），只重试清理备份，离线也可复用新副本。清理再次失败则停止本次操作，保留新副本和备份，避免后续安装或切换覆盖提交证据。只读 bootstrap 不执行清理。旧备份清理前先更名为 .cache/retired-<name>-<UUID>，避免部分清理的目录被当作可恢复备份；被运行进程占用的残留可在退出后清理。
+固定共享目录为 ~/.agents/skills.tools/gidd/。js_exec.cmd 绑定运行时；tool-bindings.json 使用 gidd.tool-bindings/v1，记录 Git、gh 的绝对路径、来源、上次验证版本，以及受管安装记录的 SHA-256。绑定不含仓库、账号或凭据，由 bootstrap 原子发布。修改共享绑定会影响本用户的所有仓库。
 
-JS setup gh（或不带选择器的 setup）只准备 gh，不发布或切换 js_exec.cmd；已有 gh 目录损坏或固定版本冲突仍保留并报错。产品运行时准备、修复和兼容检查统一由 bootstrap 完成；源码仓库双运行时准备继续使用 dev.cmd .setup。完整安装和共享锁规则见 [setup.md](setup.md)。
+普通命令只解析绑定及其最低版本元数据，不搜索 PATH，不执行 --version，不遍历工具树或校验整套 payload。每个进程读取一次绑定，子调用复用绝对路径。Git 所在目录只放入子进程 PATH 最前，清除继承的 GIT_EXEC_PATH，保留用户模板等无关环境设置；系统与父进程 PATH 不变。不生成 gh_exec.cmd/git_exec.cmd 或 gh_exec.js/git_exec.js。
 
-## 输出与验收
+绑定缺失、格式错误、记录版本低于当前代码要求，或程序启动失败时提示重新 bootstrap。程序原路径被替换但仍可执行时，普通命令未必发现；绑定版本是上次验证记录。网络、认证和普通命令失败保持业务原因，不自动换工具或重跑业务。工具依赖损坏可能表现为普通执行失败，使用 bootstrap --check 或 doctor 进一步诊断。
 
-bootstrap stdout 为 gidd.bootstrap/v1：ready 退出 0，needs_bootstrap 退出 1，参数/配置/安装错误退出 2。结果包含 read_only、runtime、attempts 与 launcher；写入成功包含 launcher_action、runtime_action。stderr 用于进度与错误。普通命令保持各自 JS 协议。
+doctor 与 bootstrap --check 做完整工具校验；doctor 还检查目标工作树和 GitHub 配置。help/config 不要求 Git/gh 绑定。auth 只强制要求 gh 绑定，存在 Git 绑定时共用它；不会因为绑定缺失而自动安装或登录。
 
-测试覆盖固定来源顺序、Node 选择、只读不写、旧字段拒绝、真实 Node/Bun 兼容方法、启动器共享与参数转发、普通命令不调用 PowerShell/兼容方法、失败不回退重跑、损坏安装修复、下载/发布失败回滚、未知文件保留、安装锁及中断恢复。官方归档验证使用隔离家目录，不触碰真实工具或凭据。
+## 发布与恢复
+
+原生运行时发布保持既有协议：验证新副本后保留旧副本到 .cache/previous-bun 或 previous-node；共享启动器发布是提交点。发布前失败恢复旧副本，发布后只重试旧副本清理。未知文件、损坏归属记录或不明目录一律保留。--check 不做恢复。
+
+Git/gh 使用同一下载、校验、锁、暂存流程，详见 [安装事务](setup.md)。受管损坏目录只有在安装清单可读、文件归属明确、没有额外文件或链接时才允许修复。新副本完全验证后，旧目录移至 .cache/previous-git 或 previous-gh，再发布新目录及绑定。
+
+每次 Git/gh 安装记录新的 installation_id，确保同版本修复也能区分实例。绑定中的 record_sha256 是提交凭据：它匹配当前完整安装时，恢复只清理旧备份；否则恢复旧副本，再重试准备。已提交备份先改名为 .cache/retired-<tool>-<UUID> 后清理；占用导致的残留保留供后续清理。绑定发布前后中断均可重试，不自动覆盖未知恢复目标。损坏的生成绑定文件会先复制到 .cache/bindings-invalid-<UUID>.json 再重建。
+
+运行时外部 Unicode 路径仍用 .runtime-path-<SHA256> 目录连接服务 ASCII 启动器。普通启动不调用 chcp，不改变控制台代码页。清理时只删除连接本身，不递归进入外部工具。安装记录提供损坏检测，不构成对可同时修改工具和记录的本机用户的安全隔离。
+
+## 结果
+
+公开 stdout 为 gidd.bootstrap/v1 JSON，包含 runtime、launcher、tools 和 tool_checks；read_only 区分 --check。ready 退出 0，needs_bootstrap 退出 1，参数或原生启动失败退出 2。各阶段错误可从检查项定位；工具段失败仍保留运行时结果。内部 JS 段独立结果为 gidd.bootstrap-tools/v1，不是第二个公开命令。stderr 显示下载与准备进度。
+
+验证覆盖只读无写入、默认准备、Node 选择、固定绑定、业务失败不回退、完整性校验、跨 Shell/JS 锁、中断恢复、相同版本修复、未知文件保留、Unicode 路径，以及 Node/Bun 双运行时和真实官方下载。没有实际断电测试，不承诺任意文件系统下零丢失。

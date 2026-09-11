@@ -79,14 +79,14 @@ function Read-GiddToolConfiguration {
             while ($remaining) {
                 if ($remaining -cnotmatch ('^(version|source)[ \t]*=[ \t]*(' + $stringPattern + ')[ \t]*(.*)$')) { throw "config_invalid_tool_table:$name" }
                 $key = $Matches[1]; $literal = $Matches[2]; $tail = $Matches[3]
-                if ($name -ne 'gh' -and $key -eq 'version') { throw "config_retired_field:tools.$name.version" }
+                if ($key -eq 'version') { throw "config_retired_field:tools.$name.version" }
                 if (-not $seen.Add($key)) { throw "config_duplicate_tool_field:${name}:$key" }
                 $tools[$name][$key] = ConvertFrom-GiddConfigString $literal
                 if (-not $tail) { break }
                 if (-not $tail.StartsWith(',') -or -not $tail.Substring(1).Trim()) { throw "config_invalid_tool_table:$name" }
                 $remaining = $tail.Substring(1).Trim()
             }
-            if (($name -eq 'gh' -and -not $seen.Contains('version')) -or -not $seen.Contains('source')) { throw "config_missing_tool_field:$name" }
+            if (-not $seen.Contains('source')) { throw "config_missing_tool_field:$name" }
             Assert-GiddToolSettings $name $tools[$name]
             continue
         }

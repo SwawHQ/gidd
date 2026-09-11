@@ -114,43 +114,17 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
   } finally { f.dispose(); }
 });
 
-test('dev.cmd .setup selects one tool, reuses gh and rejects local package inputs', () => {
-  const f = fixture();
+test('development setup keeps runtime selectors and retires the gh shortcut',()=>{
+  const f=fixture();
   try {
-    const checkout = join(f.root, 'repo with spaces');
-    for (const path of ['dev.cmd','dev','.agents/skills/gidd/gidd.cmd','.agents/skills/gidd/scripts','.agents/skills/gidd/references','.agents/skills/gidd/config.example.toml']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
-    const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
-    const invoke = (args = '', path = '', tool = 'gh') => run(cmd, ['/d','/s','/c', `""${join(checkout,'dev.cmd')}" .setup ${tool} ${args}"`], { windowsVerbatimArguments:true, env:{PATH:[dirname(process.execPath),path].join(';')} });
-    assert.notEqual(invoke('relative-path').status, 0);
-    assert.notEqual(invoke('', '', 'unknown').status, 0);
-    assert.notEqual(invoke('one two').status, 0);
-    assert.notEqual(invoke(`"${f.root}"`).status, 0);
-    ok(adapter(f.root,{action:'bootstrap',repositoryRoot:checkout,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
-    const exe = compile(f.root), bin = join(f.root,'bin');
-    stub(exe, join(bin,'gh.exe'));
-    assert.equal(json(ok(invoke('',bin))).tools[0].name,'gh');
-    assert.equal(existsSync(join(toolsRoot(f.root),'gh')), false, 'PATH gh reuse must not install a managed copy');
-    for (const name of ['bun','node']) {
-      const selectedBin = join(f.root,name);
-      stub(exe,join(selectedBin,`${name}.exe`));
-      const selected = ok(invoke('',selectedBin,name));
-      assert.match(selected.stdout,new RegExp(`^${name} `));
-      assert.equal(existsSync(join(toolsRoot(f.root),name)),false,'A selected PATH runtime must not install managed tools');
-    }
-    const config = join(checkout,'.agents/skills/gidd/config.toml');
-    const configText = 'schema_version = 1\n[tools]\ngh = { version = "2.98.0", source = "https://github.com/cli/cli/releases" }\n';
-    write(config,configText);
-    const tools = toolsRoot(f.root);
-    stub(exe,join(tools,'gh/gh.exe'),undefined,true);
-    assert.equal(json(ok(invoke())).tools[0].name,'gh');
-    assert.equal(existsSync(join(tools,'gh/gh.exe')), true);
-    for (const name of ['bun','node','.cache/gh']) assert.equal(existsSync(join(tools,name)), false);
-    assert.equal(readFileSync(config,'utf8'),configText);
-    ok(invoke());
-    write(config,configText.replace('2.98.0','2.99.0'));
-    assert.match(json(invoke()).reason,/occupied_or_version_conflicting_target:gh/);
-    assert.equal(JSON.parse(readFileSync(join(tools,'gh/install.json'),'utf8')).version,'2.98.0');
-  } finally { f.dispose(); }
+    const checkout=join(f.root,'checkout');
+    for(const path of ['dev.cmd','dev','.agents/skills/gidd'])cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
+    const invoke=tool=>run(cmd,['/d','/s','/c',`""${join(checkout,'dev.cmd')}" .setup ${tool}"`],{windowsVerbatimArguments:true,env:{PATH:''}});
+    const rejected=invoke('gh');assert.notEqual(rejected.status,0);assert.match(rejected.stderr,/bootstrap/);
+    assert.equal(existsSync(toolsRoot(f.root)),false);
+    for(const tool of ['unknown','bun extra','node extra'])assert.notEqual(invoke(tool).status,0);
+  } finally {f.dispose();}
 });
 
 test('dev.cmd bun/node forwards argv, stdin, cwd and exit code using the selected runtime', { timeout: 60000 }, () => {

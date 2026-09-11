@@ -8,7 +8,7 @@
 
 仓库内 `.agents/skills/gidd/` 的入口从自身位置自动定位目标（含 worktree），不依赖工作目录。主机、预期账号和 remote 只读取仓库配置的 `github.hostname`、`github.account`、`github.remote`，三者均须存在；缺项时报错并提示 `config set`，运行时不补默认值。账号比较忽略大小写。旧的三个覆盖参数已移除，设置方式见 [configuration.md](configuration.md)。
 
-入口经 [bootstrap](bootstrap.md) 已发布的共享启动器直接执行 JS，不调用 PowerShell。scripts/gidd.mjs 用共用 JS 选择 gh、Git（受管目录优先，其次 PATH），再以绝对路径调用 scripts/github.mjs；所有子调用复用选择结果。所选 Git 目录只追加到子进程 PATH 最前，使 gh 使用同一 Git；安装与校验规则见 [setup.md](setup.md)。缺失 gh 不自动安装；启动器缺失时提示 bootstrap --yes，身份检查尚未执行。
+入口经 [bootstrap](bootstrap.md) 已发布的共享启动器直接执行 JS，不调用 PowerShell。scripts/gidd.mjs 读取共享 tool-bindings.json，以绑定绝对路径调用 scripts/github.mjs；不搜索 PATH、执行版本探测或遍历工具目录，所有子调用复用绑定。绑定缺失或无法启动时提示 bootstrap，不自动回退重跑。所选 Git 目录只追加到子进程 PATH 最前，使 gh 使用同一 Git；安装与校验规则见 [setup.md](setup.md)。缺失 gh 不自动安装；启动器缺失时提示 bootstrap，身份检查尚未执行。
 
 入口只使用实际 `.exe`，不依赖开发者私有包装命令。
 

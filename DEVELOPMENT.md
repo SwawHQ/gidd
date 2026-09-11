@@ -4,9 +4,9 @@
 
 `dev.cmd` 管理 GIDD 源码仓库自身的开发环境。已验证目标为 Windows x64 和 Windows PowerShell 5.1；它不代表在这个仓库启用了 GIDD。
 
-技能发布入口为 `.agents/skills/gidd/gidd.cmd`，先运行 `.\.agents\skills\gidd\gidd.cmd bootstrap` 检查，授权准备后追加 --yes，再运行 help zh。产品用法见 [技能说明](.agents/skills/gidd/SKILL.md)；统一入口的开发验收使用 `.\dev.cmd .test entry`。仅显式 bootstrap 使用系统 Shell。普通命令经共享 js_exec.cmd 直接启动共用 JavaScript；不探测运行时或检查兼容性。
+技能发布入口为 `.agents/skills/gidd/gidd.cmd`，先运行 `.\.agents\skills\gidd\gidd.cmd bootstrap` 准备一个运行时、Git、gh 和共享绑定；仅检查用 `bootstrap --check`，再运行 help zh。产品用法见 [技能说明](.agents/skills/gidd/SKILL.md)；统一入口的开发验收使用 `.\dev.cmd .test entry`。仅显式 bootstrap 使用系统 Shell。普通命令经共享 js_exec.cmd 直接启动共用 JavaScript；不探测运行时或检查兼容性。
 
-`help`、`--help`、`-h` 等价。产品 `setup git` 准备 Git，`setup gh`（以及不带选择器的 `setup`）只准备 gh；产品运行时准备统一使用 `bootstrap`，开发双运行时继续使用 `dev.cmd .setup bun/node`。本项目的唯一技能源码位于 `.agents/skills/gidd/`，与仓库安装布局一致；入口从自身位置定位目标，支持 Git worktree，不依赖调用目录。可直接运行 `.\.agents\skills\gidd\gidd.cmd doctor` 或 `config show`。doctor 无法自动定位目标时仍报告工具和 target_required；显式目标是普通目录时报告 not_git_repository，缺少 Git 时仍诊断目标配置。内部参数 `--repository <目标绝对路径>` 仅供开发和测试指定其他目标，普通调用无需追加，也不展示在 help 中。配置使用 `config show/set` 管理。完整技能安装和更新由 [Issue #14](https://github.com/SwawHQ/gidd/issues/14) 跟踪，工具下载来源与 gh 版本由配置管理，工具目录固定共享；配置增加可选的 github 表，执行身份检查或授权时相关字段必须齐备。doctor 的 local_ready 也要求 hostname/account/remote 完整且所选 remote 的本地主机匹配；这不证明仓库已初始化或登录成功。
+`help`、`--help`、`-h` 等价。产品工具准备统一使用 `bootstrap`，旧 `setup` 已移除，开发双运行时继续使用 `dev.cmd .setup bun/node`。本项目的唯一技能源码位于 `.agents/skills/gidd/`，与仓库安装布局一致；入口从自身位置定位目标，支持 Git worktree，不依赖调用目录。可直接运行 `.\.agents\skills\gidd\gidd.cmd doctor` 或 `config show`。doctor 无法自动定位目标时仍报告工具和 target_required；显式目标是普通目录时报告 not_git_repository，缺少 Git 时仍诊断目标配置。内部参数 `--repository <目标绝对路径>` 仅供开发和测试指定其他目标，普通调用无需追加，也不展示在 help 中。配置使用 `config show/set` 管理。完整技能安装和更新由 [Issue #14](https://github.com/SwawHQ/gidd/issues/14) 跟踪，Bun/Node/gh 下载来源由配置管理，工具版本策略内部维护，工具目录固定共享；配置增加可选的 github 表，执行身份检查或授权时相关字段必须齐备。doctor 的 local_ready 要求 Git/gh 绑定有效，并要求 hostname/account/remote 完整且所选 remote 的本地主机匹配；这不证明仓库已初始化或登录成功。
 
 ```powershell
 .\dev.cmd .help zh
@@ -40,15 +40,15 @@
 
 脚本相对路径以调用者当前目录解析，stdin/stdout/stderr 透传，返回脚本退出码。运行时命令由 Shell 先定位可执行文件，随后批处理入口将参数直接交给 Node/Bun，避免 PowerShell 解释 runtime 的 `-`、`-e`、`--help` 或脚本参数；参数仍须遵守调用 Shell 的转义规则。例如 PowerShell 调用 `.cmd` 时要明确传递空参数，可用 `.\dev.cmd --% node script.mjs ""`。支持用 `dev.cmd node -` 从标准输入执行脚本；复杂内联代码也可保存为脚本文件。终端中可省略扩展名写 `dev bun ...`；PowerShell 在当前目录下仍需 `.\dev bun ...`。
 
-`.setup bun`、`.setup node`、`.setup gh` 分别只准备指定工具；不指定工具的 `.setup` 保留同时准备 Bun 和 Node 的行为。分别优先复用共享目录中校验有效的工具，再检查 PATH（Bun 1.4.2、Node 24.19.0、gh 2.98.0）。运行时兼容规则在 scripts/runtime-compat.mjs 集中维护；缺失运行时由 PowerShell 按内部稳定/LTS 策略准备；.setup gh 需要已发布共享启动器，由 JS 安装 gh。`.info` 分别报告两个运行时、配置要求和下载来源，仅当二者均可用时退出 0。
+`.setup bun`、`.setup node` 只准备指定开发运行时；无选择器的 `.setup` 同时准备两者，不发布产品启动器。优先复用校验有效的受管工具，再检查 PATH。运行时兼容规则在 scripts/runtime-compat.mjs 集中维护；缺失时由 PowerShell 按稳定 Bun / Node LTS 策略准备。`.info` 报告两个运行时、配置和来源。Git/gh 统一由产品 bootstrap 的 JS 阶段准备，旧 `.setup gh` 已移除。
 
 默认 Node 使用最新 LTS、Bun 使用最新稳定版，只在需要下载时解析；已有可用版本继续复用，诊断与测试不检查更新。`.agents/skills/gidd/scripts/runtimes.json` 和 `dev/runtimes.json` 保留 Bun/gh 与开发 Node 的已验证版本校验信息。版本解析、官方校验信息、下载、SHA-256 校验、独占锁、版本验证及中断恢复共用技能脚本，不通过 Bun 安装 Node，也不通过 Node 安装 Bun。dev .setup 不覆盖已有损坏目录；运行时修复与显式重装使用产品 bootstrap，见 bootstrap 协议。
 
-Windows 上的 Bun 1.2.15 存在已复现的子进程兼容问题：启动不存在的程序后，后续 `spawnSync` 可能报告 `Out of memory`；脱离 GIDD 的最小示例也会触发。相同示例在 Bun 1.4.2 和 Node 上未复现，开发验收建议使用已验证的 Bun 1.4.2。普通 bootstrap 复用健康运行时；需要重新准备受管副本时用 bootstrap --reinstall --yes，确认安装后运行完整 .test。
+Windows 上的 Bun 1.2.15 存在已复现的子进程兼容问题：启动不存在的程序后，后续 `spawnSync` 可能报告 `Out of memory`；脱离 GIDD 的最小示例也会触发。相同示例在 Bun 1.4.2 和 Node 上未复现，开发验收建议使用已验证的 Bun 1.4.2。普通 bootstrap 复用健康运行时；需要重新准备受管副本时用 bootstrap --reinstall，确认安装后运行完整 .test。
 
-便携 Node 只提取 `node.exe` 和完整的上游 `LICENSE`，不附带 npm；当前测试没有 npm 依赖。开发入口可用 `.setup gh` 准备 gh；已安装 skill 的工具初始化仍只需 Bun/Node 任一种可用，不会因开发清单额外下载 Node。
+便携 Node 只提取 `node.exe` 和完整的上游 `LICENSE`，不附带 npm；当前测试没有 npm 依赖。产品 bootstrap 同时准备 Git 和 gh；已安装 skill 的工具初始化仍只需 Bun/Node 任一种可用，不会因开发清单额外下载 Node。
 
-安装只需 `.setup bun`、`.setup node` 或 `.setup gh`，不接受本地安装包目录。缺少工具时按配置联网下载并校验；已可用且满足配置的工具直接复用，不联网。实际安装位置固定为 `~/.agents/skills.tools/gidd/`。
+开发运行时安装使用 `.setup bun` 或 `.setup node`，不接受本地安装包目录。缺少工具时按配置联网下载并校验；已可用且满足配置的工具直接复用，不联网。实际安装位置固定为 `~/.agents/skills.tools/gidd/`。
 
 ## 配置与本地目录
 
@@ -61,7 +61,7 @@ schema_version = 1
 [tools]
 node = { source = "https://nodejs.org/dist" }
 bun = { source = "https://github.com/oven-sh/bun/releases" }
-gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
+gh = { source = "https://github.com/cli/cli/releases" }
 ```
 
 技能和开发入口共用 `~/.agents/skills.tools/gidd/`。Windows 按 USERPROFILE 定位用户家目录；不依赖仓库位置或当前目录。`.info` 的 storage 报告 config_path、tools_root 和各工具设置。配置不提供安装目录字段；没有配置时仍使用该共享目录及默认版本/来源，有错误配置时报错。
@@ -71,35 +71,35 @@ gh = { version = "latest", source = "https://github.com/cli/cli/releases" }
 ~/.agents/skills.tools/gidd/            # 固定共享工具根
 ├── INSTALLATION.md
 ├── js_exec.cmd             # 产品 bootstrap 生成，所有仓库共用
+├── tool-bindings.json      # bootstrap 绑定 Git/gh 的绝对路径
 ├── .cache/
 │   └── install.lock
 ├── bun/
 ├── node/
-├── git/                # setup git 准备 MinGit，保留目录树
+├── git/                # bootstrap 准备 MinGit，保留目录树
 └── gh/
 ```
 
-dev .setup 复用外部工具不创建共享目录；产品 bootstrap --yes 仍需创建共享启动器；按需下载后保留各工具许可证及 install.json。下载和解压暂存在 `.cache/<工具>/`，安装成功后清理对应暂存，保留缓存根和锁文件。安装时展示版本和完整 URL，使用官方 SHA-256 校验。
+dev .setup 复用外部工具不创建共享目录；产品 bootstrap 需创建共享启动器和 Git/gh 绑定；按需下载后保留各工具许可证及 install.json。下载和解压暂存在 `.cache/<工具>/`，安装成功后清理对应暂存，保留缓存根和锁文件。安装时展示版本和完整 URL，使用官方 SHA-256 校验。
 
 源码布局见 [Issue #16](https://github.com/SwawHQ/gidd/issues/16)。仓库 config.toml 单独维护，发布或复制技能时排除它及 config.toml.* 锁/临时文件，保留目标已有配置；新配置使用 config.example.toml。共享工具位于仓库外，不随技能复制或提交。完整安装和更新尚未实现。
 
-测试在每个 fixture 中设置临时 USERPROFILE，关闭 Bun 自身的编译缓存，结束后恢复环境；子进程按相同固定规则使用临时家目录下的工具根，不访问真实共享安装。测试 worker 内用例须串行。版本冲突测试验证既有安装保留，跨仓库测试验证同一用户共用目录。
+测试在每个 fixture 中设置临时 USERPROFILE，关闭 Bun 自身的编译缓存，结束后恢复环境；子进程按相同固定规则使用临时家目录下的工具根，不访问真实共享安装。测试 worker 内用例须串行。修复测试验证旧安装在发布失败或中断时恢复，跨仓库测试验证同一用户共用目录。
 
-共享工具可能被其他仓库使用；卸载当前仓库不得自动删除它。完整清理须明确包含共享目录并确认安装及使用进程已退出；外部 PATH 工具不属于 GIDD。后台自动升级及 gh 升级/回滚尚未实现。
+共享工具可能被其他仓库使用；卸载当前仓库不得自动删除它。完整清理须明确包含共享目录并确认安装及使用进程已退出；外部 PATH 工具不属于 GIDD。后台自动升级与任意版本切换尚未实现。
 
 `dev.cmd` 仅在子进程范围隔离 PowerShell 模块路径，防止从 PowerShell 7 启动 PowerShell 5.1 时继承不兼容模块；不修改系统 PATH、Git 配置或用户级技能目录。显式 `.auth` 可以通过 gh 保存登录凭据。
 
 ## 显式 GitHub 授权
 
 ```powershell
-.\.agents\skills\gidd\gidd.cmd bootstrap --yes
-.\dev.cmd .setup gh
+.\.agents\skills\gidd\gidd.cmd bootstrap
 .\dev.cmd .auth
 ```
 
-先通过 `.\.agents\skills\gidd\gidd.cmd config set github.hostname <主机>` 和 `config set github.account <账号>` 写入仓库配置。`.auth` 不再接收账号参数，转发至技能的共享 JS 启动器，仅使用配置中的主机和账号。需要 gh 2.98.0+ 和 Bun/Node 任一种；`.auth` 不下载工具，缺少 gh 时运行 `.setup gh`，缺少启动器或运行时时运行技能 bootstrap --yes（选择 Node 追加 --node）。
+先通过 `.\.agents\skills\gidd\gidd.cmd config set github.hostname <主机>` 和 `config set github.account <账号>` 写入仓库配置。`.auth` 不再接收账号参数，转发至技能的共享 JS 启动器，仅使用配置中的主机和账号。需要 gh 2.98.0+ 和 Bun/Node 任一种；`.auth` 不下载工具，缺少工具、启动器或绑定时运行技能 bootstrap（选择 Node 追加 --node）。
 
-`.setup gh` 通过已发布共享启动器启动 JS，优先复用共享目录、其次 PATH 中的 gh。缺失时按配置下载、校验并安装到固定共享工具根的 `gh/`。它遵守 `tools.gh` 的版本与来源，并要求至少 2.98.0；已有目录损坏或版本冲突时保留并报错，不自动升级覆盖。该命令输出技能安装 JSON，不发起登录，不修改系统 PATH。`.auth` 不自动准备运行时；缺少启动器时提示 bootstrap。
+bootstrap 先完成原生 Shell 运行时阶段，再由 JS 准备 Git/gh 并发布 tool-bindings.json。普通命令直接使用绑定路径，不逐次搜索 PATH、执行 --version 或扫描目录；调用 gh 时只调整子进程 PATH，使其使用已绑定 Git。启动失败提示重新 bootstrap，不回退重跑。bootstrap 不登录，不修改仓库或系统 PATH；详见 bootstrap 协议。
 
 入口先核验并复用匹配身份；否则在需要授权时显示本次 URL 和代码，等待用户在网页授权，最后验证实际账号。等待时保留进程，成功、失败、取消或超时后退出，不启动常驻服务。凭据由 gh 管理，可继承调用环境选定的 GH_CONFIG_DIR；不更改 Git 凭据助手或启用仓库。当前账号不匹配时明确报错，不自动切换。详见 [设备授权协议与凭据边界](.agents/skills/gidd/references/authorization.md)。
 
@@ -125,6 +125,6 @@ dev .setup 复用外部工具不创建共享目录；产品 bootstrap --yes 仍�
 .\dev.cmd .test-live
 ```
 
-该命令分别在 Bun、Node 下验证 bootstrap 官方 Bun/Node 下载与启动器复用，以及 JS setup gh/git 下载、完整性、版本和 doctor 识别；MinGit 还验证本地提交、克隆、抓取，以及 gh 在仅含受管 Git 的 PATH 下读取本地默认仓库。它解析最新稳定 Bun/gh/MinGit 和 Node LTS，联网下载到隔离临时目录；不接受本地安装包目录。测试后清理隔离目录，不接触真实用户安装与登录。普通 `.test` 通过测试专用的模拟下载响应验证文件读取、哈希、解压和恢复，不联网；本地 fixture 输入只存在于 `tests/support/`。直接执行测试默认跳过联网测试；Bun 1.2.15 不应直接用 `bun test` 批量运行这些文件，请使用开发入口以确保每个文件都实际执行。
+该命令分别在 Bun、Node 下验证 bootstrap 官方 Bun/Node 下载与启动器复用，以及 JS Git/gh 准备、路径绑定、完整性、版本和 doctor 识别；MinGit 还验证本地提交、克隆、抓取，以及 gh 在仅含受管 Git 的 PATH 下读取本地默认仓库。它解析最新稳定 Bun/gh/MinGit 和 Node LTS，联网下载到隔离临时目录；不接受本地安装包目录。测试后清理隔离目录，不接触真实用户安装与登录。普通 `.test` 通过测试专用的模拟下载响应验证文件读取、哈希、解压和恢复，不联网；本地 fixture 输入只存在于 `tests/support/`。直接执行测试默认跳过联网测试；Bun 1.2.15 不应直接用 `bun test` 批量运行这些文件，请使用开发入口以确保每个文件都实际执行。
 
 后续平台增加薄启动入口与平台适配，复用 JavaScript 用例；未提供 `dev.sh` / `dev.mac.sh`，不将 Windows 特有测试的跳过当作其他平台验证通过。产品 JavaScript 仍须仅使用两种运行时共有的标准 API，并在两者中验证同一功能。

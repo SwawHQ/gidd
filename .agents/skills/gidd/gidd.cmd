@@ -6,7 +6,7 @@ rem Tail-transfer to the generated launcher; CALL would expand user arguments tw
 "%USERPROFILE%\.agents\skills.tools\gidd\js_exec.cmd" "%~dp0scripts\gidd.mjs" %*
 
 :missing
->&2 echo GIDD runtime launcher missing. Run gidd.cmd bootstrap --yes.
+>&2 echo GIDD runtime launcher missing. Run gidd.cmd bootstrap.
 echo {"schema":"gidd.cli/v1","status":"error","reason":"bootstrap_required"}
 exit /b 2
 

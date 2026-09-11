@@ -91,14 +91,14 @@ export function parseConfiguration(text) {
       while (tail) {
         const field = new RegExp(`^(version|source)[ \\t]*=[ \\t]*(${stringPattern})[ \\t]*(.*)$`).exec(tail);
         if (!field) throw new Error(`config_invalid_tool_table:${name}`);
-        if (name !== 'gh' && field[1] === 'version') throw new Error(`config_retired_field:tools.${name}.version`);
+        if (field[1] === 'version') throw new Error(`config_retired_field:tools.${name}.version`);
         if (Object.hasOwn(settings, field[1])) throw new Error(`config_duplicate_tool_field:${name}:${field[1]}`);
         settings[field[1]] = decodeString(field[2]);
         if (!field[3]) break;
         if (!field[3].startsWith(',') || !field[3].slice(1).trim()) throw new Error(`config_invalid_tool_table:${name}`);
         tail = field[3].slice(1).trim();
       }
-      if ((name === 'gh' && !Object.hasOwn(settings, 'version')) || !Object.hasOwn(settings, 'source')) throw new Error(`config_missing_tool_field:${name}`);
+      if (!Object.hasOwn(settings, 'source')) throw new Error(`config_missing_tool_field:${name}`);
       result.tools[name] = validateToolSettings(name, { ...defaults[name], ...settings }); continue;
     }
     throw new Error(`config_unsupported_syntax_or_field:${index + 1}`);
@@ -148,12 +148,12 @@ export function inspectToolTree(root) {
   }
 }
 
-export function resolveStorage(repository) {
+export function resolveStorage(repository, { inspect = true } = {}) {
   const path = repository ? configurationPath(repository) : null;
   if (path) plainPath(path);
   const configured = !!path && existsSync(path);
   const settings = configured ? parseConfiguration(readConfigurationText(path)) : { tools: structuredClone(defaults), github: {} };
-  const root = toolsRoot(); inspectToolTree(root);
+  const root = toolsRoot(); if (inspect) inspectToolTree(root);
   return { tools_root: root, config_path: path, configured, ...settings };
 }
 
@@ -181,7 +181,7 @@ export function payloadFiles(root, nested = false) {
   visit(root); return files.sort();
 }
 
-export function managedToolValid(root, name) {
+export function managedToolValid(root, name, { allowDamaged = false } = {}) {
   try {
     plainPath(root);
     const recordPath = join(root, 'install.json'); plainPath(recordPath);
@@ -194,11 +194,28 @@ export function managedToolValid(root, name) {
     for (const file of record.files) {
       if (!(name === 'git' ? safePayloadName(file.name) : /^[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$/i.test(file.name)) || names.has(file.name.toLowerCase()) || file.name.toLowerCase() === 'install.json') return false;
       names.add(file.name.toLowerCase());
+      if (!Number.isSafeInteger(file.length) || file.length < 0 || !/^[a-f0-9]{64}$/.test(file.sha256)) return false;
       const path = join(root, file.name); plainPath(path);
+      if (allowDamaged && !existsSync(path)) continue;
       const actual = lstatSync(path);
-      if (!actual.isFile() || actual.size !== file.length || !/^[a-f0-9]{64}$/.test(file.sha256) || hashFile(path) !== file.sha256) return false;
+      if (!actual.isFile() || (!allowDamaged && (actual.size !== file.length || hashFile(path) !== file.sha256))) return false;
     }
     if (!names.has(managedExecutable(name).toLowerCase())) return false;
+    if (allowDamaged) {
+      const allowed = new Set(names);
+      for (const file of names) {
+        const parts=file.split('/'); parts.pop();
+        while(parts.length) { allowed.add(parts.join('/')); parts.pop(); }
+      }
+      function owned(directory,prefix='') {
+        return readdirSync(directory,{withFileTypes:true}).every(item=>{
+          if (!prefix && item.name === 'install.json') return item.isFile();
+          const path=prefix+item.name;
+          return allowed.has(path.toLowerCase()) && (item.isFile() || (item.isDirectory() && owned(join(directory,item.name),path+'/')));
+        });
+      }
+      return owned(root);
+    }
     const actual = payloadFiles(root, name === 'git');
     return actual.length === names.size && actual.every(file => names.has(file.toLowerCase()));
   } catch { return false; }
