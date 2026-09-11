@@ -13,6 +13,8 @@ export const stringPattern = String.raw`(?:"(?:[^"\\]|\\["\\])*"|'[^']*')`;
 export const decodeString = text => text[0] === "'" ? text.slice(1, -1) : JSON.parse(text);
 export const platformName = () => process.platform === 'win32' && process.arch === 'x64' ? 'windows-x64' : `${process.platform}-${process.arch}`;
 export const executableName = name => process.platform === 'win32' ? `${name}.exe` : name;
+// MinGit must retain its layout so git.exe can locate helpers and libraries.
+export const managedExecutable = name => name === 'git' ? 'cmd/git.exe' : executableName(name);
 export const hashFile = path => createHash('sha256').update(readFileSync(path)).digest('hex');
 
 export function compareVersions(a, b) {
@@ -155,24 +157,49 @@ export function resolveStorage(repository) {
   return { tools_root: root, config_path: path, configured, ...settings };
 }
 
+export function safePayloadName(name) {
+  return typeof name === 'string' && name.length <= 240 && name.split('/').every(part =>
+    /^[a-z0-9_.+@-]+$/i.test(part) && !['.', '..'].includes(part) && !/[. ]$/.test(part) &&
+    !/^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(part) &&
+    !['install.json', 'skill.md', 'config.toml', '.git'].includes(part.toLowerCase()));
+}
+
+export function payloadFiles(root, nested = false) {
+  const files = [];
+  function visit(directory, prefix = '') {
+    for (const item of readdirSync(directory, { withFileTypes: true })) {
+      if (!prefix && item.name === 'install.json') continue;
+      const name = prefix + item.name, path = join(directory, item.name);
+      if (item.isFile()) files.push(name);
+      else if (nested && item.isDirectory()) {
+        const before = files.length; visit(path, name + '/');
+        if (files.length === before) throw new Error('empty_payload_directory');
+      } else throw new Error('invalid_payload_entry');
+      if (files.length > 10000) throw new Error('too_many_payload_files');
+    }
+  }
+  visit(root); return files.sort();
+}
+
 export function managedToolValid(root, name) {
   try {
     plainPath(root);
     const recordPath = join(root, 'install.json'); plainPath(recordPath);
     const stat = lstatSync(recordPath);
-    if (!stat.isFile() || stat.size > 65536) return false;
+    if (!stat.isFile() || stat.size > (name === 'git' ? 4 * 1024 * 1024 : 65536)) return false;
     const record = JSON.parse(readFileSync(recordPath, 'utf8').replace(/^\uFEFF/, ''));
-    if (record.schema !== 'gidd.install/v1' || record.name !== name || record.platform !== platformName() || !versionPattern.test(record.version) || !/^[a-f0-9]{64}$/.test(record.archive_sha256) || !Array.isArray(record.files)) return false;
+    if (record.schema !== (name === 'git' ? 'gidd.install/v2' : 'gidd.install/v1') || record.name !== name || record.platform !== platformName() || !versionPattern.test(record.version) || !/^[a-f0-9]{64}$/.test(record.archive_sha256) || !Array.isArray(record.files)) return false;
+    if (record.files.length > 10000) return false;
     const names = new Set();
     for (const file of record.files) {
-      if (!/^[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$/i.test(file.name) || names.has(file.name.toLowerCase()) || file.name.toLowerCase() === 'install.json') return false;
+      if (!(name === 'git' ? safePayloadName(file.name) : /^[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$/i.test(file.name)) || names.has(file.name.toLowerCase()) || file.name.toLowerCase() === 'install.json') return false;
       names.add(file.name.toLowerCase());
       const path = join(root, file.name); plainPath(path);
       const actual = lstatSync(path);
       if (!actual.isFile() || actual.size !== file.length || !/^[a-f0-9]{64}$/.test(file.sha256) || hashFile(path) !== file.sha256) return false;
     }
-    if (!names.has(executableName(name).toLowerCase())) return false;
-    const actual = readdirSync(root, { withFileTypes: true });
-    return actual.length === names.size + 1 && actual.every(item => item.isFile() && (item.name === 'install.json' || names.has(item.name.toLowerCase())));
+    if (!names.has(managedExecutable(name).toLowerCase())) return false;
+    const actual = payloadFiles(root, name === 'git');
+    return actual.length === names.size && actual.every(file => names.has(file.toLowerCase()));
   } catch { return false; }
 }

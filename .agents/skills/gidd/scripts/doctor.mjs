@@ -3,7 +3,7 @@ import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configurationPath, parseConfiguration, readConfigurationText, repositoryRoot, resolveStorage } from './storage.mjs';
 import { validateGitHubField } from './config.mjs';
-import { check, findTool } from './tools.mjs';
+import { check, findTool, toolEnvironment } from './tools.mjs';
 import { runCommand } from './github.mjs';
 
 const safeReason = (error, fallback) => /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : fallback;
@@ -102,13 +102,14 @@ export async function doctor(target) {
   const { github: omitted, ...storageDetails } = storage || {};
   checks.push(storage ? check('tools.storage', 'ready', 'resolved', storageDetails) : check('tools.storage', 'invalid', storageError, { managed_tools_checked: false }));
   for (const name of ['git', 'node', 'bun', 'gh']) checks.push(await findTool(name, {
-    root: name === 'git' ? '' : storage?.tools_root, requested: storage?.tools[name]?.version || '',
+    root: storage?.tools_root, requested: storage?.tools[name]?.version || '',
   }));
   checks.push(check('runtime', 'ready', 'current_process', { selected: process.versions.bun ? 'tool.bun' : 'tool.node',
     path: process.execPath, version: process.versions.bun || process.versions.node, compatibility_checked: false }));
   const git = checks.find(item => item.id === 'tool.git');
   let root;
-  const invoke = args => runCommand(git.details.path, ['-C', target, ...args], { timeoutMs: 5000 });
+  const env = toolEnvironment(git.details.path);
+  const invoke = args => runCommand(git.details.path, ['-C', target, ...args], { timeoutMs: 5000, env });
   if (!target) checks.push(check('repository', 'not_checked', 'target_required'));
   else if (targetError) checks.push(check('repository', 'invalid', targetError));
   else if (!targetExists) checks.push(check('repository', 'invalid', 'directory_missing', { path: target }));

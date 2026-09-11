@@ -18,6 +18,7 @@ An entry at <repository>/.agents/skills/gidd/ locates its repository using its o
 & "<repository>\.agents\skills\gidd\gidd.cmd" bootstrap
 & "<repository>\.agents\skills\gidd\gidd.cmd" bootstrap --yes
 & "<repository>\.agents\skills\gidd\gidd.cmd" doctor
+& "<repository>\.agents\skills\gidd\gidd.cmd" setup git
 & "<repository>\.agents\skills\gidd\gidd.cmd" setup gh
 & "<repository>\.agents\skills\gidd\gidd.cmd" identity
 & "<repository>\.agents\skills\gidd\gidd.cmd" auth
@@ -33,7 +34,7 @@ When asked to check GitHub login, use identity and [references/identity.md](refe
 
 For an explicit login request, use auth and [references/authorization.md](references/authorization.md). It requires github.hostname/account. Reuse a matching login; report a different existing account without switching. Display the attempt's URL and one-time device code, keep the waiting process and let the user authorize on any device. Verify actual API identity before reporting success. Do not open a browser automatically. gh manages credentials; configuration edits do not authorize account changes.
 
-When GitHub CLI preparation is authorized, use setup gh and [references/setup.md](references/setup.md). This JS command requires an existing launcher and does not publish or switch it. setup without a selector also prepares only gh. It uses the configured version/source and requires gh 2.98.0+ for device authorization. Reuse qualifying gh; otherwise download it using official checksums, and rerun doctor afterwards. Identity/auth do not install gh. Product runtime preparation, compatibility checks, repair and launcher publication belong to bootstrap; select Node with bootstrap --node --yes.
+When Git or GitHub CLI preparation is authorized, use setup git or setup gh and [references/setup.md](references/setup.md). Git reuses a qualifying managed/PATH installation or downloads official stable Windows x64 MinGit with its dependencies and licenses. Git download policy is internal; no tools.git configuration fields. Preparing Git does not initialize repositories, configure authors or authenticate. This JS command requires an existing launcher and does not publish or switch it. setup without a selector also prepares only gh. It uses the configured version/source and requires gh 2.98.0+ for device authorization. Reuse qualifying gh; otherwise download it using official checksums, and rerun doctor afterwards. Identity/auth do not install Git or gh. Commands select absolute tool paths once, validating managed files; the selected Git directory is prepended only to child-process PATH so gh uses the same Git. There are no gh_exec.cmd/git_exec.cmd launchers or persistent path bindings. Product runtime preparation, compatibility checks, repair and launcher publication belong to bootstrap; select Node with bootstrap --node --yes.
 
 When copying the skill, exclude its root config.toml and config.toml.* edit files. Preserve the target's existing configuration; use config.example.toml to create a new instance. Downloaded tools, installation records, launchers and caches stay in the fixed shared root, outside skill/source. That tree must not contain SKILL.md, config.toml or Git metadata; INSTALLATION.md describes ownership and cleanup.
 

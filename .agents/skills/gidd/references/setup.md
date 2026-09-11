@@ -1,20 +1,29 @@
-# Windows GitHub CLI 准备
+# Windows Git / GitHub CLI 准备
 
-先用显式 [bootstrap](bootstrap.md) 准备共享 js_exec.cmd。setup 普通入口不调用 PowerShell，由 scripts/install.mjs 的 setupGh 准备 gh；产品运行时准备统一使用 bootstrap。
+先用显式 [bootstrap](bootstrap.md) 准备共享 js_exec.cmd。setup 普通入口不调用 PowerShell，由 scripts/install.mjs 的 setupTool 准备所选 Git 或 gh；产品运行时准备统一使用 bootstrap。
 
 先按 [doctor.md](doctor.md) 检查。用户已授权准备缺失工具后，从实际技能目录执行：
 
 ```powershell
+.\gidd.cmd setup git
 .\gidd.cmd setup gh
 ```
 
-只支持已验证的 Windows x64 / Windows PowerShell 5.1，本地盘绝对路径。工具目录可不存在；禁止路径经过 junction/symlink 等 reparse point。技能安装由 Agent 管理，工具初始化不需要其安装模式或安装目录。命令通过已发布的共享启动器执行；gh 可用便复用。gh 来自外部 PATH 且工具根不存在时，整个操作不建立目录。
+只支持已验证的 Windows x64 / Windows PowerShell 5.1，本地盘绝对路径。工具目录可不存在；禁止路径经过 junction/symlink 等 reparse point。技能安装由 Agent 管理，工具初始化不需要其安装模式或安装目录。命令通过已发布的共享启动器执行；所选工具可用便复用。工具来自外部 PATH 且工具根不存在时，整个操作不建立目录。
 
 入口位于 `<目标仓库>/.agents/skills/gidd/` 且仓库根有 `.git` 标记时，从自身位置定位目标，支持 Git worktree；不依赖工作目录。先读取目标仓库的固定配置；工具始终使用固定共享目录，配置错误停止安装，规则与模板见 [configuration.md](configuration.md)。工具准备不会自动创建或修改 config.toml。
 
+## Git 准备与调用
+
+Git 优先复用完整的受管副本，其次 PATH 中可执行且满足既有最低版本 2.0.0 的 Git。缺少可用副本时，从 [Git for Windows 官方发布](https://github.com/git-for-windows/git/releases) 解析最新稳定版普通 Windows x64 MinGit ZIP；不选择 BusyBox 变体。归档 URL 和 SHA-256 必须与官方 release asset 一致，缺少 digest 即停止。版本与来源采用内部策略，当前不增加 tools.git 配置字段；已有合格 Git 不因发布新版而自动升级。
+
+[MinGit](https://gitforwindows.org/mingit.html) 是面向应用程序调用的精简 Git，保留非交互 Git 所需文件与许可证；不提供完整 Git for Windows 的 GUI、交互 Bash/Perl 工具集。安装后入口为 git/cmd/git.exe；整个目录树必须保留，不能单独复制 exe。setup git 不执行 git init，不设置作者、remote 或凭据，不登录 GitHub。
+
+setup、doctor、identity/auth 共用 scripts/tools.mjs 的选择方法。业务命令每次选定一次绝对路径，受管副本仍验证所有记录文件及版本，随后各子调用复用路径。为避免 gh 自行找到另一份 Git，将所选 Git 可执行文件的目录放在本次子进程 PATH 最前，并清除继承的 GIT_EXEC_PATH；系统和父进程环境不变。没有 gh_exec.cmd/git_exec.cmd：JS 已能直接启动可执行文件，无需再经批处理绑定路径。js_exec.cmd 则负责 JS 尚未启动时的运行时入口，职责不同。Git 缺失不阻止仅需 gh 的设备授权，仍不自动安装。
+
 ## 存储与源码
 
-setup gh 与不带选择器的 setup 都只准备 gh，不切换或发布共享启动器；tools 结果只列 gh。没有启动器时先执行 bootstrap --yes；选择 Node 使用 bootstrap --node --yes。gh 要求 2.98.0+ 且遵守配置版本。旧 scripts/windows/setup-tools.ps1 只接受 gh 或省略 Tool，经共享启动器转发。已移除的运行时 setup 命令返回 runtime_setup_removed，退出 2，提示显式使用 bootstrap；不会自动转发或切换启动器。
+setup git 只准备 Git；setup gh 与不带选择器的 setup 都只准备 gh。均不切换或发布共享启动器，tools 结果只列本次所选工具。没有启动器时先执行 bootstrap --yes；选择 Node 使用 bootstrap --node --yes。gh 要求 2.98.0+ 且遵守配置版本。旧 scripts/windows/setup-tools.ps1 只接受 gh 或省略 Tool，经共享启动器转发。已移除的运行时 setup 命令返回 runtime_setup_removed，退出 2，提示显式使用 bootstrap；不会自动转发或切换启动器。
 
 工具根固定为 `~/.agents/skills.tools/gidd/`，各仓库和开发入口共用：
 
@@ -33,23 +42,29 @@ setup gh 与不带选择器的 setup 都只准备 gh，不切换或发布共享�
 │   ├── node.exe
 │   ├── LICENSE
 │   └── install.json
+├── git/
+│   ├── cmd/git.exe
+│   ├── mingw64/           # Git 实体、依赖、许可证
+│   ├── etc/ 与 usr/      # 上游配套文件
+│   ├── LICENSE.txt
+│   └── install.json
 └── gh/
     ├── gh.exe
     ├── LICENSE
     └── install.json
 ```
 
-config.toml 指定各工具下载根及 gh 版本；setup gh 按配置版本准备 GitHub CLI，latest 在需要下载时解析，规则见 [configuration.md](configuration.md)。安装前显示确切版本与完整下载 URL，官方校验信息缺失时报错；镜像归档仍对照官方 SHA-256。`scripts/runtimes.json` 保留 Bun 1.2.15、gh 2.98.0 的校验信息。安装清单 `gidd.install/v1` 保存实际文件的名称、长度和 SHA-256，以及工具名、平台、版本和归档来源。第三方工具保持其原许可证，不套用 GIDD 的 MIT。
+config.toml 指定 Bun/Node/gh 下载根及 gh 版本；setup gh 按配置版本准备 GitHub CLI，latest 在需要下载时解析，规则见 [configuration.md](configuration.md)。安装前显示确切版本与完整下载 URL，官方校验信息缺失时报错；镜像归档仍对照官方 SHA-256。`scripts/runtimes.json` 保留 Bun 1.2.15、gh 2.98.0 的校验信息。安装清单 `gidd.install/v1` 保存实际文件的名称、长度和 SHA-256，以及工具名、平台、版本和归档来源。第三方工具保持其原许可证，不套用 GIDD 的 MIT。
 
-scripts/install.mjs 的 setupGh 仅准备 gh，底层下载、校验、受控 ZIP 解压及安装事务函数继续复用。scripts/windows/setup-tools/ 保留显式 bootstrap 准备和修复运行时所需实现。两者遵守相同安装清单、锁和固定路径规则；测试对两份实现运行相同 fixture，并验证跨实现争锁。
+scripts/install.mjs 的 setupTool 按选择器准备 Git 或 gh，底层下载、校验、受控 ZIP 解压及安装事务函数继续复用。scripts/windows/setup-tools/ 保留显式 bootstrap 准备和修复运行时所需实现。两者的 Bun/Node/gh 使用相同安装清单、锁和固定路径规则；Git 嵌套清单仅由 JS 管理；测试对两份实现运行相同 fixture，并验证跨实现争锁。
 
-实际工具根直接包含 `.cache/`、`bun/`、`node/`、`gh/`，按需建立。源码仓库开发入口读取同一配置，可分别准备 Bun、Node 或 gh；技能入口通过 bootstrap 准备运行时，setup 只准备 gh。同一用户的所有仓库和两类入口共用工具目录及安装锁。
+实际工具根直接包含 `.cache/`、`bun/`、`node/`、`gh/`、`git/`，按需建立。源码仓库开发入口读取同一配置，可分别准备 Bun、Node 或 gh；技能入口通过 bootstrap 准备运行时，setup git/gh 准备对应工具。同一用户的所有仓库和两类入口共用工具目录及安装锁。
 
 ## 中断恢复
 
 1. 先在唯一临时目录写入并刷盘 owner-<UUID>.json（进程 ID、随机标识），再原子发布为 .cache/install.lock/。活进程或无法确认的所有者阻止竞争者；确认进程不存在后，只删除该所有者的唯一 marker，再删除空锁目录。唯一文件名防止回收者删除新所有者的 marker。PID 重用时保守拒绝，需等待对应进程退出。旧版的空句柄锁文件只在未被持有时迁移，非空文件保留并报错。
-2. 丢弃对应 `.cache/bun/`、`.cache/node/` 或 `.cache/gh/` 的未完成暂存，再下载到 `download.part`。文件 SHA-256 与受管清单不符时停止，不执行下载内容。Shell 网络等待有 30 秒连接/空闲超时，JS 每次下载有 30 秒总期限，下载最大 256 MiB；失败后由用户或 Agent 显式重试，不无限循环。
-3. 仅提取清单列出的文件，拒绝危险 ZIP 路径、重复或缺失的必需条目。可执行文件版本、所有文件哈希和安装清单均通过后，刷盘并同卷重命名整个 payload 到尚不存在的正式目录。
+2. 丢弃对应 `.cache/bun/`、`.cache/node/`、`.cache/gh/` 或 `.cache/git/` 的未完成暂存，再下载到 `download.part`。文件 SHA-256 与受管清单不符时停止，不执行下载内容。Shell 网络等待有 30 秒连接/空闲超时，JS 每次下载有 30 秒总期限，下载最大 256 MiB；失败后由用户或 Agent 显式重试，不无限循环。
+3. Bun/Node/gh 仅提取清单列出的文件。Git 提取官方归档的完整文件树，保留空文件，目录按文件路径建立；拒绝危险路径、Windows 名称冲突、链接和特殊条目，限制 10000 个条目、512 MiB 解压总量和 256 MiB 单文件。Git 必须含 cmd/git.exe、mingw64/bin/git.exe 和 LICENSE.txt。可执行文件版本、所有文件哈希和安装清单均通过后，刷盘并同卷重命名整个 payload 到尚不存在的正式目录。
 4. 中断发生在发布之前：正式目录不存在，下次重建暂存。发生在发布之后：重新校验正式目录，确认完整后复用并清理残留暂存，不再下载。
 5. 正式目录损坏、不明归属或不满足配置版本时返回冲突，保留原文件；JS setup 不修复或覆盖；运行时修复由显式 bootstrap 提供备份与回滚，见 bootstrap.md。gh 固定版本改变不会自动替换已有目录。`.cache/` 是专用安装缓存区，用户不要向其中保存文件。自动清理只删除对应工具子目录，保留 `.cache/`；锁由持有者在退出时释放；安装运行期间不得删除缓存根或锁文件。重试时扫描暂存树并拒绝 reparse point，避免清理越界。
 
@@ -57,12 +72,12 @@ scripts/install.mjs 的 setupGh 仅准备 gh，底层下载、校验、受控 ZI
 
 bootstrap 与 gh 准备各自完成：setup gh 失败时保留已有运行时，下次重试 gh 准备。文件哈希与刷盘用于识别损坏、降低丢失风险，不构成任意硬件和文件系统上断电零丢失的承诺。当前验证包括强制终止与残缺文件模拟，没有实际切断机器电源。
 
-安装清单与 executable 同目录，SHA-256 提供完整性检查，不是对可同时修改两者的本机用户的安全隔离。它不保存 GitHub 凭据或仓库配置。
+Git 的 gidd.install/v2 清单位于 git/install.json，记录相对路径、文件长度、SHA-256 和上游 release tag；最大 4 MiB。其他工具保持 gidd.install/v1，与 executable 同目录。SHA-256 提供完整性检查，不是对可同时修改两者的本机用户的安全隔离。它不保存 GitHub 凭据或仓库配置。
 
 ## 输出
 
-缺失工具按配置联网下载并校验；已有可用工具直接复用。入口不接受本地安装包目录、任意清单或跳过校验开关。
+缺失工具按对应下载策略联网获取并校验；已有可用工具直接复用。入口不接受本地安装包目录、任意清单或跳过校验开关。
 
 stdout 是 `gidd.setup-tools/v1` JSON；成功退出 0，`status=ready`，`tools` 列出 `installed` 或 `reused` 及实际路径。JS 安装失败退出 1，`status=error`，`reason` 提供原因；已完成的工具保留在磁盘供下次重试复用。启动器缺失使用 gidd.cli/v1、reason=bootstrap_required、退出 2；stderr 显示进度与错误。`install_locked_or_unwritable` 需要确认另一个安装是否在运行；`occupied_or_invalid_target` 需要检查该正式目录，不要直接删除。
 
-成功后再次运行 doctor。`ready` 只表示本次 gh 准备成功；Git、仓库、配置和认证仍需各自检查。需要检查账号时使用 [身份检查](identity.md)，用户明确要求登录时使用 [设备授权](authorization.md)。配置可用 `config show/set` 管理；完整技能安装、启用记录与完整开发流程尚未实现，不能报告“仓库已启用”。
+成功后再次运行 doctor。`ready` 只表示本次所选工具准备成功；Git、仓库、配置和认证仍需各自检查。需要检查账号时使用 [身份检查](identity.md)，用户明确要求登录时使用 [设备授权](authorization.md)。配置可用 `config show/set` 管理；完整技能安装、启用记录与完整开发流程尚未实现，不能报告“仓库已启用”。

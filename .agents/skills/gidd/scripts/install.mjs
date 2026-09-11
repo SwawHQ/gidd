@@ -1,8 +1,8 @@
 import { closeSync, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID, createHash } from 'node:crypto';
-import { join, resolve, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { inflateRawSync } from 'node:zlib';
-import { compareVersions, executableName, hashFile, inspectToolTree, managedToolValid, plainPath, platformName, validateToolSettings, versionPattern } from './storage.mjs';
+import { compareVersions, hashFile, inspectToolTree, managedToolValid, managedExecutable, payloadFiles, safePayloadName, plainPath, platformName, validateToolSettings, versionPattern } from './storage.mjs';
 import { findTool, minimums, patterns } from './tools.mjs';
 import { runCommand } from './github.mjs';
 
@@ -62,7 +62,7 @@ export function acquireInstallLock(root) {
 }
 
 export function removeStage(root, name) {
-  if (!['bun','node','gh'].includes(name)) throw new Error('invalid_tool_name');
+  if (!['bun','node','gh','git'].includes(name)) throw new Error('invalid_tool_name');
   const stage = resolve(root, '.cache', name), expected = resolve(root) + sep + '.cache' + sep + name;
   if (stage !== expected) throw new Error('stage_outside_root');
   inspectToolTree(stage);
@@ -110,7 +110,8 @@ export function checksum(text, archive) {
 }
 
 export async function resolveRelease(name, settings, pinned, readText = releaseText) {
-  if (!['bun','node','gh'].includes(name)) throw new Error('invalid_tool_name');
+  if (!['bun','node','gh','git'].includes(name)) throw new Error('invalid_tool_name');
+  if (name === 'git') return resolveGitRelease(readText);
   let { version, source } = validateToolSettings(name, settings);
   if (pinned && pinned.version === version) {
     const definition = structuredClone(pinned), tag = name === 'bun' ? `bun-v${version}` : `v${version}`;
@@ -152,8 +153,23 @@ export async function resolveRelease(name, settings, pinned, readText = releaseT
   return { name, version, archive, url, sha256: checksum(await readText(checksumUrl), archive), files, supplements, metadata_sources: metadata };
 }
 
-// Windows upstream assets use ordinary ZIP (stored/deflated entries). Only
-// allowlisted payloads are inflated. ZIP64/encryption/multidisk are rejected.
+export async function resolveGitRelease(readText = releaseText) {
+  const metadataUrl = 'https://api.github.com/repos/git-for-windows/git/releases/latest';
+  const release = JSON.parse(await readText(metadataUrl));
+  const tag = /^v(\d+\.\d+\.\d+)\.windows\.([1-9]\d*)$/.exec(release.tag_name);
+  if (!tag || !versionPattern.test(tag[1]) || release.draft || release.prerelease) throw new Error('invalid_stable_release:git');
+  const version = tag[1], revision = tag[2], archive = 'MinGit-' + version + (revision === '1' ? '' : '.' + revision) + '-64-bit.zip';
+  const assets = release.assets?.filter(item => item.name === archive);
+  const url = 'https://github.com/git-for-windows/git/releases/download/' + release.tag_name + '/' + archive;
+  if (assets?.length !== 1 || assets[0].browser_download_url !== url || !/^sha256:[a-f0-9]{64}$/.test(assets[0].digest) ||
+      !Number.isSafeInteger(assets[0].size) || assets[0].size <= 0 || assets[0].size > 256 * 1024 * 1024) throw new Error('git_release_asset_or_checksum_missing');
+  return { name: 'git', version, archive, url, sha256: assets[0].digest.slice(7),
+    reported_version: version + '.windows.' + revision, release_tag: release.tag_name, metadata_sources: [metadataUrl] };
+}
+
+// Windows upstream assets use ordinary ZIP (stored/deflated entries). Git
+// retains its file tree; other tools use allowlists. ZIP64/encryption/multidisk
+// are rejected.
 export function extractPayload(bytes, destination, definition) {
   let end = -1;
   for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 65557); i--) {
@@ -162,7 +178,9 @@ export function extractPayload(bytes, destination, definition) {
   if (end < 0) throw new Error('invalid_zip');
   const count = bytes.readUInt16LE(end + 10), size = bytes.readUInt32LE(end + 12), start = bytes.readUInt32LE(end + 16);
   if (bytes.readUInt32LE(end + 4) !== 0 || bytes.readUInt16LE(end + 8) !== count || count === 65535 || start + size !== end) throw new Error('unsupported_zip');
-  let offset = start; const entries = new Map();
+  let offset = start, total = 0; const entries = new Map(), windowsNames = new Set();
+  const nested = definition.name === 'git';
+  if (nested && count > 10000) throw new Error('too_many_payload_files');
   for (let i = 0; i < count; i++) {
     if (offset + 46 > end || bytes.readUInt32LE(offset) !== 0x02014b50) throw new Error('invalid_zip');
     const nameLength = bytes.readUInt16LE(offset + 28), extra = bytes.readUInt16LE(offset + 30), comment = bytes.readUInt16LE(offset + 32);
@@ -172,36 +190,47 @@ export function extractPayload(bytes, destination, definition) {
     const length = bytes.readUInt32LE(offset + 24), compressed = bytes.readUInt32LE(offset + 20), local = bytes.readUInt32LE(offset + 42);
     if (length > 256 * 1024 * 1024) throw new Error('zip_entry_too_large');
     if (entries.has(name)) throw new Error('missing_or_duplicate_payload');
+    if (nested) {
+      const clean = name.endsWith('/') ? name.slice(0,-1) : name;
+      const type = (bytes.readUInt32LE(offset + 38) >>> 16) & 0xf000;
+      if (!safePayloadName(clean) || windowsNames.has(clean.toLowerCase())) throw new Error('unsafe_zip_entry');
+      if (![0, 0x4000, 0x8000].includes(type) || (type === 0x4000 && !name.endsWith('/'))) throw new Error('unsupported_zip_entry_type');
+      windowsNames.add(clean.toLowerCase()); total += length;
+      if (total > 512 * 1024 * 1024) throw new Error('zip_payload_too_large');
+    }
     if (bytes.readUInt16LE(offset + 34) || bytes.readUInt16LE(offset + 8) & 1) throw new Error('unsupported_zip');
     entries.set(name, { length, compressed, local, method: bytes.readUInt16LE(offset + 10), crc: bytes.readUInt32LE(offset + 16) }); offset = next;
   }
   if (offset !== end) throw new Error('invalid_zip');
-  for (const file of definition.files) {
-    if (!/^[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$/i.test(file.name)) throw new Error('invalid_payload_name');
-    const entry = entries.get(file.entry); if (!entry?.length) throw new Error('missing_or_duplicate_payload');
+  const files = nested ? [...entries.keys()].filter(name => !name.endsWith('/')).map(name => ({ entry: name, name })) : definition.files;
+  if (nested && !['cmd/git.exe', 'mingw64/bin/git.exe', 'LICENSE.txt'].every(name => entries.get(name)?.length)) throw new Error('missing_git_payload');
+  for (const file of files) {
+    if (!(nested ? safePayloadName(file.name) : /^[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$/i.test(file.name))) throw new Error('invalid_payload_name');
+    const entry = entries.get(file.entry); if (!entry || (!nested && !entry.length)) throw new Error('missing_or_duplicate_payload');
     const { local, compressed, length, method } = entry;
     if (local + 30 > start || bytes.readUInt32LE(local) !== 0x04034b50 || bytes.readUInt16LE(local + 8) !== method || bytes.readUInt16LE(local + 6) & 1) throw new Error('invalid_zip');
     const nameLength = bytes.readUInt16LE(local + 26), data = local + 30 + nameLength + bytes.readUInt16LE(local + 28);
     if (data + compressed > start || bytes.subarray(local + 30, local + 30 + nameLength).toString('utf8') !== file.entry) throw new Error('invalid_zip');
     const input = bytes.subarray(data, data + compressed);
-    const output = method === 0 ? input : method === 8 ? inflateRawSync(input, { maxOutputLength: length }) : null;
+    const output = method === 0 ? input : method === 8 ? inflateRawSync(input, { maxOutputLength: Math.max(1, length) }) : null;
     if (!output || output.length !== length) throw new Error('invalid_zip_payload');
     let crc = 0xffffffff;
     for (const byte of output) { crc ^= byte; for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0); }
     if (((crc ^ 0xffffffff) >>> 0) !== entry.crc) throw new Error('invalid_zip_crc');
+    if (nested) mkdirSync(dirname(join(destination, file.name)), { recursive: true });
     durableFile(join(destination, file.name), output);
   }
 }
 
 export async function installTool(root, definition, { receive = download, onPhase = () => {} } = {}) {
   const name = definition.name;
-  if (!['bun','node','gh'].includes(name) || !versionPattern.test(definition.version)) throw new Error('invalid_tool_definition');
+  if (!['bun','node','gh','git'].includes(name) || !versionPattern.test(definition.version)) throw new Error('invalid_tool_definition');
   const target = join(root, name); plainPath(target);
   if (['bun','node'].includes(name) && existsSync(join(root,'.cache',`previous-${name}`))) throw new Error(`pending_runtime_recovery:${name}`);
   if (existsSync(target)) {
     if (!managedToolValid(target,name)) throw new Error(`occupied_or_invalid_target:${name}`);
     if (JSON.parse(readFileSync(join(target,'install.json'),'utf8')).version !== definition.version) throw new Error(`installed_version_conflict:${name}`);
-    removeStage(root,name); return { name, action: 'reused', path: join(target, executableName(name)) };
+    removeStage(root,name); return { name, action: 'reused', path: join(target, managedExecutable(name)) };
   }
   removeStage(root,name);
   const stage = join(root,'.cache',name), payload = join(stage,'payload'); plainPath(payload); mkdirSync(payload,{ recursive: true });
@@ -220,40 +249,42 @@ export async function installTool(root, definition, { receive = download, onPhas
     await receiveChecked(file.url,file.sha256,join(payload,file.name));
   }
   await onPhase('extracted');
-  const probe = await runCommand(join(payload,executableName(name)),['--version'],{ timeoutMs: 5000 });
-  if (!probe.ok || patterns[name].exec(probe.text)?.[1] !== definition.version) throw new Error('installed_version_mismatch');
-  const files = readdirSync(payload).map(name => ({ name, length: lstatSync(join(payload,name)).size, sha256: hashFile(join(payload,name)) }));
-  durableFile(join(payload,'install.json'),JSON.stringify({ schema: 'gidd.install/v1', name, platform: platformName(), version: definition.version,
+  const probe = await runCommand(join(payload,managedExecutable(name)),['--version'],{ timeoutMs: 5000 });
+  if (!probe.ok || patterns[name].exec(probe.text)?.[1] !== definition.version ||
+      (name === 'git' && probe.text !== 'git version ' + definition.reported_version)) throw new Error('installed_version_mismatch');
+  const files = payloadFiles(payload, name === 'git').map(name => ({ name, length: lstatSync(join(payload,name)).size, sha256: hashFile(join(payload,name)) }));
+  durableFile(join(payload,'install.json'),JSON.stringify({ schema: name === 'git' ? 'gidd.install/v2' : 'gidd.install/v1', name, release_tag: definition.release_tag, platform: platformName(), version: definition.version,
     source: definition.url, archive_sha256: definition.sha256, files, metadata_sources: definition.metadata_sources }));
   if (!managedToolValid(payload,name)) throw new Error('staged_integrity_failed'); await onPhase('verified');
   // Caller holds the common install lock; unknown occupied destinations survive.
   if (existsSync(target)) throw new Error(`occupied_or_invalid_target:${name}`);
   renameSync(payload,target); await onPhase('published');
   if (!managedToolValid(target,name)) throw new Error('published_integrity_failed'); removeStage(root,name);
-  return { name, action: 'installed', path: join(target, executableName(name)) };
+  return { name, action: 'installed', path: join(target, managedExecutable(name)) };
 }
 
-export async function setupGh(storage) {
-  const name = 'gh', root = storage.tools_root;
+export async function setupTool(storage, name = 'gh') {
+  if (!['gh','git'].includes(name)) throw new Error('invalid_setup_tool');
+  const root = storage.tools_root, requested = storage.tools[name]?.version || '';
   const manifest = JSON.parse(readFileSync(new URL('./runtimes.json', import.meta.url), 'utf8'));
   let release;
   try {
-    let candidate = await findTool(name, { root, requested: storage.tools.gh.version });
+    let candidate = await findTool(name, { root, requested });
     if (candidate.status !== 'ready' || candidate.details.source === 'managed') {
       release = acquireInstallLock(root); writeInstallationGuide(root);
-      candidate = await findTool(name, { root, requested: storage.tools.gh.version });
+      candidate = await findTool(name, { root, requested });
     }
     let tool;
     if (candidate.status === 'ready') {
       if (release) removeStage(root, name);
       tool = { name, action: 'reused', path: candidate.details.path };
     } else {
-      if (existsSync(join(root, name))) throw new Error('occupied_or_version_conflicting_target:gh');
-      const definition = await resolveRelease(name, storage.tools.gh, manifest.tools.find(item => item.name === name));
-      if (compareVersions(definition.version, minimums.gh) < 0) throw new Error('configured_version_below_minimum:gh');
-      console.error('GIDD download: gh ' + definition.version + ' ' + definition.url);
+      if (existsSync(join(root, name))) throw new Error('occupied_or_version_conflicting_target:' + name);
+      const definition = await resolveRelease(name, storage.tools[name], manifest.tools.find(item => item.name === name));
+      if (compareVersions(definition.version, minimums[name]) < 0) throw new Error('configured_version_below_minimum:' + name);
+      console.error('GIDD download: ' + name + ' ' + definition.version + ' ' + definition.url);
       tool = await installTool(root, definition, { onPhase: phase => console.error('GIDD install: ' + phase) });
-      if ((await findTool(name, { root, requested: storage.tools.gh.version })).status !== 'ready') throw new Error('post_install_check_failed');
+      if ((await findTool(name, { root, requested })).status !== 'ready') throw new Error('post_install_check_failed');
     }
     return { schema: 'gidd.setup-tools/v1', status: 'ready', tools: [tool], tools_root: root, storage };
   } finally { release?.(); }

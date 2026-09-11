@@ -12,7 +12,8 @@ Help and diagnosis:
   gidd.cmd help [en|zh]                              Show help; aliases: --help, -h. Also shown with no arguments.
   gidd.cmd doctor                                    Check environment and target repository; read-only, offline.
 
-GitHub CLI setup (requires shared launcher):
+Tool setup (requires shared launcher):
+  gidd.cmd setup git                                 Reuse Git or prepare official MinGit; no repository changes.
   gidd.cmd setup gh                                  Prepare gh 2.98.0+; does not log in.
 
 Repository config:

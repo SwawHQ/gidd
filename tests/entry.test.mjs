@@ -290,15 +290,16 @@ test('removed runtime setup commands fail without changing configuration or tool
   } finally { f.dispose(); }
 });
 
-test('product setup prepares only gh and keeps storage independent of installation', { timeout: 30000 }, () => {
+test('product setup selects gh or git and keeps storage independent of installation', { timeout: 30000 }, () => {
   const f = fixture();
   try {
     const s = installation(f), exe = compile(f.root), bin = join(f.root, 'bin');
     stub(exe, join(bin, 'gh.exe'));
+    stub(exe, join(bin, 'git.exe'));
     const before = snapshot(f.root);
-    for (const args of [['setup','gh'],['setup']]) {
+    for (const args of [['setup','gh'],['setup'],['setup','git']]) {
       const report = json(ok(s.invoke([...args,...s.args], { PATH: bin })));
-      assert.deepEqual(report.tools.map(t => [t.name, t.action]), [['gh','reused']]);
+      assert.deepEqual(report.tools.map(t => [t.name, t.action]), [[args[1] || 'gh','reused']]);
     }
     const legacy = json(ok(ps(join(s.skill,'scripts/windows/setup-tools.ps1'),['-RepositoryPath',s.target,'-Tool','gh'],{env:{PATH:bin}})));
     assert.deepEqual(legacy.tools.map(t => [t.name, t.action]), [['gh','reused']]);
