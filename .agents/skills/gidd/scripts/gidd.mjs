@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configure, configurationHint, readGitHubConfiguration } from './config.mjs';
 import { doctor } from './doctor.mjs';
@@ -40,10 +40,12 @@ export async function main(args) {
       const scripts = dirname(fileURLToPath(import.meta.url));
       repository = resolve(scripts, '../../../..');
       if (resolve(repository, '.agents/skills/gidd/scripts').toLowerCase() !== scripts.toLowerCase() || !existsSync(resolve(repository,'.git'))) {
-        throw new Error('repository_required_for_unbound_entry');
+        if (command !== 'doctor') throw new Error('repository_required_for_unbound_entry');
+        repository = undefined;
       }
     }
-    repository = repositoryRoot(repository);
+    if (repository !== undefined && !isAbsolute(repository)) throw new Error('repository_must_be_absolute');
+    if (command !== 'doctor') repository = repositoryRoot(repository);
     schema = schemas[command];
     let report;
     if (command === 'doctor') report = await doctor(repository);
