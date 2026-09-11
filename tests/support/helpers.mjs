@@ -47,8 +47,6 @@ export function ok(result) {
 }
 export function json(result) { return JSON.parse(result.stdout); }
 export function ps(script, args = [], options = {}) {
-  const bytes = readFileSync(script);
-  assert.equal(bytes.subarray(0, 3).toString('hex'), 'efbbbf', `PowerShell BOM: ${script}`);
   return run(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, ...args], options);
 }
 export function fixture() {

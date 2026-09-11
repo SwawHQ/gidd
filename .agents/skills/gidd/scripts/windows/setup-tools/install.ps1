@@ -1,4 +1,4 @@
-﻿function Install-GiddTool {
+function Install-GiddTool {
     param([string]$ToolsRoot, $Definition, [scriptblock]$OnPhase = {}, [switch]$Replace, [scriptblock]$ValidatePayload = {})
     $name = $Definition.name
     if ($name -notin @('bun','node')) { throw 'invalid_tool_name' }

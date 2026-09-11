@@ -1,4 +1,4 @@
-﻿function Assert-GiddPlainPath {
+function Assert-GiddPlainPath {
     param([string]$Path)
     $current = [IO.Path]::GetFullPath($Path)
     while ($current) {

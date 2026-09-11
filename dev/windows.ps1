@@ -1,4 +1,4 @@
-﻿# Runtime argv bypasses PowerShell; this script resolves tools and runs development operations.
+# Runtime argv bypasses PowerShell; this script resolves tools and runs development operations.
 $Command = if ($args.Count) { [string]$args[0] } else { '.help' }
 $Argument = if ($args.Count -gt 1) { [string]$args[1] } else { '' }
 $Extra = @()
@@ -7,7 +7,7 @@ if ($args.Count -gt 2) { $Extra = @($args[2..($args.Count - 1)]) }
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
-$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $codeRoot = Join-Path $repoRoot '.agents/skills/gidd/scripts/windows'
 $toolsRoot = $null
 $storage = $null

@@ -1,4 +1,4 @@
-﻿function Write-GiddDurableFile {
+function Write-GiddDurableFile {
     param([string]$Path, [byte[]]$Bytes)
     Assert-GiddPlainPath $Path
     $stream = [IO.File]::Open($Path, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None)

@@ -21,6 +21,8 @@
 
 无参数显示帮助。语言选择依次为 `.help` 参数、`GIDD_DEV_LANG`、`LC_ALL` / `LC_MESSAGES` / `LANG` / Windows UI 语言，其他系统语言回退英文。帮助和命令参数校验不需要 Bun/Node。入口以自身目录定位仓库，可以从其他工作目录用完整路径调用。
 
+仓库开发工具位于 `dev/`，由根 `dev.cmd` 调用；技能交付脚本位于 `.agents/skills/gidd/scripts/`。PowerShell 源码仅使用 ASCII，统一保存为 UTF-8 无 BOM，由 `dev` 测试组集中检查内容与语法；运行时读写 Unicode 数据的编码设置保留。
+
 ## 开发运行时
 
 可以通过入口显式选择运行时执行命令或脚本，无需手写运行时路径：
@@ -28,9 +30,9 @@
 ```powershell
 .\dev.cmd bun --version
 .\dev.cmd node --version
-.\dev.cmd bun scripts/example.mjs
+.\dev.cmd bun example.mjs
 .\dev.cmd node -e "console.log(process.version)"
-.\dev.cmd sys bun scripts/example.mjs
+.\dev.cmd sys bun example.mjs
 .\dev.cmd sys node --version
 ```
 
@@ -40,7 +42,7 @@
 
 `.setup bun`、`.setup node`、`.setup gh` 分别只准备指定工具；不指定工具的 `.setup` 保留同时准备 Bun 和 Node 的行为。分别优先复用共享目录中校验有效的工具，再检查 PATH（Bun 1.4.2、Node 24.19.0、gh 2.98.0）。运行时兼容规则在 scripts/runtime-compat.mjs 集中维护；缺失运行时由 PowerShell 按内部稳定/LTS 策略准备；.setup gh 需要已发布共享启动器，由 JS 安装 gh。`.info` 分别报告两个运行时、配置要求和下载来源，仅当二者均可用时退出 0。
 
-默认 Node 使用最新 LTS、Bun 使用最新稳定版，只在需要下载时解析；已有可用版本继续复用，诊断与测试不检查更新。`.agents/skills/gidd/assets/runtimes.json` 和 `scripts/dev/runtimes.json` 保留 Bun/gh 与开发 Node 的已验证版本校验信息。版本解析、官方校验信息、下载、SHA-256 校验、独占锁、版本验证及中断恢复共用技能脚本，不通过 Bun 安装 Node，也不通过 Node 安装 Bun。dev .setup 不覆盖已有损坏目录；运行时修复与显式重装使用产品 bootstrap，见 bootstrap 协议。
+默认 Node 使用最新 LTS、Bun 使用最新稳定版，只在需要下载时解析；已有可用版本继续复用，诊断与测试不检查更新。`.agents/skills/gidd/assets/runtimes.json` 和 `dev/runtimes.json` 保留 Bun/gh 与开发 Node 的已验证版本校验信息。版本解析、官方校验信息、下载、SHA-256 校验、独占锁、版本验证及中断恢复共用技能脚本，不通过 Bun 安装 Node，也不通过 Node 安装 Bun。dev .setup 不覆盖已有损坏目录；运行时修复与显式重装使用产品 bootstrap，见 bootstrap 协议。
 
 Windows 上的 Bun 1.2.15 存在已复现的子进程兼容问题：启动不存在的程序后，后续 `spawnSync` 可能报告 `Out of memory`；脱离 GIDD 的最小示例也会触发。相同示例在 Bun 1.4.2 和 Node 上未复现，开发验收建议使用已验证的 Bun 1.4.2。普通 bootstrap 复用健康运行时；需要重新准备受管副本时用 bootstrap --reinstall --yes，确认安装后运行完整 .test。
 
@@ -110,7 +112,7 @@ dev .setup 复用外部工具不创建共享目录；产品 bootstrap --yes 仍�
 
 默认 `.test` 先检查 Bun 和 Node 均可用，再依次使用二者执行同一套 `tests/*.test.mjs` 离线用例；任一运行失败，命令整体失败。支持测试组 `all`（默认）、`doctor`、`setup`、`process`、`dev`、`config`、`github`、`entry`。缺少任一运行时就明确报错，不安装、不联网，也不把未执行的运行时算作通过。`.test-bun` 和 `.test-node` 只检查并运行指定运行时，适合定位问题，不能替代双运行时验收。
 
-测试使用 `node:test` 与 `node:assert/strict`，Bun 通过自身测试运行器执行，Node 使用 `--test`。用例、断言、临时目录、进程调度共用 JavaScript；`scripts/dev/dev.mjs` 适配启动参数，两种运行时均按文件串行启动独立进程，隔离测试状态，也避免 Bun 1.2.15 的 `node:test` 多文件注册缓存漏执行。`tests/support/javascript.mjs` 与 `windows.ps1` 对同一配置/安装 fixture 验证两份实现；Windows 辅助仅调用被测 PowerShell 函数、检查 BOM 后解析语法、编译 fixture executable 和构造 ZIP。C# fixture 用于模拟 Windows executable 和继承输出管道的进程，不属于产品。
+测试使用 `node:test` 与 `node:assert/strict`，Bun 通过自身测试运行器执行，Node 使用 `--test`。用例、断言、临时目录、进程调度共用 JavaScript；`dev/dev.mjs` 适配启动参数，两种运行时均按文件串行启动独立进程，隔离测试状态，也避免 Bun 1.2.15 的 `node:test` 多文件注册缓存漏执行。`tests/support/javascript.mjs` 与 `windows.ps1` 对同一配置/安装 fixture 验证两份实现；Windows 辅助仅调用被测 PowerShell 函数、解析 PowerShell 语法、编译 fixture executable 和构造 ZIP。C# fixture 用于模拟 Windows executable 和继承输出管道的进程，不属于产品。
 
 `bun run test` 使用相同的双运行时入口；`bun run test:bun`、`bun run test:node` 分别选择一种。已有 npm 时也可以使用相应的 `npm run` 命令，但便携安装不提供 npm。
 

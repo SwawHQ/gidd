@@ -1,4 +1,4 @@
-﻿function Read-GiddReleaseText {
+function Read-GiddReleaseText {
     param([string]$Url)
     if (([uri]$Url).Scheme -ne 'https') { throw 'https_required' }
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12

@@ -5,7 +5,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const root = fileURLToPath(new URL('../../', import.meta.url));
+const root = fileURLToPath(new URL('../', import.meta.url));
 const [command, argument = '', ...extra] = process.argv.slice(2);
 const suites = ['doctor', 'setup', 'process', 'dev', 'config', 'github', 'entry'];
 if (process.platform !== 'win32') {
@@ -56,6 +56,6 @@ const quote = value => `'${value.replaceAll("'", "''")}'`;
 for (const { file, seconds } of failures) {
   const rerun = command === '.test-live' ? '.test-live' :
     `.test-${process.versions.bun ? 'bun' : 'node'} ${file.split('/').at(-1).replace('.test.mjs', '')}`;
-  console.log(`FAIL ${file} (${seconds}s)\nRerun (PowerShell): & ${quote(fileURLToPath(new URL('../../dev.cmd', import.meta.url)))} ${rerun}`);
+  console.log(`FAIL ${file} (${seconds}s)\nRerun (PowerShell): & ${quote(fileURLToPath(new URL('../dev.cmd', import.meta.url)))} ${rerun}`);
 }
 process.exit(failures.length ? 1 : 0);
