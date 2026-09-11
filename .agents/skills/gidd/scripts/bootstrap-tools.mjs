@@ -41,7 +41,8 @@ export function recoverTool(root,name) {
   }
 }
 
-export async function prepareTools(storage,{checkOnly=false,names=['git','gh'],readText,receive,onPhase=()=>{}}={}) {
+export async function prepareTools(storage,{checkOnly=false,force=false,names=['git','gh'],readText,receive,onPhase=()=>{}}={}) {
+  if(checkOnly && force)throw new Error('force_conflicts_with_check');
   if (names.some(name=>!['git','gh'].includes(name))) throw new Error('invalid_tool_name');
   const root=storage.tools_root,tools=[],checks=[]; let release;
   try {
@@ -60,14 +61,14 @@ export async function prepareTools(storage,{checkOnly=false,names=['git','gh'],r
           continue;
         }
         let action='reused';
-        if (candidate.status!=='ready') {
+        if (force || candidate.status!=='ready') {
           const target=join(root,name),replace=existsSync(target);
           if (replace && !managedToolValid(target,name,{allowDamaged:true})) throw new Error('unknown_tool_ownership:' + name);
           const definition=await resolveRelease(name,storage.tools[name],null,readText);
           if(compareVersions(definition.version,minimums[name]) < 0)throw new Error('release_below_minimum:' + name);
           console.error('GIDD download: '+name+' '+definition.version+' '+definition.url);
           await installTool(root,definition,{receive,replace,onPhase:phase=>onPhase(name,phase)});
-          action=replace?'repaired':'installed';
+          action=force && replace?'reinstalled':replace?'repaired':'installed';
           candidate=await findTool(name,{root,source:'managed'});
           if(candidate.status!=='ready') throw new Error('post_install_check_failed:' + name);
         }
@@ -89,23 +90,24 @@ export async function prepareTools(storage,{checkOnly=false,names=['git','gh'],r
 }
 
 async function main(args) {
-  let repository,checkOnly=false,runtimeReport=false; const seen=new Set();
+  let repository,checkOnly=false,force=false,runtimeReport=false; const seen=new Set();
   for(let i=0;i<args.length;i++) {
     const arg=args[i]; if(seen.has(arg))throw new Error('invalid_arguments');seen.add(arg);
     if(arg==='--check')checkOnly=true;
+    else if(arg==='--force')force=true;
     else if(arg==='--runtime-report')runtimeReport=true;
     else if(arg==='--repository' && args[i+1])repository=args[++i];
     else throw new Error('invalid_arguments');
   }
   const runtime=runtimeReport?JSON.parse(readFileSync(0,'utf8').replace(/^\uFEFF/,'')):null;
   let tools;
-  try {tools=await prepareTools(resolveStorage(repository),{checkOnly});}
+  try {tools=await prepareTools(resolveStorage(repository),{checkOnly,force});}
   catch(error){tools={status:'needs_bootstrap',tools:[],checks:[check('tools.storage','invalid',reasonOf(error))]};}
-  const report=runtime?{...runtime,status:runtime.status==='ready' && tools.status==='ready'?'ready':'needs_bootstrap',
+  const report=runtime?{...runtime,status:runtime.status==='ready' && tools.status==='ready'?'ready':'needs_tools',
     tools:tools.tools,tool_checks:tools.checks,binding_path:tools.binding_path}:tools;
   console.log(JSON.stringify(report));return report.status==='ready'?0:1;
 }
 if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   try {process.exitCode=await main(process.argv.slice(2));}
-  catch(error){console.log(JSON.stringify({schema:'gidd.bootstrap/v1',status:'error',reason:reasonOf(error)}));process.exitCode=2;}
+  catch(error){console.log(JSON.stringify({schema:'gidd.tools/v1',status:'error',reason:reasonOf(error)}));process.exitCode=2;}
 }

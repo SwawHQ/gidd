@@ -1,12 +1,12 @@
 # 仓库开发
 
-产品 stage0 的已确认边界与验收范围见 [bootstrap 协议](.agents/skills/gidd/references/bootstrap.md)。显式 bootstrap 与共享启动器由 Issue #23 跟踪；dev.cmd 保留 managed/sys 模式和离线测试隔离。
+产品 stage0 的已确认边界与验收范围见 [tools --ensure 协议](.agents/skills/gidd/references/bootstrap.md)。显式 tools --ensure 与共享启动器由 Issue #23 跟踪；dev.cmd 保留 managed/sys 模式和离线测试隔离。
 
 `dev.cmd` 管理 GIDD 源码仓库自身的开发环境。已验证目标为 Windows x64 和 Windows PowerShell 5.1；它不代表在这个仓库启用了 GIDD。
 
-技能发布入口为 `.agents/skills/gidd/gidd.cmd`，先运行 `.\.agents\skills\gidd\gidd.cmd bootstrap` 准备一个运行时、Git、gh 和共享绑定；仅检查用 `bootstrap --check`，再运行 help zh。产品用法见 [技能说明](.agents/skills/gidd/SKILL.md)；统一入口的开发验收使用 `.\dev.cmd .test entry`。仅显式 bootstrap 使用系统 Shell。普通命令经共享 js_exec.cmd 直接启动共用 JavaScript；不探测运行时或检查兼容性。
+技能发布入口为 `.agents/skills/gidd/gidd.cmd`，先运行 `.\.agents\skills\gidd\gidd.cmd tools --ensure` 准备一个运行时、Git、gh 和共享绑定；仅检查用 `tools --check`，再运行 help zh。产品用法见 [技能说明](.agents/skills/gidd/SKILL.md)；统一入口的开发验收使用 `.\dev.cmd .test entry`。tools 命令使用系统 Shell。普通命令经共享 js_exec.cmd 直接启动共用 JavaScript；不探测运行时或检查兼容性。
 
-`help`、`--help`、`-h` 等价。产品工具准备统一使用 `bootstrap`，旧 `setup` 已移除，开发双运行时继续使用 `dev.cmd .setup bun/node`。本项目的唯一技能源码位于 `.agents/skills/gidd/`，与仓库安装布局一致；入口从自身位置定位目标，支持 Git worktree，不依赖调用目录。可直接运行 `.\.agents\skills\gidd\gidd.cmd doctor` 或 `config show`。doctor 无法自动定位目标时仍报告工具和 target_required；显式目标是普通目录时报告 not_git_repository，缺少 Git 时仍诊断目标配置。内部参数 `--repository <目标绝对路径>` 仅供开发和测试指定其他目标，普通调用无需追加，也不展示在 help 中。配置使用 `config show/set` 管理。完整技能安装和更新由 [Issue #14](https://github.com/SwawHQ/gidd/issues/14) 跟踪，Bun/Node/gh 下载来源由配置管理，工具版本策略内部维护，工具目录固定共享；配置增加可选的 github 表，执行身份检查或授权时相关字段必须齐备。doctor 的 local_ready 要求 Git/gh 绑定有效，并要求 hostname/account/remote 完整且所选 remote 的本地主机匹配；这不证明仓库已初始化或登录成功。
+`help`、`--help`、`-h` 等价。产品工具准备统一使用 `tools --ensure`，旧 `setup` 已移除，开发双运行时继续使用 `dev.cmd .setup bun/node`。本项目的唯一技能源码位于 `.agents/skills/gidd/`，与仓库安装布局一致；入口从自身位置定位目标，支持 Git worktree，不依赖调用目录。可直接运行 `.\.agents\skills\gidd\gidd.cmd doctor` 或 `config show`。doctor 无法自动定位目标时仍报告工具和 target_required；显式目标是普通目录时报告 not_git_repository，缺少 Git 时仍诊断目标配置。内部参数 `--repository <目标绝对路径>` 仅供开发和测试指定其他目标，普通调用无需追加，也不展示在 help 中。配置使用 `config show/set` 管理。完整技能安装和更新由 [Issue #14](https://github.com/SwawHQ/gidd/issues/14) 跟踪，Bun/Node/gh 下载来源由配置管理，工具版本策略内部维护，工具目录固定共享；配置增加可选的 github 表，执行身份检查或授权时相关字段必须齐备。doctor 的 local_ready 要求 Git/gh 绑定有效，并要求 hostname/account/remote 完整且所选 remote 的本地主机匹配；这不证明仓库已初始化或登录成功。
 
 ```powershell
 .\dev.cmd .help zh
@@ -40,13 +40,13 @@
 
 脚本相对路径以调用者当前目录解析，stdin/stdout/stderr 透传，返回脚本退出码。运行时命令由 Shell 先定位可执行文件，随后批处理入口将参数直接交给 Node/Bun，避免 PowerShell 解释 runtime 的 `-`、`-e`、`--help` 或脚本参数；参数仍须遵守调用 Shell 的转义规则。例如 PowerShell 调用 `.cmd` 时要明确传递空参数，可用 `.\dev.cmd --% node script.mjs ""`。支持用 `dev.cmd node -` 从标准输入执行脚本；复杂内联代码也可保存为脚本文件。终端中可省略扩展名写 `dev bun ...`；PowerShell 在当前目录下仍需 `.\dev bun ...`。
 
-`.setup bun`、`.setup node` 只准备指定开发运行时；无选择器的 `.setup` 同时准备两者，不发布产品启动器。优先复用校验有效的受管工具，再检查 PATH。运行时兼容规则在 scripts/runtime-compat.mjs 集中维护；缺失时由 PowerShell 按稳定 Bun / Node LTS 策略准备。`.info` 报告两个运行时、配置和来源。Git/gh 统一由产品 bootstrap 的 JS 阶段准备，旧 `.setup gh` 已移除。
+`.setup bun`、`.setup node` 只准备指定开发运行时；无选择器的 `.setup` 同时准备两者，不发布产品启动器。优先复用校验有效的受管工具，再检查 PATH。运行时兼容规则在 scripts/runtime-compat.mjs 集中维护；缺失时由 PowerShell 按稳定 Bun / Node LTS 策略准备。`.info` 报告两个运行时、配置和来源。Git/gh 统一由产品 tools --ensure 的 JS 阶段准备，旧 `.setup gh` 已移除。
 
-默认 Node 使用最新 LTS、Bun 使用最新稳定版，只在需要下载时解析；已有可用版本继续复用，诊断与测试不检查更新。`.agents/skills/gidd/scripts/runtimes.json` 和 `dev/runtimes.json` 保留 Bun/gh 与开发 Node 的已验证版本校验信息。版本解析、官方校验信息、下载、SHA-256 校验、独占锁、版本验证及中断恢复共用技能脚本，不通过 Bun 安装 Node，也不通过 Node 安装 Bun。dev .setup 不覆盖已有损坏目录；运行时修复与显式重装使用产品 bootstrap，见 bootstrap 协议。
+默认 Node 使用最新 LTS、Bun 使用最新稳定版，只在需要下载时解析；已有可用版本继续复用，诊断与测试不检查更新。`.agents/skills/gidd/scripts/runtimes.json` 和 `dev/runtimes.json` 保留 Bun/gh 与开发 Node 的已验证版本校验信息。版本解析、官方校验信息、下载、SHA-256 校验、独占锁、版本验证及中断恢复共用技能脚本，不通过 Bun 安装 Node，也不通过 Node 安装 Bun。dev .setup 不覆盖已有损坏目录；运行时修复与显式重装使用产品 tools --ensure，见 tools --ensure 协议。
 
-Windows 上的 Bun 1.2.15 存在已复现的子进程兼容问题：启动不存在的程序后，后续 `spawnSync` 可能报告 `Out of memory`；脱离 GIDD 的最小示例也会触发。相同示例在 Bun 1.4.2 和 Node 上未复现，开发验收建议使用已验证的 Bun 1.4.2。普通 bootstrap 复用健康运行时；需要重新准备受管副本时用 bootstrap --reinstall，确认安装后运行完整 .test。
+Windows 上的 Bun 1.2.15 存在已复现的子进程兼容问题：启动不存在的程序后，后续 `spawnSync` 可能报告 `Out of memory`；脱离 GIDD 的最小示例也会触发。相同示例在 Bun 1.4.2 和 Node 上未复现，开发验收建议使用已验证的 Bun 1.4.2。普通 tools --ensure 复用健康运行时；需要重新准备受管副本时用 tools --ensure --force，确认安装后运行完整 .test。
 
-便携 Node 只提取 `node.exe` 和完整的上游 `LICENSE`，不附带 npm；当前测试没有 npm 依赖。产品 bootstrap 同时准备 Git 和 gh；已安装 skill 的工具初始化仍只需 Bun/Node 任一种可用，不会因开发清单额外下载 Node。
+便携 Node 只提取 `node.exe` 和完整的上游 `LICENSE`，不附带 npm；当前测试没有 npm 依赖。产品 tools --ensure 同时准备 Git 和 gh；已安装 skill 的工具初始化仍只需 Bun/Node 任一种可用，不会因开发清单额外下载 Node。
 
 开发运行时安装使用 `.setup bun` 或 `.setup node`，不接受本地安装包目录。缺少工具时按配置联网下载并校验；已可用且满足配置的工具直接复用，不联网。实际安装位置固定为 `~/.agents/skills.tools/gidd/`。
 
@@ -70,17 +70,17 @@ gh = { source = "https://github.com/cli/cli/releases" }
 <仓库>/.agents/skills/gidd/config.toml   # 仓库配置
 ~/.agents/skills.tools/gidd/            # 固定共享工具根
 ├── INSTALLATION.md
-├── js_exec.cmd             # 产品 bootstrap 生成，所有仓库共用
-├── tool-bindings.json      # bootstrap 绑定 Git/gh 的绝对路径
+├── js_exec.cmd             # 产品 tools --ensure 生成，所有仓库共用
+├── tool-bindings.json      # tools --ensure 绑定 Git/gh 的绝对路径
 ├── .cache/
 │   └── install.lock
 ├── bun/
 ├── node/
-├── git/                # bootstrap 准备 MinGit，保留目录树
+├── git/                # tools --ensure 准备 MinGit，保留目录树
 └── gh/
 ```
 
-dev .setup 复用外部工具不创建共享目录；产品 bootstrap 需创建共享启动器和 Git/gh 绑定；按需下载后保留各工具许可证及 install.json。下载和解压暂存在 `.cache/<工具>/`，安装成功后清理对应暂存，保留缓存根和锁文件。安装时展示版本和完整 URL，使用官方 SHA-256 校验。
+dev .setup 复用外部工具不创建共享目录；产品 tools --ensure 需创建共享启动器和 Git/gh 绑定；按需下载后保留各工具许可证及 install.json。下载和解压暂存在 `.cache/<工具>/`，安装成功后清理对应暂存，保留缓存根和锁文件。安装时展示版本和完整 URL，使用官方 SHA-256 校验。
 
 源码布局见 [Issue #16](https://github.com/SwawHQ/gidd/issues/16)。仓库 config.toml 单独维护，发布或复制技能时排除它及 config.toml.* 锁/临时文件，保留目标已有配置；新配置使用 config.example.toml。共享工具位于仓库外，不随技能复制或提交。完整安装和更新尚未实现。
 
@@ -93,13 +93,13 @@ dev .setup 复用外部工具不创建共享目录；产品 bootstrap 需创建�
 ## 显式 GitHub 授权
 
 ```powershell
-.\.agents\skills\gidd\gidd.cmd bootstrap
+.\.agents\skills\gidd\gidd.cmd tools --ensure
 .\dev.cmd .auth
 ```
 
-先通过 `.\.agents\skills\gidd\gidd.cmd config set github.hostname <主机>` 和 `config set github.account <账号>` 写入仓库配置。`.auth` 不再接收账号参数，转发至技能的共享 JS 启动器，仅使用配置中的主机和账号。需要 gh 2.98.0+ 和 Bun/Node 任一种；`.auth` 不下载工具，缺少工具、启动器或绑定时运行技能 bootstrap（选择 Node 追加 --node）。
+先通过 `.\.agents\skills\gidd\gidd.cmd config set github.hostname <主机>` 和 `config set github.account <账号>` 写入仓库配置。`.auth` 不再接收账号参数，转发至技能的共享 JS 启动器，仅使用配置中的主机和账号。需要 gh 2.98.0+ 和 Bun/Node 任一种；`.auth` 不下载工具，缺少工具、启动器或绑定时运行技能 tools --ensure（选择 Node 追加 --jsruntime=node）。
 
-bootstrap 先完成原生 Shell 运行时阶段，再由 JS 准备 Git/gh 并发布 tool-bindings.json。普通命令直接使用绑定路径，不逐次搜索 PATH、执行 --version 或扫描目录；调用 gh 时只调整子进程 PATH，使其使用已绑定 Git。启动失败提示重新 bootstrap，不回退重跑。bootstrap 不登录，不修改仓库或系统 PATH；详见 bootstrap 协议。
+tools --ensure 先完成原生 Shell 运行时阶段，再由 JS 准备 Git/gh 并发布 tool-bindings.json。普通命令直接使用绑定路径，不逐次搜索 PATH、执行 --version 或扫描目录；调用 gh 时只调整子进程 PATH，使其使用已绑定 Git。启动失败提示重新 tools --ensure，不回退重跑。tools --ensure 不登录，不修改仓库或系统 PATH；详见 tools --ensure 协议。
 
 入口先核验并复用匹配身份；否则在需要授权时显示本次 URL 和代码，等待用户在网页授权，最后验证实际账号。等待时保留进程，成功、失败、取消或超时后退出，不启动常驻服务。凭据由 gh 管理，可继承调用环境选定的 GH_CONFIG_DIR；不更改 Git 凭据助手或启用仓库。当前账号不匹配时明确报错，不自动切换。详见 [设备授权协议与凭据边界](.agents/skills/gidd/references/authorization.md)。
 
@@ -125,6 +125,6 @@ bootstrap 先完成原生 Shell 运行时阶段，再由 JS 准备 Git/gh 并发
 .\dev.cmd .test-live
 ```
 
-该命令分别在 Bun、Node 下验证 bootstrap 官方 Bun/Node 下载与启动器复用，以及 JS Git/gh 准备、路径绑定、完整性、版本和 doctor 识别；MinGit 还验证本地提交、克隆、抓取，以及 gh 在仅含受管 Git 的 PATH 下读取本地默认仓库。它解析最新稳定 Bun/gh/MinGit 和 Node LTS，联网下载到隔离临时目录；不接受本地安装包目录。测试后清理隔离目录，不接触真实用户安装与登录。普通 `.test` 通过测试专用的模拟下载响应验证文件读取、哈希、解压和恢复，不联网；本地 fixture 输入只存在于 `tests/support/`。直接执行测试默认跳过联网测试；Bun 1.2.15 不应直接用 `bun test` 批量运行这些文件，请使用开发入口以确保每个文件都实际执行。
+该命令分别在 Bun、Node 下验证 tools --ensure 官方 Bun/Node 下载与启动器复用，以及 JS Git/gh 准备、路径绑定、完整性、版本和 doctor 识别；MinGit 还验证本地提交、克隆、抓取，以及 gh 在仅含受管 Git 的 PATH 下读取本地默认仓库。它解析最新稳定 Bun/gh/MinGit 和 Node LTS，联网下载到隔离临时目录；不接受本地安装包目录。测试后清理隔离目录，不接触真实用户安装与登录。普通 `.test` 通过测试专用的模拟下载响应验证文件读取、哈希、解压和恢复，不联网；本地 fixture 输入只存在于 `tests/support/`。直接执行测试默认跳过联网测试；Bun 1.2.15 不应直接用 `bun test` 批量运行这些文件，请使用开发入口以确保每个文件都实际执行。
 
 后续平台增加薄启动入口与平台适配，复用 JavaScript 用例；未提供 `dev.sh` / `dev.mac.sh`，不将 Windows 特有测试的跳过当作其他平台验证通过。产品 JavaScript 仍须仅使用两种运行时共有的标准 API，并在两者中验证同一功能。

@@ -33,6 +33,15 @@ test('bootstrap bindings and repair survive interruption without overwriting unk
       assert.equal(json(ok(invoke({responses:{},downloads:{}}))).tools[0].binding_action,'reused');
       assert.equal(hash(record),first);
       assert.equal(json(ok(invoke({checkOnly:true,responses:{},downloads:{}}))).status,'ready');
+      assert.equal(invoke({force:true,responses:{},downloads:{}}).status,1);
+      assert.equal(hash(record),first,'Failed force preparation preserves the healthy installation');
+      assert.equal(json(ok(invoke({force:true}))).tools[0].action,'reinstalled');
+      assert.notEqual(hash(record),first,'Force replaces even a healthy same-version installation');
+      const external=join(f.root,'external-'+name,name+'.exe');stub(exe,external);
+      const externalHash=hash(external),fresh=join(f.root,name+'-forced-storage');
+      const forced=json(ok(jsAdapter(f.root,{...request,root:fresh,force:true},{env:{PATH:dirname(external)}})));
+      assert.equal(forced.tools[0].action,'installed');assert.equal(readBindings(fresh).tools[name].source,'managed');
+      assert.equal(hash(external),externalHash,'Force never modifies an external executable');
       for(const phase of ['extracted','backed_up','published','bound']) {
         write(executable,'damaged');
         const oldBinding=hash(join(root,'tool-bindings.json'));
@@ -50,7 +59,7 @@ test('bootstrap bindings and repair survive interruption without overwriting unk
         assert.notEqual(hash(record),first,'Same-version replacement has a distinct installation identity');
       }
       write(join(root,name,'user.txt'),'keep');write(executable,'damaged');
-      const unknown=invoke({responses:{},downloads:{}});
+      const unknown=invoke({force:true,responses:{},downloads:{}});
       assert.equal(unknown.status,1);assert.equal(json(unknown).checks.at(-1).reason,'unknown_tool_ownership:'+name);
       assert.equal(readFileSync(join(root,name,'user.txt'),'utf8'),'keep');
     }

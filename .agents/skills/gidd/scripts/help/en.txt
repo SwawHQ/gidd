@@ -1,25 +1,24 @@
 GIDD (Windows x64 / PowerShell 5.1)
 
-Tool preparation (explicit):
-  gidd.cmd bootstrap                                Prepare/repair a JS runtime, Git and gh; publish shared bindings.
-  gidd.cmd bootstrap --check                        Check runtime, Git, gh and bindings; no downloads or writes.
-  gidd.cmd bootstrap --node                         Select/prepare Node LTS instead of the default Bun preference.
-  gidd.cmd bootstrap --reinstall                    Reinstall managed Bun; add --node for Node.
-
-Rerun bootstrap after skill updates or tool path changes. Ordinary commands use shared bindings.
-
 Help and diagnosis:
-  gidd.cmd help [en|zh]                              Show help; aliases: --help, -h. Also shown with no arguments.
-  gidd.cmd doctor                                    Check environment and target repository; read-only, offline.
+  gidd help en                           Show English help
+  gidd help zh                           Show Chinese help
+  gidd doctor                            Check availability
 
-Repository config:
-  gidd.cmd config show                               Read config.toml without changing it.
-  gidd.cmd config set <key> <value>                  Edit a field, preserving comments; create a template if absent.
-  gidd.cmd config set github.account <login>         Set the expected account; does not log in or switch accounts.
+Skill settings:
+  gidd config show                       Show current config.toml contents
+  gidd config set <key> <value>           Set a field in config.toml
+  gidd config set github.account SwawHQ  (Example) Set github.account to SwawHQ
 
 GitHub identity:
-  gidd.cmd identity                                  Check configured API identity, Git remote reading and author.
-  gidd.cmd auth                                      Wait for device authorization using config; gh may save credentials.
+  gidd identity                          Check API identity, Git remote read access and commit author using config
+  gidd auth                              Request device authorization using config and wait for confirmation; gh may save credentials
+
+External tools:
+  gidd tools --check                     Read-only check of Git, gh, JS runtime (Bun or Node) and shared bindings
+  gidd tools --ensure                    Ensure JS runtime, Git and gh are available and repair bindings; download portable tools if missing
+  gidd tools --ensure --jsruntime=node   As above, but select Node; reuse the current runtime if unspecified
+  gidd tools --ensure --force            Download portable copies of the selected runtime, Git and gh again; reinstall and rebuild bindings
 
 Documentation:
-  SKILL.md / references/                             Full usage, configuration fields, result protocols and current scope.
+  SKILL.md / references/                 Full usage, configuration fields, result protocols and current feature scope
