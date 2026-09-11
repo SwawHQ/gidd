@@ -3,14 +3,13 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configure, configurationHint, readGitHubConfiguration } from './config.mjs';
 import { doctor } from './doctor.mjs';
-import { checkIdentity } from './github.mjs';
 import { authorize } from './auth.mjs';
 import { resolveStorage, repositoryRoot } from './storage.mjs';
 import { boundTools, boundExecutor } from './bindings.mjs';
 
 export async function main(args) {
   let command = (args.shift() || 'help').toLowerCase();
-  const schemas = { config: 'gidd.config/v1', doctor: 'gidd.doctor/v1', identity: 'gidd.identity/v1', auth: 'gidd.auth/v1' };
+  const schemas = { config: 'gidd.config/v1', doctor: 'gidd.doctor/v1', auth: 'gidd.auth/v1' };
   let schema = 'gidd.cli/v1';
   try {
     if (['help','--help','-h'].includes(command)) {
@@ -28,7 +27,14 @@ export async function main(args) {
       action = args.shift(); if (!['show','set'].includes(action)) throw new Error('invalid_arguments');
       if (action === 'set') { key = args.shift(); value = args.shift(); if (value === undefined) throw new Error('invalid_arguments'); }
     }
-    if (['identity','auth'].includes(command) && args.some(arg => ['--hostname','--account','--remote'].includes(arg) || !arg.startsWith('--') && args.indexOf(arg) === 0)) throw new Error('github_parameters_moved_to_config');
+    if (command === 'auth' && args.some(arg => ['--hostname','--account','--remote'].includes(arg) || !arg.startsWith('--') && args.indexOf(arg) === 0)) throw new Error('github_parameters_moved_to_config');
+    let offline = false;
+    if (command === 'doctor') {
+      const flags = args.filter(arg => arg === '--offline');
+      if (flags.length > 1) throw new Error('invalid_arguments');
+      offline = flags.length === 1;
+      args = args.filter(arg => arg !== '--offline');
+    }
     let repository;
     if (args.length) {
       if (args.length !== 2 || args[0] !== '--repository' || !args[1]) throw new Error('invalid_arguments');
@@ -45,24 +51,18 @@ export async function main(args) {
     if (command !== 'doctor') repository = repositoryRoot(repository);
     schema = schemas[command];
     let report;
-    if (command === 'doctor') report = await doctor(repository);
+    if (command === 'doctor') report = await doctor(repository, { offline });
     else if (command === 'config') report = configure(repository,action,key,value);
     else {
       const storage = resolveStorage(repository,{inspect:false});
-      {
-        const github = readGitHubConfiguration(repository,command === 'identity' ? ['hostname','account','remote'] : ['hostname','account']);
-        const bindings = boundTools(storage.tools_root,command === 'auth' ? ['gh'] : ['git','gh']);
-        const execute = boundExecutor(bindings);
-        const options = { repository, ...github, gh:bindings.gh?.path, git:bindings.git?.path };
-        if (command === 'identity') {
-          report = await checkIdentity(options, execute);
-        } else {
-          const controller = new AbortController(), cancel = () => controller.abort();
-          process.on('SIGINT',cancel); process.on('SIGTERM',cancel);
-          try { report = await authorize(options,{ execute, signal: controller.signal, onEvent: event => console.error(JSON.stringify(event)) }); }
-          finally { process.removeListener('SIGINT',cancel); process.removeListener('SIGTERM',cancel); }
-        }
-      }
+      const github = readGitHubConfiguration(repository,['hostname','account']);
+      const bindings = boundTools(storage.tools_root,['gh']);
+      const execute = boundExecutor(bindings);
+      const options = { repository, ...github, gh:bindings.gh?.path, git:bindings.git?.path };
+      const controller = new AbortController(), cancel = () => controller.abort();
+      process.on('SIGINT',cancel); process.on('SIGTERM',cancel);
+      try { report = await authorize(options,{ execute, signal: controller.signal, onEvent: event => console.error(JSON.stringify(event)) }); }
+      finally { process.removeListener('SIGINT',cancel); process.removeListener('SIGTERM',cancel); }
     }
     console.log(JSON.stringify(report));
     return ['ready','local_ready','checks_passed'].includes(report.status) ? 0 : 1;

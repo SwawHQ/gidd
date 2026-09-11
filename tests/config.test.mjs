@@ -169,9 +169,9 @@ test('configured setup reuses gh without knowing a skill installation directory'
     assert.match(readFileSync(join(tools,'INSTALLATION.md'),'utf8'),/independent of the skill installation directory/);
     const git=findGit(); ok(run(git,['-C',f.root,'init','--quiet']));
     const diagnosis=json(runDiagnosis(f.root,{env:{PATH:dirname(git)}}));
-    samePath(diagnosis.checks.find(x=>x.id==='tools.storage').details.tools_root,tools);
-    assert.equal(diagnosis.checks.find(x=>x.id==='runtime').details.selected,process.versions.bun?'tool.bun':'tool.node');
-    assert.equal(diagnosis.checks.find(x=>x.id==='repository.config.validation').status,'ready');
+    samePath(diagnosis.checks.find(x=>x.id==='gh').details.path,join(tools,'gh/gh.exe'));
+    assert.equal(diagnosis.checks.find(x=>x.id==='js_runtime').details.name,process.versions.bun?'bun':'node');
+    assert.equal(diagnosis.checks.find(x=>x.id==='config').reason,'github_fields_missing');
     assert.equal(diagnosis.checks.find(x=>x.id==='github.identity').status,'not_checked');
     write(path,configText()+'directory = "../outside"\n'); assert.notEqual(invoke().status,0);
   } finally { f.dispose(); }

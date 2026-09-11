@@ -29,7 +29,7 @@ Windows 入口（可用 Node/Bun 任一种）：
 
 若存在 token 环境变量且身份无法验证，返回 `environment_token_active`；不暗中清空用户 token，也不绕过它去登录。身份已匹配时允许复用环境认证。
 
-登录开始后的失败或账号不匹配可能发生在 gh 已保存凭据之后，因此结果标记 `credentials_may_have_changed=true`。Agent 应报告实际结果；不擅自 logout、删除凭据或回滚账号。成功仅确认 GitHub API 身份，Git 传输和 commit 作者仍通过 [身份检查](identity.md) 分别报告，不声称已能 push，也不启用仓库。
+登录开始后的失败或账号不匹配可能发生在 gh 已保存凭据之后，因此结果标记 `credentials_may_have_changed=true`。Agent 应报告实际结果；不擅自 logout、删除凭据或回滚账号。成功仅确认 GitHub API 身份，Git 传输和 commit 作者仍通过 [doctor 诊断](doctor.md) 分别报告，不声称已能 push，也不启用仓库。
 
 离线用例使用模拟 gh，不读取真实登录。已用真实 gh 2.98.0 在 Node/Bun 下验证设备信息输出和取消；维护者曾用当时的账号参数入口确认真实授权通过；当前入口改为配置读取，并通过模拟 gh 回归验证，未重新发起真实登录。该人工结果由维护者提供，具体凭据存储后端仍以 gh 的实际结果为准。
 

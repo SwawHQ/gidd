@@ -13,7 +13,7 @@ gidd.cmd config show
 gidd.cmd config set github.hostname github.com
 gidd.cmd config set github.account octocat
 gidd.cmd config set github.remote origin
-gidd.cmd identity
+gidd.cmd doctor
 gidd.cmd auth
 ```
 
@@ -37,9 +37,9 @@ account = "octocat" # 预期登录身份，不是仓库所有者或 commit 作�
 remote = "origin"  # Git remote 名称，不是 URL
 ```
 
-身份检查必须从文件读取三项；授权只要求 hostname/account，remote 不参与授权。缺项或非法值时报错，提示设置；不从当前 gh 登录、Git remote、命令行参数或默认值推断。`identity/auth` 已移除 `--hostname`、`--account`、`--remote` 以及 `auth <账号>`；`dev.cmd .auth` 同样不接收账号。修改账号只改变预期身份，不登录、不切换账号、不修改 Git 配置，也不自动启用仓库。
+doctor 从文件读取三项，缺项或非法值在 config 中报告，并继续可独立完成的检查；API 身份只依赖 hostname/account，remote 读取只依赖 hostname/remote。授权只要求 hostname/account，remote 不参与授权，配置错误时拒绝授权。两者都不从当前 gh 登录、Git remote、命令行参数或默认值推断。`doctor/auth` 不接受 `--hostname`、`--account`、`--remote` 以及 `auth <账号>`；`dev.cmd .auth` 同样不接收账号。修改账号只改变预期身份，不登录、不切换账号、不修改 Git 配置，也不自动启用仓库。
 
-编辑保留无关字段、注释、UTF-8 BOM 和原有换行。按白名单校验主机名、账号和 remote，保留已有非法/不支持的结构供人工修订，不重建文件来丢弃未知内容。stage0 用受限读取器检查启动配置，完整 schema、GitHub 字段值和所需字段由 JavaScript 校验；doctor 的工具配置就绪不代表身份配置齐备。
+编辑保留无关字段、注释、UTF-8 BOM 和原有换行。按白名单校验主机名、账号和 remote，保留已有非法/不支持的结构供人工修订，不重建文件来丢弃未知内容。stage0 用受限读取器检查启动配置，完整 schema、GitHub 字段值和所需字段由 JavaScript 校验；doctor 的工具可用性独立于仓库配置，工具可用不代表身份字段齐备。
 
 写入使用同目录临时文件、刷盘和原子替换，独占 `config.toml.lock` 防止 GIDD 编辑器相互覆盖；正常结束清理临时文件与锁。写入前发现文件已被外部修改时拒绝替换。进程被强制终止可能留下锁和临时文件；确认无配置编辑进程运行后才清理对应遗留文件并重试，不自动删除锁抢占。保留原文件不等于任意硬件断电下零丢失。
 

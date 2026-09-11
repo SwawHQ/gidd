@@ -22,7 +22,7 @@ gidd.cmd tools --ensure
       → 发布 tool-bindings.json
   → 汇总两阶段结果
 
-gidd.cmd identity/auth
+gidd.cmd doctor/auth
   → js_exec.cmd → 当前技能的 scripts/gidd.mjs
   → 读取绑定，以绝对路径直接执行工具
 ```
@@ -47,7 +47,7 @@ gidd.cmd identity/auth
 
 绑定缺失、格式错误、记录版本低于当前代码要求，或程序启动失败时提示重新 tools --ensure。程序原路径被替换但仍可执行时，普通命令未必发现；绑定版本是上次验证记录。网络、认证和普通命令失败保持业务原因，不自动换工具或重跑业务。工具依赖损坏可能表现为普通执行失败，使用 tools --check 或 doctor 进一步诊断。
 
-doctor 与 tools --check 做完整工具校验；doctor 还检查目标工作树和 GitHub 配置。help/config 不要求 Git/gh 绑定。auth 只强制要求 gh 绑定，存在 Git 绑定时共用它；不会因为绑定缺失而自动安装或登录。
+tools --check 做完整工具校验；doctor 只检查当前运行时和绑定 Git/gh 的基本可用性，不发现候选或扫描安装树。doctor 默认还检查目标仓库和 GitHub 身份及 HTTPS remote 读取，--offline 跳过联网项。help/config 不要求 Git/gh 绑定。auth 只强制要求 gh 绑定，存在 Git 绑定时共用它；不会因为绑定缺失而自动安装或登录。
 
 ## 发布与恢复
 

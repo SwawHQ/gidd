@@ -3,7 +3,6 @@ import { symlinkSync, unlinkSync } from 'node:fs';
 import { resolveGitRelease, extractPayload } from '../.agents/skills/gidd/scripts/install.mjs';
 import { managedToolValid } from '../.agents/skills/gidd/scripts/storage.mjs';
 import { findTool, toolEnvironment } from '../.agents/skills/gidd/scripts/tools.mjs';
-import { checkIdentity } from '../.agents/skills/gidd/scripts/github.mjs';
 import { prepareTools } from '../.agents/skills/gidd/scripts/bootstrap-tools.mjs';
 import { boundTools, boundExecutor, readBindings } from '../.agents/skills/gidd/scripts/bindings.mjs';
 import { defaults } from '../.agents/skills/gidd/scripts/storage.mjs';
@@ -128,8 +127,8 @@ test('MinGit nested installation, integrity, recovery, managed selection and ext
     assert.equal(json(ok(jsAdapter(f.root,installSpec(root,definitionPath,join(f.root,'no-download'))))).action,'reused');
     const configured = ['setup','git','--repository',f.root];
     assert.equal(json(ok(prepare(f.root,'git',{env:{PATH:''}}))).tools[0].action,'reused');
-    const doctor = json(product(['doctor','--repository',f.root],{env:{PATH:''}}));
-    assert.equal(doctor.checks.find(item=>item.id==='tool.git').details.source,'managed');
+    const doctor = json(product(['doctor','--offline','--repository',f.root],{env:{PATH:''}}));
+    assert.equal(doctor.checks.find(item=>item.id==='git').details.gidd_managed,true);
     for (const phase of ['downloaded','extracted','verified','published']) {
       const where = join(f.root,'interrupted-'+phase);
       const killed = await startShellAdapter(f.root,installSpec(where,definitionPath,f.root,phase),{javascript:true}).result;
@@ -176,10 +175,14 @@ test('Git and gh share selected PATH without changing the parent environment', a
     assert.equal(env.GIT_EXEC_PATH,undefined); assert.equal(env.git_template_dir,'another-template');
     assert.equal(original.Path,'external'); assert.equal(original.GIT_EXEC_PATH,'another-git');
     const calls=[];
-    await checkIdentity({repository:f.root,git,gh,hostname:'github.com',account:'Octocat',remote:'origin'},async (exe,args,options)=>{
-      calls.push(exe); assert.equal(options.env,env); return {ok:false,reason:'test_unavailable',text:''};
-    },env);
-    assert.ok(calls.includes(git)); assert.ok(calls.includes(gh));
+    const execute = boundExecutor({git:{path:git},gh:{path:gh}},async (exe,args,options)=>{
+      calls.push({exe,env:options.env});
+      assert.ok(options.env.PATH.startsWith(dirname(git)));
+      return {ok:false,reason:'test_unavailable',text:''};
+    });
+    await execute(git,['--version']); await execute(gh,['--version']);
+    assert.equal(calls[0].env,calls[1].env);
+    assert.deepEqual(calls.map(c=>c.exe),[git,gh]);
   } finally {f.dispose();}
 });
 

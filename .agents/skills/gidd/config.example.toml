@@ -17,6 +17,6 @@ gh = { source = "https://github.com/cli/cli/releases" }
 [github]
 # Expected identity and Git remote; these are not credentials or commit author settings.
 hostname = "github.com"
-# Set explicitly before identity/auth: gidd.cmd config set github.account YOUR_LOGIN
+# Set explicitly before doctor/auth: gidd.cmd config set github.account YOUR_LOGIN
 # account = "YOUR_LOGIN"
 remote = "origin"

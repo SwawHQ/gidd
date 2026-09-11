@@ -276,7 +276,7 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
     assert.match(ok(s.invoke([])).stdout, /Help and diagnosis:/);
     assert.match(ok(s.invoke([], { GIDD_LANG: 'zh' })).stdout, /帮助与诊断：/);
     assert.match(ok(s.invoke(['help','en'], { GIDD_LANG: 'zh' })).stdout, /Help and diagnosis:/);
-    for (const args of [['unknown'], ['help','fr'], ['help','en','extra'], ['doctor','--repository','.'],
+    for (const args of [['unknown'], ['identity'], ['doctor','--offline','--offline'], ['doctor','--offline=true'], ['auth','--offline'], ['help','fr'], ['help','en','extra'], ['doctor','--repository','.'],
       ['doctor',...s.args,'--repository',s.target], ['doctor',...s.args,'--account','x'], ['setup','python',...s.args],
       ['setup','bun',...s.args,'--offline','x'], ['auth','Octocat',...s.args]]) {
       const result = s.invoke(args);
@@ -295,8 +295,8 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
     const report = json(result);
     assert.equal(report.schema, 'gidd.doctor/v1');
     sameDirectory(report.repository, s.target);
-    assert.equal(report.checks.find(c => c.id === 'runtime').status, 'ready');
-    for (const command of [['identity'],['auth']]) {
+    assert.equal(report.checks.find(c => c.id === 'js_runtime').status, 'ready');
+    for (const command of [['auth']]) {
       const missing = s.invoke([...command,...s.args]);
       assert.equal(missing.status, 2);
       assert.equal(json(missing).reason, 'config_missing_github_hostname');
@@ -363,7 +363,7 @@ test('repository installation locates its own Git worktree independently of cwd'
   } finally { f.dispose(); }
 });
 
-test('shell identity and auth preserve JavaScript results, events and exit codes', { timeout: 30000 }, () => {
+test('shell doctor and auth preserve JavaScript results, events and exit codes', { timeout: 30000 }, () => {
   const f = fixture();
   try {
     const s = installation(f), git = findGit();
@@ -378,17 +378,17 @@ test('shell identity and auth preserve JavaScript results, events and exit codes
     const env = { PATH: [dirname(process.execPath),dirname(git),dirname(gh)].join(';'), GH_CONFIG_DIR: join(f.root,'credentials'),
       GH_TOKEN:'', GITHUB_TOKEN:'', GH_ENTERPRISE_TOKEN:'', GITHUB_ENTERPRISE_TOKEN:'' };
     const before = snapshot(s.target);
-    const identity = s.invoke(['identity',...s.args],env);
-    assert.equal(identity.status, 1);
-    const report = json(identity);
-    assert.equal(report.schema,'gidd.identity/v1');
-    assert.equal(report.checks.find(c => c.id === 'github.api').status,'ready');
+    const diagnosis = s.invoke(['doctor',...s.args],env);
+    assert.equal(diagnosis.status, 1);
+    const report = json(diagnosis);
+    assert.equal(report.schema,'gidd.doctor/v1');
+    assert.equal(report.checks.find(c => c.id === 'github.identity').status,'ready');
     assert.equal(report.checks.find(c => c.id === 'git.author').details.email,'author@example.test');
     assert.equal(report.checks.find(c => c.id === 'git.remote_read').reason,'https_remote_required');
     assert.equal(json(ok(s.invoke(['auth',...s.args],env))).reason,'already_authenticated');
     write(config,configured.replace('remote = "fixture"\n',''));
     assert.equal(json(ok(s.invoke(['auth',...s.args],env))).reason,'already_authenticated');
-    assert.equal(json(s.invoke(['identity',...s.args],env)).reason,'config_missing_github_remote');
+    assert.deepEqual(json(s.invoke(['doctor',...s.args],env)).checks.find(c=>c.id==='config').details.missing_fields,['remote']);
     write(config,configured.replace('"Octocat"','"OtherAccount"'));
     const mismatch = s.invoke(['auth',...s.args],env);
     assert.equal(mismatch.status,1);
@@ -402,15 +402,15 @@ test('shell identity and auth preserve JavaScript results, events and exit codes
   } finally { f.dispose(); }
 });
 
-test('config shell command creates and edits defaults; identity/auth reject missing config and overrides', { timeout: 30000 }, () => {
+test('config shell command creates and edits defaults; auth rejects missing config and overrides', { timeout: 30000 }, () => {
   const f = fixture();
   try {
     const s = installation(f), env = { PATH: dirname(process.execPath) };
     const config = join(s.target,'.agents/skills/gidd/config.toml');
     const original = readFileSync(config,'utf8');
-    const missing = s.invoke(['identity',...s.args],env);
+    const missing = s.invoke(['auth',...s.args],env);
     assert.equal(json(missing).reason,'config_missing_github_hostname');
-    for (const args of [['identity','--account','Octocat'],['identity','--hostname','github.com'],['identity','--remote','origin'],['auth','Octocat']]) {
+    for (const args of [['auth','--account','Octocat'],['auth','--hostname','github.com'],['auth','--remote','origin'],['auth','Octocat']]) {
       assert.equal(json(s.invoke([...args,...s.args],env)).reason,'github_parameters_moved_to_config');
     }
     for (const [key,value] of [['hostname','github.com'],['account','Octocat'],['remote','upstream']]) {

@@ -3,15 +3,15 @@ GIDD (Windows x64 / PowerShell 5.1)
 Help and diagnosis:
   gidd help en                           Show English help
   gidd help zh                           Show Chinese help
-  gidd doctor                            Check availability
+  gidd doctor                            Check tools, repository and GitHub identity (includes network checks)
+  gidd doctor --offline                  Check local tools, config and repository without network requests
 
 Skill settings:
   gidd config show                       Show current config.toml contents
   gidd config set <key> <value>           Set a field in config.toml
   gidd config set github.account SwawHQ  (Example) Set github.account to SwawHQ
 
-GitHub identity:
-  gidd identity                          Check API identity, Git remote read access and commit author using config
+GitHub authorization:
   gidd auth                              Request device authorization using config and wait for confirmation; gh may save credentials
 
 External tools:
