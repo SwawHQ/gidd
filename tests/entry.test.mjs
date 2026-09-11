@@ -82,7 +82,7 @@ test('shared launcher forwards raw argv, stdin, cwd, stderr and exit without Pow
     // The shared launcher runs a different repository's script, without rebinding.
     const other=join(f.root,'other repo/.agents/skills/gidd'); copySkill(other);
     const otherCmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
-    assert.match(ok(run(otherCmd,['/d','/s','/c',`""${join(other,'gidd.cmd')}" help en"`],{windowsVerbatimArguments:true,env:{PATH:''}})).stdout,/target repository/);
+    assert.match(ok(run(otherCmd,['/d','/s','/c',`""${join(other,'gidd.cmd')}" help en"`],{windowsVerbatimArguments:true,env:{PATH:''}})).stdout,/Help and diagnosis:/);
   } finally {f.dispose();}
 });
 
@@ -247,11 +247,11 @@ test('generated launcher pins an external Unicode/percent path and does not sear
     const failed=adapter(f.root,{action:'bootstrap',repositoryRoot:s.target,responses:{},downloads:{},yes:true,failPublish:true},
       {env:{...env,PATH:nextBin}});
     assert.notEqual(failed.status,0); assert.equal(hash(launcher),previous);
-    assert.match(ok(s.invoke(['help','en'],{...env,PATH:''})).stdout,/target repository/);
+    assert.match(ok(s.invoke(['help','en'],{...env,PATH:''})).stdout,/Help and diagnosis:/);
 
     const log=join(f.root,'unexpected-probe.log'), fake=compile(f.root);
     stub(fake,join(toolsRoot(home),'bun/bun.exe'),undefined,true);
-    assert.match(ok(s.invoke(['help','en'],{...env,PATH:'',GIDD_TEST_PROBE_LOG:log})).stdout,/target repository/);
+    assert.match(ok(s.invoke(['help','en'],{...env,PATH:'',GIDD_TEST_PROBE_LOG:log})).stdout,/Help and diagnosis:/);
     assert.equal(hash(launcher),previous); assert.equal(existsSync(log),false);
     rmSync(join(bin,`${name}.exe`));
     assert.notEqual(s.invoke(['help','en'],{...env,GIDD_TEST_PROBE_LOG:log}).status,0);
@@ -260,7 +260,7 @@ test('generated launcher pins an external Unicode/percent path and does not sear
     stub(process.execPath,join(root,name,`${name}.exe`),undefined,true);
     assert.equal(json(ok(s.invoke(['tools','--ensure',...s.args],{...env,PATH:''}))).runtime.details.source,'managed');
     assert.doesNotMatch(readFileSync(launcher,'utf8'),/chcp|[^\x00-\x7f]/i);
-    assert.match(ok(s.invoke(['--help','en'],{...env,PATH:''})).stdout,/target repository/);
+    assert.match(ok(s.invoke(['--help','en'],{...env,PATH:''})).stdout,/Help and diagnosis:/);
 
   } finally {f.dispose();}
 });
@@ -269,13 +269,13 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
   const f = fixture();
   try {
     const s = installation(f), before = snapshot(f.root);
-    assert.match(ok(s.invoke(['help','zh'])).stdout, /目标仓库/);
+    assert.match(ok(s.invoke(['help','zh'])).stdout, /帮助与诊断：/);
     for (const alias of ['--help','-h']) {
       assert.equal(ok(s.invoke([alias,'zh'])).stdout, ok(s.invoke(['help','zh'])).stdout);
     }
-    assert.match(ok(s.invoke([])).stdout, /target repository/);
-    assert.match(ok(s.invoke([], { GIDD_LANG: 'zh' })).stdout, /目标仓库/);
-    assert.match(ok(s.invoke(['help','en'], { GIDD_LANG: 'zh' })).stdout, /target repository/);
+    assert.match(ok(s.invoke([])).stdout, /Help and diagnosis:/);
+    assert.match(ok(s.invoke([], { GIDD_LANG: 'zh' })).stdout, /帮助与诊断：/);
+    assert.match(ok(s.invoke(['help','en'], { GIDD_LANG: 'zh' })).stdout, /Help and diagnosis:/);
     for (const args of [['unknown'], ['help','fr'], ['help','en','extra'], ['doctor','--repository','.'],
       ['doctor',...s.args,'--repository',s.target], ['doctor',...s.args,'--account','x'], ['setup','python',...s.args],
       ['setup','bun',...s.args,'--offline','x'], ['auth','Octocat',...s.args]]) {
