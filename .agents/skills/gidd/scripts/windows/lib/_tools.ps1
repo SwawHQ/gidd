@@ -1,4 +1,4 @@
-﻿function New-Check {
+function New-Check {
     param([string]$Id, [string]$Status, [string]$Reason, [hashtable]$Details = @{})
     return [ordered]@{ id = $Id; status = $Status; reason = $Reason; details = $Details }
 }

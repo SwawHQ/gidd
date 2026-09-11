@@ -235,7 +235,7 @@ test('dev.cmd .auth requires identity config and uses shared storage', { timeout
   const f = fixture();
   try {
     const checkout = join(f.root,'checkout');
-    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/gidd.cmd','.agents/skills/gidd/scripts','.agents/skills/gidd/assets']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    for (const path of ['dev.cmd','dev','.agents/skills/gidd/gidd.cmd','.agents/skills/gidd/scripts','.agents/skills/gidd/assets']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
     ok(adapter(f.root,{action:'bootstrap',repositoryRoot:checkout,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
     const compiled = compile(f.root,'auth-gh.cs');
     const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
@@ -259,7 +259,7 @@ test('dev.cmd .auth dispatches real JavaScript with one runtime and never instal
   const f = fixture();
   try {
     const checkout = join(f.root, 'repo with spaces');
-    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/gidd.cmd','.agents/skills/gidd/scripts','.agents/skills/gidd/assets']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
+    for (const path of ['dev.cmd','dev','.agents/skills/gidd/gidd.cmd','.agents/skills/gidd/scripts','.agents/skills/gidd/assets']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
     write(join(checkout, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\n' + githubConfig);
     ok(adapter(f.root,{action:'bootstrap',repositoryRoot:checkout,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
     const compiled = compile(f.root, 'auth-gh.cs'), gh = join(f.root, 'bin/gh.exe');

@@ -97,7 +97,7 @@ stage0 路径解析由 `scripts/windows/lib/_configuration.ps1` 完成，不依�
 
 ## 发布、提交与清理
 
-gh 版本策略和各工具下载来源在仓库实例中，已解析版本和校验值在实际工具的 install.json 中。`assets/runtimes.json`（Bun/gh）与源码仓库的 `scripts/dev/runtimes.json`（开发 Node）保留已验证版本的校验信息；平台资产名称与提取规则由 stage0 releases.ps1 和 JS install.mjs 适配。每个实际工具根内的 INSTALLATION.md 说明来源与清理边界，不记录技能安装模式。
+gh 版本策略和各工具下载来源在仓库实例中，已解析版本和校验值在实际工具的 install.json 中。`assets/runtimes.json`（Bun/gh）与源码仓库的 `dev/runtimes.json`（开发 Node）保留已验证版本的校验信息；平台资产名称与提取规则由 stage0 releases.ps1 和 JS install.mjs 适配。每个实际工具根内的 INSTALLATION.md 说明来源与清理边界，不记录技能安装模式。
 
 仓库实例只记录 gh 版本策略、下载来源和预期 GitHub 身份，可随源码审阅；不把整个 `.agents/` 默认视为应提交或应忽略。共享工具和下载缓存位于仓库外，不进入源码提交。
 

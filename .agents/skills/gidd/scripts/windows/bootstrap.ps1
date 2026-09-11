@@ -1,4 +1,4 @@
-﻿# Explicit native bootstrap. No JavaScript runtime is needed to reach this entry.
+# Explicit native bootstrap. No JavaScript runtime is needed to reach this entry.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)

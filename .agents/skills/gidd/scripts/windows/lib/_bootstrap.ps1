@@ -1,4 +1,4 @@
-﻿function Find-GiddBootstrapRuntime {
+function Find-GiddBootstrapRuntime {
     param($Storage, [switch]$Node)
     $order = if ($Node) { @('node') } else { @('bun','node') }
     $attempts = @()

@@ -1,4 +1,4 @@
-﻿function Receive-GiddFile {
+function Receive-GiddFile {
     param([string]$Url, [string]$Destination, [string]$ExpectedHash)
     if ($ExpectedHash -notmatch '^[a-f0-9]{64}$') { throw 'invalid_expected_hash' }
     if (([uri]$Url).Scheme -ne 'https') { throw 'https_required' }

@@ -1,4 +1,4 @@
-﻿function Get-GiddRepositoryRoot {
+function Get-GiddRepositoryRoot {
     param([string]$Path)
     if ($Path -notmatch '^[A-Za-z]:[\\/]') { throw 'repository_absolute_local_path_required' }
     $target = [IO.Path]::GetFullPath($Path)

@@ -1,4 +1,4 @@
-﻿param([string]$RequestPath)
+param([string]$RequestPath)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
@@ -7,8 +7,6 @@ try {
     $request = [IO.File]::ReadAllText($RequestPath) | ConvertFrom-Json
     foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','setup-tools/_filesystem.ps1','setup-tools/download.ps1','setup-tools/releases.ps1','setup-tools/install.ps1')) {
         $source = Join-Path $request.codeRoot $file
-        $bytes = [IO.File]::ReadAllBytes($source)
-        if ($bytes.Length -lt 3 -or $bytes[0] -ne 239 -or $bytes[1] -ne 187 -or $bytes[2] -ne 191) { throw "Missing BOM: $source" }
         . $source
     }
     switch ($request.action) {
@@ -17,8 +15,6 @@ try {
         }
         'syntax' {
             foreach ($source in $request.paths) {
-                $bytes = [IO.File]::ReadAllBytes($source)
-                if ($bytes.Length -lt 3 -or $bytes[0] -ne 239 -or $bytes[1] -ne 187 -or $bytes[2] -ne 191) { throw "Missing BOM: $source" }
                 $tokens=$null; $errors=$null
                 [void][Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
                 if ($errors.Count) { throw "Parse failed: $source $errors" }
