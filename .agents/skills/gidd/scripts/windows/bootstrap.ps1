@@ -1,16 +1,10 @@
-# Native entry for explicit tool management; no JS runtime required to show help.
+# Native entry for tool checks and explicit preparation.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
 try {
     $inputArgs = @($args)
     if ($inputArgs.Count -and $inputArgs[0] -eq 'tools') { $inputArgs = @($inputArgs | Select-Object -Skip 1) }
-    if (-not $inputArgs.Count) {
-        $language = if ($env:GIDD_LANG) { $env:GIDD_LANG } elseif ($env:LC_ALL) { $env:LC_ALL } elseif ($env:LC_MESSAGES) { $env:LC_MESSAGES } elseif ($env:LANG) { $env:LANG } else { [Globalization.CultureInfo]::CurrentUICulture.Name }
-        $helpFile = if ($language -match '^zh') { 'zh-CN.txt' } else { 'en.txt' }
-        [Console]::Write([IO.File]::ReadAllText((Join-Path $PSScriptRoot "../help/$helpFile"),[Text.Encoding]::UTF8))
-        exit 0
-    }
     $options = @{}; $repository = $null; $runtime = ''
     for ($i=0; $i -lt $inputArgs.Count; $i++) {
         $argument = [string]$inputArgs[$i]
@@ -27,7 +21,7 @@ try {
     }
     if ($options.ContainsKey('--check') -and $options.ContainsKey('--ensure')) { throw 'check_conflicts_with_ensure' }
     if (-not $options.ContainsKey('--ensure') -and ($options.ContainsKey('--force') -or $runtime)) { throw 'option_requires_ensure' }
-    if (-not $options.ContainsKey('--check') -and -not $options.ContainsKey('--ensure')) { throw 'tools_mode_required' }
+    if (-not $options.ContainsKey('--check') -and -not $options.ContainsKey('--ensure')) { $options['--check'] = $true }
     foreach ($file in @('_process.ps1','_managed.ps1','_tools.ps1','_configuration.ps1','_bootstrap.ps1')) { . (Join-Path $PSScriptRoot "lib/$file") }
     foreach ($file in @('_filesystem.ps1','download.ps1','releases.ps1','install.ps1')) { . (Join-Path $PSScriptRoot "setup-tools/$file") }
     if ([Environment]::OSVersion.Platform -ne 'Win32NT' -or -not [Environment]::Is64BitProcess -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'unsupported_platform' }

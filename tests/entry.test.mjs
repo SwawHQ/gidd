@@ -35,17 +35,20 @@ test('compatibility is a standalone bootstrap method with internal version polic
   assert.equal(json(ok(run(process.execPath,[join(code,'../runtime-compat.mjs')]))).status,'compatible');
 });
 
-test('tools requires explicit modes; help and check are read only without a runtime', () => {
+test('tools defaults to read-only check and requires explicit ensure for changes', () => {
   const f=fixture();
   try {
     const s=installation(f,false),before=snapshot(f.root);
-    assert.match(ok(s.invoke(['tools'],{PATH:''})).stdout,/tools --ensure/);
+    const bare=s.invoke(['tools'],{PATH:''}), explicit=s.invoke(['tools','--check'],{PATH:''});
+    assert.equal(bare.status,explicit.status);assert.deepEqual(json(bare),json(explicit));
+    assert.equal(json(bare).read_only,true);
     assert.equal(json(s.invoke(['bootstrap'])).reason,'bootstrap_removed_use_tools');
     assert.deepEqual(snapshot(f.root),before);
     const missing=json(s.invoke(['tools','--check',...s.args],{PATH:''}));
     assert.equal(missing.status,'needs_tools'); assert.equal(missing.runtime,null);
     assert.equal(missing.read_only,true); assert.deepEqual(snapshot(f.root),before);
     const checked=json(s.invoke(['tools','--check',...s.args]));
+    assert.deepEqual(json(s.invoke(['tools',...s.args])),checked);
     assert.equal(checked.status,'needs_tools'); assert.deepEqual(snapshot(f.root),before);
     for(const args of [['--yes'],['--check','--check'],['--check','--ensure'],['--force'],['--check','--force'],['--jsruntime=node'],['--ensure','--jsruntime=bad'],['--ensure','--jsruntime=bun','--jsruntime=node'],['--node'],['--reinstall'],['--unknown'],['--repository']])
       assert.equal(s.invoke(['tools',...args]).status,2);
@@ -53,7 +56,8 @@ test('tools requires explicit modes; help and check are read only without a runt
     assert.equal(prepared.launcher_action,'published'); assert.equal(prepared.tools.length,2);
     assert.equal(json(ok(s.invoke(['tools','--ensure','--jsruntime='+(process.versions.bun?'bun':'node'),...s.args]))).runtime.id,process.versions.bun?'tool.bun':'tool.node');
     const installed=snapshot(toolsRoot(f.root));
-    assert.equal(json(ok(s.invoke(['tools','--check',...s.args]))).status,'ready');
+    const ready=json(ok(s.invoke(['tools','--check',...s.args])));assert.equal(ready.status,'ready');
+    assert.deepEqual(json(ok(s.invoke(['tools',...s.args]))),ready);
     assert.deepEqual(snapshot(toolsRoot(f.root)),installed);
     assert.equal(json(ok(s.invoke(['tools','--ensure',...s.args]))).launcher_action,'reused');
     assert.deepEqual(snapshot(toolsRoot(f.root)),installed);

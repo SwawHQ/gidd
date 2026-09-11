@@ -1,16 +1,5 @@
 GIDD（Windows x64 / PowerShell 5.1）
 
-工具管理（显式执行）：
-  gidd.cmd tools                                    显示帮助，无需 JS 运行时。
-  gidd.cmd tools --check                            只读检查运行时、Git、gh 和共享绑定。
-  gidd.cmd tools --ensure                           复用或准备、修复运行时、Git、gh，并重建绑定。
-  gidd.cmd tools --ensure --jsruntime=node          选择 Node；--jsruntime=bun 选择 Bun。
-  gidd.cmd tools --ensure --force                   重装选定受管运行时、Git、gh，并重建绑定。
-
-ensure 保留当前有效运行时绑定，首次准备默认 Bun。force 沿用绑定的运行时种类，或使用明确选择。
-外部工具、未选中的另一运行时及未知文件保留。--check 与 --ensure 互斥。
-技能更新或工具路径变化后重新执行 tools --ensure。
-
 帮助与诊断：
   gidd.cmd help [zh|en]                              显示帮助；别名 --help、-h，无参数也显示帮助。
   gidd.cmd doctor                                    离线检查环境和目标仓库，不修改配置。
@@ -23,6 +12,12 @@ ensure 保留当前有效运行时绑定，首次准备默认 Bun。force 沿用
 GitHub 身份：
   gidd.cmd identity                                  按配置检查 API 身份、Git 远程读取和提交作者。
   gidd.cmd auth                                      按配置申请设备授权并等待确认；gh 可能保存凭据。
+
+工具管理（显式执行）：
+  gidd.cmd tools --check                            只读检查 Git、gh、JS 运行时（Bun 或 Node）及共享绑定。
+  gidd.cmd tools --ensure                           确保 JS 运行时、Git、gh 可用并修复绑定；缺失时下载便携版。
+  gidd.cmd tools --ensure --jsruntime=node          同上，但指定 JS 运行时为 Node；未指定时复用当前运行时。
+  gidd.cmd tools --ensure --force                   重新下载选定运行时、Git、gh 的便携版，重装并重建绑定。
 
 文档：
   SKILL.md / references/                             完整用法、配置字段、结果协议及当前功能范围。

@@ -4,7 +4,7 @@ Windows x64 / Windows PowerShell 5.1。统一准备由 Issue #39、tools 参数�
 
 | 命令 | 行为 |
 | --- | --- |
-| `gidd.cmd tools` | 显示帮助，无需运行时，不写入 |
+| `gidd.cmd tools` | 等同 --check，只读检查 |
 | `gidd.cmd tools --ensure` | 检查并补齐一个 JS 运行时、Git、gh，发布启动器与工具绑定 |
 | `gidd.cmd tools --check` | 只读检查运行时、工具、绑定和待恢复安装；不下载、不写入 |
 | `gidd.cmd tools --ensure --jsruntime=node` | 选择/准备 Node，并完成同样的 Git/gh 准备 |
@@ -65,4 +65,4 @@ Git/gh 使用同一下载、校验、锁、暂存流程，详见 [安装事务](
 
 公开 stdout 为 gidd.tools/v1 JSON，包含 runtime、launcher、tools 和 tool_checks；read_only 区分 --check。ready 退出 0，needs_tools 退出 1，参数或原生启动失败退出 2。各阶段错误可从检查项定位；工具段失败仍保留运行时结果。内部 JS 段独立结果为 gidd.bootstrap-tools/v1，不是第二个公开命令。stderr 显示下载与准备进度。
 
-验证覆盖无运行时帮助、参数互斥、只读无写入、显式准备、force 重装、绑定运行时保持、Node 选择、固定绑定、业务失败不回退、完整性校验、跨 Shell/JS 锁、中断恢复、相同版本修复、未知文件保留、Unicode 路径，以及 Node/Bun 双运行时和真实官方下载。没有实际断电测试，不承诺任意文件系统下零丢失。
+验证覆盖无参数默认检查、参数互斥、只读无写入、显式准备、force 重装、绑定运行时保持、Node 选择、固定绑定、业务失败不回退、完整性校验、跨 Shell/JS 锁、中断恢复、相同版本修复、未知文件保留、Unicode 路径，以及 Node/Bun 双运行时和真实官方下载。没有实际断电测试，不承诺任意文件系统下零丢失。
