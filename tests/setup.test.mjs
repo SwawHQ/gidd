@@ -128,7 +128,7 @@ test('MinGit nested installation, integrity, recovery, managed selection and ext
     const configured = ['setup','git','--repository',f.root];
     assert.equal(json(ok(prepare(f.root,'git',{env:{PATH:''}}))).tools[0].action,'reused');
     const doctor = json(product(['doctor','--offline','--repository',f.root],{env:{PATH:''}}));
-    assert.equal(doctor.checks.find(item=>item.id==='git').details.source,'managed');
+    assert.equal(doctor.checks.find(item=>item.id==='git').details.gidd_managed,true);
     for (const phase of ['downloaded','extracted','verified','published']) {
       const where = join(f.root,'interrupted-'+phase);
       const killed = await startShellAdapter(f.root,installSpec(where,definitionPath,f.root,phase),{javascript:true}).result;

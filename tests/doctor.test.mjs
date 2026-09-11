@@ -1,7 +1,7 @@
 import { test } from 'node:test';
-import { statSync } from 'node:fs';
+import { copyFileSync, statSync, symlinkSync } from 'node:fs';
 import { doctor } from '../.agents/skills/gidd/scripts/doctor.mjs';
-import { bindFixture, diagnosis, toolsRoot, assert, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, readFileSync, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
+import { bindFixture, diagnosis, toolsRoot, assert, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, readFileSync, repo, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
 
 const configText = 'schema_version = 1\n[tools]\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "origin"\n';
 const byId = (report, id) => {
@@ -45,6 +45,10 @@ test('doctor combines independent checks once; offline never invokes network or 
     assert.equal(byId(report,'github.identity').details.login,'Octocat');
     assert.equal(byId(report,'git.author').details.email,'author@example.test');
     assert.equal(byId(report,'js_runtime').details.path,process.execPath);
+    for (const id of ['js_runtime','git','gh']) {
+      assert.equal(byId(report,id).details.gidd_managed,false,'Fixture uses tools outside its managed locations');
+      assert.ok(!('source' in byId(report,id).details));
+    }
     assert.ok(report.checks.every(c=>!('reason' in c)),'Success omits redundant reasons');
     assert.equal(online.calls.length,10);
     assert.equal(new Set(online.calls.map(c=>c.key)).size,10,'No duplicate checks');
@@ -150,6 +154,33 @@ test('doctor probes only published tools and reports minimal repair hints withou
     assert.equal(byId(invoke(),'git').status,'ready'); assert.equal(byId(invoke(),'gh').reason,'tool_binding_missing');
     write(join(f.root,'.agents/skills/gidd/config.toml'),'invalid TOML');
     assert.equal(byId(invoke(),'git').status,'ready','Broken repo config does not hide bound tools');
+    const managedGh=join(toolsRoot(f.root),'gh/gh.exe'); stub(exe,managedGh);
+    bindFixture(f.root,{git,gh:managedGh});
+    const record=JSON.parse(readFileSync(binding,'utf8'));
+    Object.assign(record.tools.gh,{source:'managed',record_sha256:'0'.repeat(64)});
+    write(binding,JSON.stringify(record));
+    const managed=invoke();
+    assert.equal(byId(managed,'gh').details.gidd_managed,true);
+    assert.equal(byId(managed,'git').details.gidd_managed,false);
+  } finally {f.dispose();}
+});
+
+test('doctor distinguishes managed runtimes from external runtimes reached through junctions', () => {
+  const f=fixture();
+  try {
+    const name=process.versions.bun?'bun':'node', root=toolsRoot(f.root);
+    const managed=join(root,name,name+'.exe');
+    mkdirSync(dirname(managed),{recursive:true}); copyFileSync(process.execPath,managed);
+    const invoke=executable=>byId(json(run(executable,[join(repo,'.agents/skills/gidd/scripts/gidd.mjs'),
+      'doctor','--offline','--repository',f.root])),'js_runtime').details;
+    assert.equal(invoke(managed).gidd_managed,true);
+    const alias=join(root,'.runtime-path-fixture');
+    symlinkSync(dirname(process.execPath),alias,'junction');
+    assert.equal(invoke(join(alias,name+'.exe')).gidd_managed,false);
+    // Even the expected directory name must not disguise an external target.
+    rmSync(managed); rmSync(dirname(managed),{recursive:true});
+    symlinkSync(dirname(process.execPath),dirname(managed),'junction');
+    assert.equal(invoke(managed).gidd_managed,false);
   } finally {f.dispose();}
 });
 

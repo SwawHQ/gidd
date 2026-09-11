@@ -1,6 +1,6 @@
-import { existsSync, lstatSync } from 'node:fs';
+import { existsSync, lstatSync, realpathSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-import { configurationPath, parseConfiguration, readConfigurationText, repositoryRoot, toolsRoot, compareVersions } from './storage.mjs';
+import { configurationPath, parseConfiguration, readConfigurationText, repositoryRoot, toolsRoot, compareVersions, managedExecutable } from './storage.mjs';
 import { validateGitHubField } from './config.mjs';
 import { minimums, patterns, toolEnvironment } from './tools.mjs';
 import { readBindings } from './bindings.mjs';
@@ -51,9 +51,19 @@ async function inspectTools(execute) {
           version !== tool.version ? 'tool_binding_version_changed' : null;
     }
     checks.push(failure ? { ...check(name, !tool && (!reason || reason === 'tool_bindings_missing') ? 'missing' : 'invalid', failure),
-      hint: 'Run gidd tools --ensure' } : check(name, 'ready', undefined, { path: tool.path, version, source: tool.source }));
+      hint: 'Run gidd tools --ensure' } : check(name, 'ready', undefined, { path: tool.path, version, gidd_managed: tool.source === 'managed' }));
   }
   return { checks, bindings: bindings || {} };
+}
+
+function managedRuntime(name) {
+  try {
+    // Native realpath also expands Windows short names consistently in Bun and Node.
+    // An external target reached through a launcher junction is not managed.
+    const actual = realpathSync.native(process.execPath);
+    const expected = resolve(realpathSync.native(toolsRoot()), name, managedExecutable(name));
+    return process.platform === 'win32' ? actual.toLowerCase() === expected.toLowerCase() : actual === expected;
+  } catch { return false; }
 }
 
 // Parse only unambiguous addresses. Raw URLs may contain credentials and never enter reports.
@@ -97,8 +107,10 @@ export async function doctor(target, { offline = false, execute = runCommand } =
   } catch (error) { targetError = safeReason(error, 'target_unreadable'); }
   const configuration = inspectConfiguration(configRoot), github = configuration.github;
   const { checks: toolChecks, bindings } = await inspectTools(execute);
-  const checks = [check('js_runtime', 'ready', undefined, { name: process.versions.bun ? 'bun' : 'node',
-    path: process.execPath, version: process.versions.bun || process.versions.node }), ...toolChecks, configuration.result];
+  const runtimeName = process.versions.bun ? 'bun' : 'node';
+  const checks = [check('js_runtime', 'ready', undefined, { name: runtimeName,
+    path: process.execPath, version: process.versions.bun || process.versions.node,
+    gidd_managed: managedRuntime(runtimeName) }), ...toolChecks, configuration.result];
   if (process.platform !== 'win32' || process.arch !== 'x64') checks.push(check('platform', 'unsupported', 'unsupported_platform'));
   const usable = name => checks.find(item => item.id === name)?.status === 'ready';
   const env = toolEnvironment(usable('git') ? bindings.git.path : undefined);
