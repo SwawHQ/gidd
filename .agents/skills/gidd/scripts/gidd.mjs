@@ -7,7 +7,7 @@ import { checkIdentity } from './github.mjs';
 import { authorize } from './auth.mjs';
 import { resolveStorage, repositoryRoot } from './storage.mjs';
 import { findTool } from './tools.mjs';
-import { setupTools } from './install.mjs';
+import { setupGh } from './install.mjs';
 
 export async function main(args) {
   let command = (args.shift() || 'help').toLowerCase();
@@ -23,13 +23,15 @@ export async function main(args) {
     }
     if (!Object.hasOwn(schemas,command)) throw new Error('unknown_command');
     if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');
-    let action, key, value, tool;
+    let action, key, value;
     if (command === 'config') {
       action = args.shift(); if (!['show','set'].includes(action)) throw new Error('invalid_arguments');
       if (action === 'set') { key = args.shift(); value = args.shift(); if (value === undefined) throw new Error('invalid_arguments'); }
     }
     if (command === 'setup' && args.length && !args[0].startsWith('--')) {
-      tool = args.shift(); if (!['bun','node','gh'].includes(tool)) throw new Error('invalid_setup_tool');
+      const tool = args.shift();
+      if (['bun','node'].includes(tool)) throw new Error('runtime_setup_removed');
+      if (tool !== 'gh') throw new Error('invalid_setup_tool');
     }
     if (['identity','auth'].includes(command) && args.some(arg => ['--hostname','--account','--remote'].includes(arg) || !arg.startsWith('--') && args.indexOf(arg) === 0)) throw new Error('github_parameters_moved_to_config');
     let repository;
@@ -52,7 +54,7 @@ export async function main(args) {
     else if (command === 'config') report = configure(repository,action,key,value);
     else {
       const storage = resolveStorage(repository);
-      if (command === 'setup') report = await setupTools(storage,tool);
+      if (command === 'setup') report = await setupGh(storage);
       else {
         const github = readGitHubConfiguration(repository,command === 'identity' ? ['hostname','account','remote'] : ['hostname','account']);
         const gh = await findTool('gh',{ root: storage.tools_root, requested: storage.tools.gh.version });
@@ -72,6 +74,7 @@ export async function main(args) {
     return ['ready','local_ready','checks_passed'].includes(report.status) ? 0 : 1;
   } catch (error) {
     const reason = /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : 'operation_failed';
+    if (reason === 'runtime_setup_removed') console.error('Use gidd.cmd bootstrap --yes (or bootstrap --node --yes for Node). Bootstrap updates the shared launcher.');
     const hint = configurationHint(reason); if (hint) console.error(hint);
     console.log(JSON.stringify({ schema, status: 'error', reason }));
     return command === 'setup' && schema !== 'gidd.cli/v1' ? 1 : 2;

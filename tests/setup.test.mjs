@@ -118,21 +118,15 @@ test(`setup ${engine}: install, integrity, interrupted publication, locks, prese
       assert.notEqual(adapter(f.root,{action:'stage',root:join(f.root,'junction-stage/gidd.tools'),name:'bun'}).status,0);
       assert.equal(readFileSync(join(outside,'keep.txt'),'utf8'),'keep');
     } finally { unlinkSync(linked); unlinkSync(stage); unlinkSync(cache); }
-    const external=join(f.root,'external'); stub(exe,join(external,'node.exe')); stub(exe,join(external,'gh.exe'));
-    for (const runtime of ['node','bun']) {
-      if (runtime==='bun') stub(exe,join(external,'bun.exe'));
-      const home=join(f.root,`home-${runtime}`);
-      for (const existing of [false,true]) {
-        if (existing) mkdirSync(toolsRoot(home),{recursive:true});
-        write(join(f.root,'.agents/skills/gidd/config.toml'),`schema_version = 1\n[tools]\n`);
-        const report=json(ok(product(['setup','--repository',f.root],{env:{PATH:external,USERPROFILE:home}})));
-        assert.equal(report.status,'ready'); assert.equal(report.tools.length,2);
-        for (const name of [process.versions.bun ? 'bun' : 'node','gh']) {
-          const matches=report.tools.filter(tool=>tool.name===name); assert.equal(matches.length,1);
-          assert.equal(matches[0].action,'reused'); assert.equal(matches[0].path,name==='gh'?join(external,'gh.exe'):process.execPath);
-        }
-        if (!existing) assert.equal(existsSync(toolsRoot(home)),false);
-      }
+    const external=join(f.root,'external'); stub(exe,join(external,'gh.exe'));
+    const home=join(f.root,'gh-home');
+    for (const existing of [false,true]) {
+      if (existing) mkdirSync(toolsRoot(home),{recursive:true});
+      write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n[tools]\n');
+      const report=json(ok(product(['setup','--repository',f.root],{env:{PATH:external,USERPROFILE:home}})));
+      assert.equal(report.status,'ready');
+      assert.deepEqual(report.tools,[{ name:'gh', action:'reused', path:join(external,'gh.exe') }]);
+      if (!existing) assert.equal(existsSync(toolsRoot(home)),false);
     }
   } finally { f.dispose(); }
 });

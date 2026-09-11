@@ -45,7 +45,7 @@ gidd.cmd 其他命令 → js_exec.cmd → 选定运行时 → 当前技能的 sc
 
 启动器发布是提交点；之后的缓存清理失败以 cleanup_pending=true 报告，不回滚已发布安装。下次 bootstrap --yes 恢复前先检查新目录的完整性及现有启动器文本；若启动器已是绑定该受管运行时的预期文本（包括修复时复用原有绑定），只重试清理备份，离线也可复用新副本。清理再次失败则停止本次操作，保留新副本和备份，避免后续安装或切换覆盖提交证据。只读 bootstrap 不执行清理。旧备份清理前先更名为 .cache/retired-<name>-<UUID>，避免部分清理的目录被当作可恢复备份；被运行进程占用的残留可在退出后清理。
 
-JS setup bun/node/gh 仍只准备指定工具，不发布或切换 js_exec.cmd；已有目录损坏或 gh 固定版本冲突仍保留并报错。运行时存在 previous-<name> 恢复备份时，安装器在下载前报 pending_runtime_recovery，先执行 bootstrap --yes 恢复。完整安装和共享锁规则见 [setup.md](setup.md)。
+JS setup gh（或不带选择器的 setup）只准备 gh，不发布或切换 js_exec.cmd；已有 gh 目录损坏或固定版本冲突仍保留并报错。产品运行时准备、修复和兼容检查统一由 bootstrap 完成；源码仓库双运行时准备继续使用 dev.cmd .setup。完整安装和共享锁规则见 [setup.md](setup.md)。
 
 ## 输出与验收
 

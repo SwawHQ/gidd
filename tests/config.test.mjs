@@ -154,7 +154,7 @@ test('configuration: fixed shared home, repository independence and read-only va
   } finally { f.dispose(); }
 });
 
-test('configured setup reuses Node/gh without knowing a skill installation directory', { timeout: 120000 }, () => {
+test('configured setup reuses gh without knowing a skill installation directory', { timeout: 120000 }, () => {
   const f=fixture();
   try {
     const path=join(f.root,'.agents/skills/gidd/config.toml'), tools=toolsRoot(f.root);
@@ -163,7 +163,7 @@ test('configured setup reuses Node/gh without knowing a skill installation direc
     const invoke=() => product(['setup','--repository',f.root],{env:{PATH:''}});
     assert.notEqual(ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root,'-ArchiveDirectory',f.root],{env:{PATH:''}}).status,0);
     const report=json(ok(invoke())); samePath(report.tools_root,tools);
-    assert.deepEqual(report.tools.map(x=>x.name),[process.versions.bun?'bun':'node','gh']); assert.ok(report.tools.every(x=>x.action==='reused'));
+    assert.deepEqual(report.tools.map(x=>x.name),['gh']); assert.ok(report.tools.every(x=>x.action==='reused'));
     assert.equal(existsSync(join(tools,'bun')),false); assert.equal(hash(path),before);
     assert.match(readFileSync(join(tools,'INSTALLATION.md'),'utf8'),/independent of the skill installation directory/);
     const git=findGit(); ok(run(git,['-C',f.root,'init','--quiet']));
