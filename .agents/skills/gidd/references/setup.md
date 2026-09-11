@@ -15,7 +15,7 @@ source 可由仓库配置指定，版本要求和下载策略由代码维护。g
 
 ## 下载与完整性
 
-安装前显示版本和完整 URL。归档必须核对官方 SHA-256；使用镜像也核对官方校验信息。MinGit 归档名称、URL、SHA-256 来自官方 release asset，缺少 digest 则停止。JS 每次下载总期限 30 秒、最多 256 MiB；原生 Shell 连接/空闲期限 30 秒。失败后显式重新 bootstrap，不无限重试、不提供断点续传。
+安装前显示版本和完整 URL。归档必须核对官方 SHA-256；使用镜像也核对官方校验信息。MinGit 归档名称、URL、SHA-256 来自官方 release asset，缺少 digest 则停止。JS 每次下载总期限 30 秒、最多 256 MiB；原生 Shell 连接/空闲期限 30 秒。失败后显式重新 tools --ensure，不无限重试、不提供断点续传。
 
 Bun/Node/gh 只提取允许列表内文件。Git 提取完整文件树并保留空文件；拒绝路径穿越、Windows 名称冲突、链接、特殊文件、加密、ZIP64 和多卷。限制 10000 个条目、512 MiB 解压总量和 256 MiB 单文件，校验 ZIP CRC。Git 必须包含 cmd/git.exe、mingw64/bin/git.exe、LICENSE.txt。
 

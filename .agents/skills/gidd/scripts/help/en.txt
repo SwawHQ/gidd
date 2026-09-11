@@ -1,12 +1,15 @@
 GIDD (Windows x64 / PowerShell 5.1)
 
-Tool preparation (explicit):
-  gidd.cmd bootstrap                                Prepare/repair a JS runtime, Git and gh; publish shared bindings.
-  gidd.cmd bootstrap --check                        Check runtime, Git, gh and bindings; no downloads or writes.
-  gidd.cmd bootstrap --node                         Select/prepare Node LTS instead of the default Bun preference.
-  gidd.cmd bootstrap --reinstall                    Reinstall managed Bun; add --node for Node.
+Tool management (explicit):
+  gidd.cmd tools                                    Show this help without a JS runtime.
+  gidd.cmd tools --check                            Read-only check of runtime, Git, gh and shared bindings.
+  gidd.cmd tools --ensure                           Reuse or prepare/repair a runtime, Git and gh; rebuild bindings.
+  gidd.cmd tools --ensure --jsruntime=node          Select Node; --jsruntime=bun selects Bun.
+  gidd.cmd tools --ensure --force                   Reinstall the selected managed runtime, Git and gh.
 
-Rerun bootstrap after skill updates or tool path changes. Ordinary commands use shared bindings.
+Ensure retains a compatible bound runtime; first preparation defaults to Bun.
+Force retains the bound runtime kind unless selected; preserves external tools and the other runtime.
+Rerun tools --ensure after skill updates or tool path changes. --check and --ensure are exclusive.
 
 Help and diagnosis:
   gidd.cmd help [en|zh]                              Show help; aliases: --help, -h. Also shown with no arguments.

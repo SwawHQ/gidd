@@ -10,7 +10,7 @@ try {
   let result;
   switch (request.action) {
     case 'prepare': result = await prepareTools(request.root ? {tools_root:request.root,tools:resolveStorage(request.repositoryRoot).tools} : resolveStorage(request.repositoryRoot),{
-      names:request.names,checkOnly:request.checkOnly,
+      names:request.names,checkOnly:request.checkOnly,force:request.force,
       readText:request.responses ? async url=>{if(!(url in request.responses))throw new Error('unexpected_metadata_request');return request.responses[url];}:undefined,
       receive:request.downloads ? async url=>{if(!(url in request.downloads))throw new Error('unexpected_download');return readFileSync(request.downloads[url]);}:undefined,
       onPhase:(name,phase)=>{if(phase===request.stopAt)process.kill(process.pid,'SIGKILL');},

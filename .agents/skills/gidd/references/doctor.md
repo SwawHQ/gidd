@@ -1,8 +1,8 @@
 # Windows 本地诊断
 
-完整 doctor 位于 scripts/doctor.mjs，本身只读、离线。系统入口直接调用 [bootstrap](bootstrap.md) 已生成的 js_exec.cmd；启动器缺失时提示 bootstrap，doctor 尚未执行。
+完整 doctor 位于 scripts/doctor.mjs，本身只读、离线。系统入口直接调用 [bootstrap](bootstrap.md) 已生成的 js_exec.cmd；启动器缺失时提示 tools --ensure，doctor 尚未执行。
 
-公开入口：`gidd.cmd doctor`。当前验证平台为 Windows x64、Windows PowerShell 5.1；需要 bootstrap 已准备共享运行时启动器；不要求 gh 已安装。
+公开入口：`gidd.cmd doctor`。当前验证平台为 Windows x64、Windows PowerShell 5.1；需要 tools --ensure 已准备共享运行时启动器；不要求 gh 已安装。
 
 从目标仓库的 `.agents/skills/gidd/` 安装目录执行：
 
@@ -27,11 +27,11 @@ scripts/doctor.mjs 组合诊断；scripts/tools.mjs 负责工具探测；scripts
 | 工具 | 基础版本门槛 | 受管候选（先于 PATH） |
 | --- | --- | --- |
 | Git | 2.0 | `<工具根>/git/cmd/git.exe` |
-| Node.js | 只观察版本，不检查兼容性 | `<工具根>/node/node.exe`；可用 `gidd.cmd bootstrap --node` 准备并选择 |
+| Node.js | 只观察版本，不检查兼容性 | `<工具根>/node/node.exe`；可用 `gidd.cmd tools --ensure --jsruntime=node` 准备并选择 |
 | Bun | 只观察版本，不检查兼容性 | `<工具根>/bun/bun.exe` |
 | gh | 2.98.0 | `<工具根>/gh/gh.exe` |
 
-runtime 描述当前正在执行 doctor 的进程：path、version、selected 与 compatibility_checked=false。不重新选择运行时，也不执行兼容方法。tool.node/bun 是对安装文件和 --version 的独立观察，候选拒绝原因保留在 details.rejected；这不等于 bootstrap 的兼容结果。
+runtime 描述当前正在执行 doctor 的进程：path、version、selected 与 compatibility_checked=false。不重新选择运行时，也不执行兼容方法。tool.node/bun 是对安装文件和 --version 的独立观察，候选拒绝原因保留在 details.rejected；这不等于 tools --ensure 的兼容结果。
 
 上述版本是诊断门槛，不证明所有对应版本的未来业务兼容性。JavaScript 业务代码须使用 Node/Bun 共同支持的标准 API，同一功能在两者上验证；doctor 由共用 JavaScript 执行，测试同时覆盖 Node 与 Bun。
 
@@ -92,9 +92,9 @@ remote 检查只执行本地 Git 查询，不访问网络。`repository.remotes`
 
 ## Agent 如何使用结果
 
-- bootstrap 只负责运行时与共享启动器，不检查 Git、仓库归属或登录；Git 和 gh 的可用性由 JS doctor 报告。
+- tools --ensure 只负责运行时与共享启动器，不检查 Git、仓库归属或登录；Git 和 gh 的可用性由 JS doctor 报告。
 - 用户说“当前仓库启用 GIDD”：先对明确的目标仓库诊断。已有运行时通过时直接复用，不要求同时安装 Node 和 Bun。
-- 启动失败：报告共享启动器或运行时执行错误，提示重新 bootstrap。完整 doctor 尚未执行，不把未检查项报告为通过。
+- 启动失败：报告共享启动器或运行时执行错误，提示重新 tools --ensure。完整 doctor 尚未执行，不把未检查项报告为通过。
 - `repository.config` 缺失：说明该仓库尚无固定位置配置，再按用户授权进入配置流程；不要用目录存在代替启用记录。
 - `github.identity` 未检查：说明尚未检查，不能说“未登录”。用户要求检查当前账号时使用独立的 [身份检查入口](identity.md)，该入口会联网。需要登录时另行展示 URL 与一次性代码，当前 doctor 不启动登录。
 - 初始化或修复后重新诊断。退出码 1 不是脚本崩溃；不要无条件重复执行或把结果当作自动安装授权。

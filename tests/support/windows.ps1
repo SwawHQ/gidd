@@ -52,6 +52,7 @@ try {
             }
             $yes = $request.PSObject.Properties['yes'] -and $request.yes
             $node = $request.PSObject.Properties['node'] -and $request.node
+            $runtime = if ($request.PSObject.Properties['runtime']) { [string]$request.runtime } else { '' }
             $reinstall = $request.PSObject.Properties['reinstall'] -and $request.reinstall
             if ($request.PSObject.Properties['failPublish'] -and $request.failPublish) {
                 function Write-GiddLauncher { throw 'fixture_publish_failed' }
@@ -59,7 +60,7 @@ try {
             if ($request.PSObject.Properties['failCleanup'] -and $request.failCleanup) {
                 function Remove-GiddRuntimeBackup { throw 'fixture_cleanup_failed' }
             }
-            Invoke-GiddBootstrap (Resolve-GiddToolStorage $request.repositoryRoot) -Yes:$yes -Node:$node -Reinstall:$reinstall | ConvertTo-Json -Depth 12 -Compress
+            Invoke-GiddBootstrap (Resolve-GiddToolStorage $request.repositoryRoot) -Yes:$yes -Node:$node -Reinstall:$reinstall -Runtime $runtime | ConvertTo-Json -Depth 12 -Compress
         }
         'release' {
             $settings = @{ version=$request.version;source=$request.source }

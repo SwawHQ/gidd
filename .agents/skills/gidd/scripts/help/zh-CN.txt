@@ -1,12 +1,15 @@
 GIDD（Windows x64 / PowerShell 5.1）
 
-工具准备（显式执行）：
-  gidd.cmd bootstrap                                准备或修复一个 JS 运行时、Git、gh，并发布共享绑定。
-  gidd.cmd bootstrap --check                        只读检查运行时、Git、gh 和绑定，不下载或写入。
-  gidd.cmd bootstrap --node                         选择或准备 Node LTS；默认优先 Bun。
-  gidd.cmd bootstrap --reinstall                    重装受管 Bun；追加 --node 改为 Node。
+工具管理（显式执行）：
+  gidd.cmd tools                                    显示帮助，无需 JS 运行时。
+  gidd.cmd tools --check                            只读检查运行时、Git、gh 和共享绑定。
+  gidd.cmd tools --ensure                           复用或准备、修复运行时、Git、gh，并重建绑定。
+  gidd.cmd tools --ensure --jsruntime=node          选择 Node；--jsruntime=bun 选择 Bun。
+  gidd.cmd tools --ensure --force                   重装选定受管运行时、Git、gh，并重建绑定。
 
-技能更新或工具路径变化后重新 bootstrap。普通命令直接使用共享绑定。
+ensure 保留当前有效运行时绑定，首次准备默认 Bun。force 沿用绑定的运行时种类，或使用明确选择。
+外部工具、未选中的另一运行时及未知文件保留。--check 与 --ensure 互斥。
+技能更新或工具路径变化后重新执行 tools --ensure。
 
 帮助与诊断：
   gidd.cmd help [zh|en]                              显示帮助；别名 --help、-h，无参数也显示帮助。
