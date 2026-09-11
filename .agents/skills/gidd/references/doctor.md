@@ -1,4 +1,4 @@
-# Windows 基础诊断
+# Windows 本地诊断
 
 完整 doctor 位于 scripts/doctor.mjs，本身只读、离线。系统入口直接调用 [bootstrap](bootstrap.md) 已生成的 js_exec.cmd；启动器缺失时提示 bootstrap --yes，doctor 尚未执行。
 
@@ -10,11 +10,11 @@
 .\gidd.cmd doctor
 ```
 
-仓库内 `.agents/skills/gidd/` 的入口自动定位含 `.git` 标记的目标根（含 worktree），不依赖工作目录。Git 可用时另行验证工作树；配置不继承用户级文件。工具固定存放于 `~/.agents/skills.tools/gidd/`，独立于技能安装位置，JS doctor 不建立工具目录。
+仓库内 `.agents/skills/gidd/` 的入口自动定位含 `.git` 标记的目标根（含 worktree），不依赖工作目录。Git 可用时另行验证工作树；配置不继承用户级文件。入口无法确定目标时，doctor 仍检查工具，repository 报 target_required，repository 字段为 null；Agent 先确认目标，不能把用户级技能安装目录或调用目录猜成目标。显式目标是普通目录时报告 not_git_repository，目录不存在时报告 directory_missing。工具固定存放于 `~/.agents/skills.tools/gidd/`，独立于技能安装位置，JS doctor 不建立工具目录。
 
 ## 源码归属
 
-scripts/doctor.mjs 组合诊断；scripts/tools.mjs 负责工具探测；scripts/storage.mjs 负责配置、固定路径与完整性校验；scripts/github.mjs 的共用进程执行器提供超时、输出上限和错误脱敏。scripts/windows/doctor.ps1 仅为经共享启动器转发的旧 PowerShell 兼容入口。
+scripts/doctor.mjs 组合诊断；scripts/tools.mjs 负责工具探测；scripts/storage.mjs 负责配置、固定路径与完整性校验；scripts/config.mjs 提供共用 GitHub 字段校验；scripts/github.mjs 的共用进程执行器提供超时、输出上限和错误脱敏。scripts/windows/doctor.ps1 仅为经共享启动器转发的旧 PowerShell 兼容入口。
 
 ## 工具选择
 
@@ -61,18 +61,36 @@ stdout 为单个 UTF-8 JSON 对象：
 
 | 退出码 / 总体状态 | 含义 |
 | --- | --- |
-| `0` / `local_ready` | 平台、Git、至少一种运行时、gh、工作树、commit、remote、配置存在性及工具存储 schema 验证均通过 |
+| `0` / `local_ready` | 平台、Git、当前运行时、gh、工作树、commit、配置 schema、GitHub 必需字段及所选 remote 的本地主机匹配均通过 |
 | `1` / `needs_setup` | 正常完成诊断，基础条件尚不齐备 |
 | `2` / `error` | 调用参数错误或诊断程序无法完成；stderr 提供说明 |
 
-检查项为 `platform`、`tools.storage`、`tool.git`、`tool.node`、`tool.bun`、`tool.gh`、`runtime`、`repository`、`repository.config`、`repository.config.validation`、`github.identity`、`git.authentication`。只有工作树可读取时才另有 `repository.history` 和 `repository.remotes`；没有 commit 的新仓库报告 `unborn_branch`。
+检查项为 `platform`、`tools.storage`、`tool.git`、`tool.node`、`tool.bun`、`tool.gh`、`runtime`、`repository`、`repository.history`、`repository.remotes`、`repository.remote`、`repository.config`、`repository.config.validation`、`repository.config.github`、`github.identity`、`git.authentication`。无法读取工作树时，history/remotes/remote 为 not_checked；没有 commit 的新仓库报告 unborn_branch。
 
-`repository.config` 检查固定路径文件存在性；`repository.config.validation` 验证 [configuration.md](configuration.md) 的工具存储 schema v1。`tools.storage` 报告配置值与解析位置。配置错误时该项为 invalid，managed_tools_checked=false，仅继续外部 PATH 探测，不回退默认受管目录。source=managed 表示受管工具，实际位置以 tools.storage 为准。GitHub 身份与 Git 传输认证仍为 not_checked；local_ready 不代表仓库启用、账号正确或具备推送权限。
+`repository.config` 检查固定路径文件存在性；`repository.config.validation` 验证 [configuration.md](configuration.md) 的 schema v1；`repository.config.github` 使用共用字段校验器检查 hostname/account/remote，分别列出 missing_fields 与 invalid_fields，不输出字段原值。目标明确时，即使缺少 Git 或尚未建立 Git 仓库，也检查该位置的配置。配置存在和字段完整都不是初始化记录。
 
-remote 检查只读取本地配置，不访问网络。只对常见 `https://github.com/owner/repo` 和 `git@github.com:owner/repo` 地址提取 `github_repository`；其他形式、其他主机或含凭据的 URL 返回 null，Agent 可另行检查，不据此认定 remote 无效。不会输出完整 URL 或子进程原始错误，避免泄露凭据。
+`tools.storage` 只报告工具配置和解析位置，不输出 GitHub 字段。配置语法或工具存储错误时该项为 invalid，managed_tools_checked=false，仅继续外部 PATH 探测，不回退默认受管目录。GitHub 字段值错误单独报告，不阻止工具诊断。source=managed 表示受管工具，实际位置以 tools.storage 为准。GitHub 身份与 Git 传输认证仍为 not_checked；local_ready 不代表仓库启用、账号正确或具备推送权限。
+
+remote 检查只执行本地 Git 查询，不访问网络。`repository.remotes` 列出本地 remote；`repository.remote` 检查 config.toml 的 github.remote，存在其他 remote 不代表所选 remote 可用。读取所选 remote 的 fetch URL（Git 展开 insteadOf 后），要求恰好一个地址，多个地址报告 remote_url_ambiguous。
+
+支持 `https://host/owner/repo`、`git@host:owner/repo`、`ssh://git@host[:port]/owner/repo`，可带 .git 后缀与末尾斜线。主机忽略大小写，与 github.hostname 比较，成功时给出 hostname 和 github_repository；这只表示地址结构与配置主机匹配，不能离线证明该主机运行 GitHub 或仓库真实存在。含 HTTPS 凭据、查询参数、片段、百分号编码、额外路径、其他协议或 SSH 别名等无法匹配的形式，需要用户另行检查，不自动修改 remote。不会输出完整 URL、非法配置值或子进程原始错误。
+
+| 检查原因 | Agent 应说明的情况 |
+| --- | --- |
+| target_required | 尚未确定目标目录，先确认目标 |
+| git_unavailable | Git 程序不可用，不能判断仓库状态 |
+| not_git_repository / not_worktree | 目标尚非 Git 仓库或不是工作树 |
+| no_remotes | 工作树未配置 remote |
+| github_fields_missing / github_fields_invalid | 配置缺项或字段值无效，按字段列表处理 |
+| configured_remote_missing | 配置指定的 remote 不存在 |
+| remote_hostname_mismatch | 所选 remote 的主机与配置不符，需确认目标或修正设置 |
+| unsupported_remote_url / remote_url_ambiguous | 当前离线解析无法确定单一目标，需核对地址 |
+
+这里只检查所选 fetch 地址，不验证 push URL、推送权限或仓库归属记录；归属记录与初始化流程尚未实现。不把这些原因统一解释为需要重新初始化。
 
 ## Agent 如何使用结果
 
+- bootstrap 只负责运行时与共享启动器，不检查 Git、仓库归属或登录；Git 和 gh 的可用性由 JS doctor 报告。
 - 用户说“当前仓库启用 GIDD”：先对明确的目标仓库诊断。已有运行时通过时直接复用，不要求同时安装 Node 和 Bun。
 - 启动失败：报告共享启动器或运行时执行错误，提示重新 bootstrap。完整 doctor 尚未执行，不把未检查项报告为通过。
 - `repository.config` 缺失：说明该仓库尚无固定位置配置，再按用户授权进入配置流程；不要用目录存在代替启用记录。

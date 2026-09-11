@@ -240,13 +240,20 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
     assert.match(ok(s.invoke([])).stdout, /target repository/);
     assert.match(ok(s.invoke([], { GIDD_LANG: 'zh' })).stdout, /目标仓库/);
     assert.match(ok(s.invoke(['help','en'], { GIDD_LANG: 'zh' })).stdout, /target repository/);
-    for (const args of [['unknown'], ['help','fr'], ['help','en','extra'], ['doctor'], ['doctor','--repository','.'],
+    for (const args of [['unknown'], ['help','fr'], ['help','en','extra'], ['doctor','--repository','.'],
       ['doctor',...s.args,'--repository',s.target], ['doctor',...s.args,'--account','x'], ['setup','python',...s.args],
       ['setup','bun',...s.args,'--offline','x'], ['auth','Octocat',...s.args]]) {
       const result = s.invoke(args);
       assert.equal(result.status, 2, args.join(' '));
       assert.equal(json(result).schema, 'gidd.cli/v1');
     }
+    const unbound = s.invoke(['doctor']);
+    assert.equal(unbound.status,1);
+    assert.equal(json(unbound).repository,null);
+    assert.equal(json(unbound).checks.find(c => c.id === 'repository').reason,'target_required');
+    const absent = s.invoke(['doctor','--repository',join(s.target,'absent')]);
+    assert.equal(absent.status,1);
+    assert.equal(json(absent).checks.find(c => c.id === 'repository').reason,'directory_missing');
     const result = s.invoke(['doctor',...s.args]);
     assert.equal(result.status, 1);
     const report = json(result);
@@ -303,11 +310,12 @@ test('repository installation locates its own Git worktree independently of cwd'
     ok(adapter(f.root,{action:'bootstrap',repositoryRoot:f.root,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
     const unbound = join(f.root,'user profile/.agents/skills/gidd');
     copySkill(unbound);
-    const rejected = run(cmd, ['/d','/s','/c', `""${join(unbound,'gidd.cmd')}" doctor"`], {
+    const unboundReport = run(cmd, ['/d','/s','/c', `""${join(unbound,'gidd.cmd')}" doctor"`], {
       cwd: target, windowsVerbatimArguments: true, env: { PATH: [dirname(process.execPath),dirname(git)].join(';') },
     });
-    assert.equal(rejected.status,2);
-    assert.equal(json(rejected).reason,'repository_required_for_unbound_entry');
+    assert.equal(unboundReport.status,1);
+    assert.equal(json(unboundReport).repository,null);
+    assert.equal(json(unboundReport).checks.find(c => c.id === 'repository').reason,'target_required');
     for (const root of [target,worktree]) {
       const skill = join(root,'.agents/skills/gidd');
       copySkill(skill);

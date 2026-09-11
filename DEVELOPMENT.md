@@ -6,7 +6,7 @@
 
 技能发布入口为 `.agents/skills/gidd/gidd.cmd`，先运行 `.\.agents\skills\gidd\gidd.cmd bootstrap` 检查，授权准备后追加 --yes，再运行 help zh。产品用法见 [技能说明](.agents/skills/gidd/SKILL.md)；统一入口的开发验收使用 `.\dev.cmd .test entry`。仅显式 bootstrap 使用系统 Shell。普通命令经共享 js_exec.cmd 直接启动共用 JavaScript；不探测运行时或检查兼容性。
 
-`help`、`--help`、`-h` 等价。产品工具命令分别为 `setup bun`、`setup node`、`setup gh`。本项目的唯一技能源码位于 `.agents/skills/gidd/`，与仓库安装布局一致；入口从自身位置定位目标，支持 Git worktree，不依赖调用目录。可直接运行 `.\.agents\skills\gidd\gidd.cmd doctor` 或 `config show`。内部参数 `--repository <目标绝对路径>` 仅供开发和测试指定其他目标，普通调用无需追加，也不展示在 help 中。配置使用 `config show/set` 管理。完整技能安装和更新由 [Issue #14](https://github.com/SwawHQ/gidd/issues/14) 跟踪，工具下载来源与 gh 版本由配置管理，工具目录固定共享；配置增加可选的 github 表，执行身份检查或授权时相关字段必须齐备。
+`help`、`--help`、`-h` 等价。产品工具命令分别为 `setup bun`、`setup node`、`setup gh`。本项目的唯一技能源码位于 `.agents/skills/gidd/`，与仓库安装布局一致；入口从自身位置定位目标，支持 Git worktree，不依赖调用目录。可直接运行 `.\.agents\skills\gidd\gidd.cmd doctor` 或 `config show`。doctor 无法自动定位目标时仍报告工具和 target_required；显式目标是普通目录时报告 not_git_repository，缺少 Git 时仍诊断目标配置。内部参数 `--repository <目标绝对路径>` 仅供开发和测试指定其他目标，普通调用无需追加，也不展示在 help 中。配置使用 `config show/set` 管理。完整技能安装和更新由 [Issue #14](https://github.com/SwawHQ/gidd/issues/14) 跟踪，工具下载来源与 gh 版本由配置管理，工具目录固定共享；配置增加可选的 github 表，执行身份检查或授权时相关字段必须齐备。doctor 的 local_ready 也要求 hostname/account/remote 完整且所选 remote 的本地主机匹配；这不证明仓库已初始化或登录成功。
 
 ```powershell
 .\dev.cmd .help zh
