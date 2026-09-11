@@ -1,32 +1,25 @@
 import { existsSync, lstatSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { configurationPath, parseConfiguration, readConfigurationText, repositoryRoot, resolveStorage } from './storage.mjs';
+import { configurationPath, parseConfiguration, readConfigurationText, repositoryRoot, toolsRoot, compareVersions } from './storage.mjs';
 import { validateGitHubField } from './config.mjs';
-import { check, findTool, toolEnvironment } from './tools.mjs';
+import { minimums, patterns, toolEnvironment } from './tools.mjs';
 import { readBindings } from './bindings.mjs';
-import { bindingMatches } from './bootstrap-tools.mjs';
-import { runCommand } from './github.mjs';
+import { runCommand, checkGitHubIdentity } from './github.mjs';
 
 const safeReason = (error, fallback) => /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : fallback;
+// Success describes the useful result; failure adds a stable reason, not raw output.
+const check = (id, status, reason, details = {}) => ({ id, status,
+  ...(status === 'ready' ? {} : { reason }), ...(Object.keys(details).length ? { details } : {}) });
 
 function inspectConfiguration(root) {
-  const ids = ['repository.config', 'repository.config.validation', 'repository.config.github'];
-  if (!root) return { checks: ids.map(id => check(id, 'not_checked', 'target_unavailable')), github: {} };
-  const path = configurationPath(root), checks = [];
+  if (!root) return { result: check('config', 'not_checked', 'target_unavailable'), github: {} };
+  const path = configurationPath(root);
   let settings;
   try {
-    if (!existsSync(path)) return { checks: [check(ids[0], 'missing', 'config_missing', { path }),
-      ...ids.slice(1).map(id => check(id, 'not_checked', 'config_missing'))], github: {} };
-    const file = lstatSync(path).isFile();
-    checks.push(check(ids[0], file ? 'ready' : 'invalid', file ? 'file_presence_only' : 'config_not_a_file', { path }));
+    if (!existsSync(path)) return { result: check('config', 'missing', 'config_missing', { path }), github: {} };
     settings = parseConfiguration(readConfigurationText(path));
-    checks.push(check(ids[1], 'ready', 'configuration_schema_v1'));
   } catch (error) {
-    if (!checks.length) checks.push(check(ids[0], 'invalid', 'config_unreadable', { path }));
-    checks.push(check(ids[1], 'invalid', safeReason(error, 'config_unreadable')),
-      check(ids[2], 'not_checked', 'config_invalid'));
-    return { checks, github: {} };
+    return { result: check('config', 'invalid', safeReason(error, 'config_unreadable'), { path }), github: {} };
   }
   const missing = [], invalid = [], github = {};
   for (const key of ['hostname', 'account', 'remote']) {
@@ -36,119 +29,132 @@ function inspectConfiguration(root) {
       catch { invalid.push(key); }
     }
   }
-  checks.push(check(ids[2], invalid.length ? 'invalid' : missing.length ? 'missing' : 'ready',
-    invalid.length ? 'github_fields_invalid' : missing.length ? 'github_fields_missing' : 'github_fields_valid',
-    { missing_fields: missing, invalid_fields: invalid }));
-  return { checks, github };
+  return { github, result: check('config', invalid.length ? 'invalid' : missing.length ? 'missing' : 'ready',
+    invalid.length ? 'github_fields_invalid' : 'github_fields_missing',
+    { path, ...(missing.length ? { missing_fields: missing } : {}), ...(invalid.length ? { invalid_fields: invalid } : {}) }) };
 }
 
-// Parse only unambiguous repository addresses. Never include raw URLs in reports.
+// These are startup probes of published paths, not tool discovery or installation validation.
+async function inspectTools(execute) {
+  let bindings, reason;
+  try { bindings = readBindings(toolsRoot()).tools; }
+  catch (error) { reason = safeReason(error, 'tool_bindings_invalid'); }
+  const checks = [];
+  for (const name of ['git', 'gh']) {
+    const tool = bindings?.[name];
+    let failure = reason || (!tool ? 'tool_binding_missing' : null), version;
+    if (!failure) {
+      const probe = await execute(tool.path, ['--version'], { timeoutMs: 5000, env: toolEnvironment(bindings.git?.path) });
+      version = probe.ok && patterns[name].exec(probe.text)?.[1];
+      failure = !probe.ok ? probe.reason : !version ? 'unrecognized_version' :
+        compareVersions(version, minimums[name]) < 0 ? 'version_below_minimum' :
+          version !== tool.version ? 'tool_binding_version_changed' : null;
+    }
+    checks.push(failure ? { ...check(name, !tool && (!reason || reason === 'tool_bindings_missing') ? 'missing' : 'invalid', failure),
+      hint: 'Run gidd tools --ensure' } : check(name, 'ready', undefined, { path: tool.path, version, source: tool.source }));
+  }
+  return { checks, bindings: bindings || {} };
+}
+
+// Parse only unambiguous addresses. Raw URLs may contain credentials and never enter reports.
 function remoteAddress(text) {
   if (/[\s\\%?#]/.test(text)) return null;
-  let match = /^https:\/\/([^/:@]+)\/([^/]+)\/([^/]+)\/?$/i.exec(text);
-  if (!match) match = /^git@([^/:@]+):([^/]+)\/([^/]+)\/?$/i.exec(text);
+  let protocol = 'https', match = /^https:\/\/([^/:@]+)\/([^/]+)\/([^/]+)\/?$/i.exec(text);
+  if (!match) { protocol = 'ssh'; match = /^git@([^/:@]+):([^/]+)\/([^/]+)\/?$/i.exec(text); }
   if (!match) match = /^ssh:\/\/git@([^/:@]+)(?::[0-9]+)?\/([^/]+)\/([^/]+)\/?$/i.exec(text);
   if (!match) return null;
   const [, hostname, owner, rawName] = match, name = rawName.replace(/\.git$/i, '');
   try { validateGitHubField('hostname', hostname); } catch { return null; }
   if (![owner, name].every(value => /^[a-z0-9_.-]+$/i.test(value) && !['.', '..'].includes(value))) return null;
-  return { hostname: hostname.toLowerCase(), repository: owner + '/' + name };
+  return { protocol, hostname: hostname.toLowerCase(), repository: owner + '/' + name };
 }
 
-async function inspectRemotes(invoke, github) {
+async function inspectRemote(invoke, github) {
+  if (!github.hostname || !github.remote) return check('repository.remote', 'not_checked', 'github_remote_configuration_required');
+  const details = { name: github.remote };
   const listed = await invoke(['remote']);
-  const remotes = [], addresses = new Map();
-  if (listed.ok) for (const name of listed.text.split(/\r?\n/).filter(Boolean)) {
-    const result = await invoke(['remote', 'get-url', '--all', name]);
-    const urls = result.ok ? result.text.split(/\r?\n/).filter(Boolean) : [];
-    const address = urls.length === 1 ? remoteAddress(urls[0]) : null;
-    addresses.set(name, { result, urls, address });
-    remotes.push({ name, url_checked: result.ok, github_repository:
-      address && [github.hostname?.toLowerCase(), 'github.com'].includes(address.hostname) ? address.repository : null });
-  }
-  const checks = [check('repository.remotes', !listed.ok ? 'invalid' : remotes.length ? 'ready' : 'missing',
-    !listed.ok ? 'remote_list_unreadable' : remotes.length ? 'local_remote_configuration_only' : 'no_remotes', { remotes })];
-  let selected;
-  if (!listed.ok) selected = check('repository.remote', 'not_checked', 'remote_list_unreadable');
-  else if (!github.hostname || !github.remote) selected = check('repository.remote', 'not_checked', 'github_remote_configuration_required');
-  else {
-    const found = addresses.get(github.remote), details = { name: github.remote, expected_hostname: github.hostname };
-    if (!found) selected = check('repository.remote', 'missing', 'configured_remote_missing', details);
-    else if (!found.result.ok) selected = check('repository.remote', 'invalid', 'remote_url_unreadable', details);
-    else if (found.urls.length !== 1) selected = check('repository.remote', 'invalid', 'remote_url_ambiguous', details);
-    else if (!found.address) selected = check('repository.remote', 'invalid', 'unsupported_remote_url', details);
-    else if (found.address.hostname !== github.hostname.toLowerCase()) selected = check('repository.remote', 'invalid', 'remote_hostname_mismatch',
-      { ...details, actual_hostname: found.address.hostname });
-    else selected = check('repository.remote', 'ready', 'configured_remote_host_matches',
-      { ...details, hostname: found.address.hostname, github_repository: found.address.repository });
-  }
-  return [...checks, selected];
+  if (!listed.ok) return check('repository.remote', 'invalid', listed.reason);
+  if (!listed.text.split(/\r?\n/).includes(github.remote)) return check('repository.remote', 'missing', 'configured_remote_missing', details);
+  const result = await invoke(['remote', 'get-url', '--all', github.remote]);
+  if (!result.ok) return check('repository.remote', 'invalid', result.reason, details);
+  const urls = result.text.split(/\r?\n/).filter(Boolean);
+  if (urls.length !== 1) return check('repository.remote', 'invalid', 'remote_url_ambiguous', details);
+  const address = remoteAddress(urls[0]);
+  if (!address) return check('repository.remote', 'invalid', 'unsupported_remote_url', details);
+  if (address.hostname !== github.hostname.toLowerCase()) return check('repository.remote', 'invalid', 'remote_hostname_mismatch',
+    { ...details, expected_hostname: github.hostname, actual_hostname: address.hostname });
+  return check('repository.remote', 'ready', undefined,
+    { ...details, hostname: address.hostname, github_repository: address.repository, protocol: address.protocol });
 }
 
-export async function doctor(target) {
+export async function doctor(target, { offline = false, execute = runCommand } = {}) {
   if (target !== undefined && (!target || !isAbsolute(target))) throw new Error('repository_must_be_absolute');
   target = target === undefined ? null : resolve(target);
-  let configRoot, targetExists = false, targetError, storage, storageError;
+  let configRoot, targetExists = false, targetError;
   try {
     targetExists = !!target && existsSync(target) && lstatSync(target).isDirectory();
     if (targetExists) configRoot = repositoryRoot(target);
   } catch (error) { targetError = safeReason(error, 'target_unreadable'); }
-  const configuration = inspectConfiguration(configRoot);
-  try {
-    if (targetError) throw new Error(targetError);
-    storage = resolveStorage(configRoot || null);
-  } catch (error) { storageError = safeReason(error, 'storage_unreadable'); }
-  const checks = [check('platform', process.platform === 'win32' && process.arch === 'x64' ? 'ready' : 'unsupported',
-    process.platform === 'win32' && process.arch === 'x64' ? 'supported' : 'unsupported_platform', { platform: process.platform, architecture: process.arch })];
-  // GitHub field values can be malformed; tool diagnostics need only tool settings.
-  const { github: omitted, ...storageDetails } = storage || {};
-  checks.push(storage ? check('tools.storage', 'ready', 'resolved', storageDetails) : check('tools.storage', 'invalid', storageError, { managed_tools_checked: false }));
-  let bindings={};
-  try {if(storage)bindings=readBindings(storage.tools_root).tools;} catch {}
-  for (const name of ['git', 'node', 'bun', 'gh']) checks.push(await findTool(name, {
-    root: storage?.tools_root, extraPaths:bindings[name]?.source==='path' && existsSync(bindings[name].path)?[bindings[name].path]:[],
-  }));
-  for(const name of ['git','gh']) {
-    const candidate=checks.find(c=>c.id==='tool.'+name);
-    const pending=storage && existsSync(resolve(storage.tools_root,'.cache','previous-'+name));
-    const matches=storage && candidate.status==='ready' && bindingMatches(storage.tools_root,name,candidate.details);
-    checks.push(check('binding.'+name,!pending && matches?'ready':'invalid',pending?'tool_recovery_pending':matches?'bound_candidate_verified':'bootstrap_required'));
-  }
-  checks.push(check('runtime', 'ready', 'current_process', { selected: process.versions.bun ? 'tool.bun' : 'tool.node',
-    path: process.execPath, version: process.versions.bun || process.versions.node, compatibility_checked: false }));
-  const git = checks.find(item => item.id === 'tool.git');
-  let root;
-  const env = toolEnvironment(git.details.path);
-  const invoke = args => runCommand(git.details.path, ['-C', target, ...args], { timeoutMs: 5000, env });
-  if (!target) checks.push(check('repository', 'not_checked', 'target_required'));
-  else if (targetError) checks.push(check('repository', 'invalid', targetError));
-  else if (!targetExists) checks.push(check('repository', 'invalid', 'directory_missing', { path: target }));
-  else if (git.status !== 'ready') checks.push(check('repository', 'not_checked', 'git_unavailable', { depends_on: ['tool.git'] }));
+  const configuration = inspectConfiguration(configRoot), github = configuration.github;
+  const { checks: toolChecks, bindings } = await inspectTools(execute);
+  const checks = [check('js_runtime', 'ready', undefined, { name: process.versions.bun ? 'bun' : 'node',
+    path: process.execPath, version: process.versions.bun || process.versions.node }), ...toolChecks, configuration.result];
+  if (process.platform !== 'win32' || process.arch !== 'x64') checks.push(check('platform', 'unsupported', 'unsupported_platform'));
+  const usable = name => checks.find(item => item.id === name)?.status === 'ready';
+  const env = toolEnvironment(usable('git') ? bindings.git.path : undefined);
+  const invoke = (args, timeoutMs = 5000) => execute(bindings.git.path, ['-C', target, ...args], { timeoutMs, env });
+  let repository;
+  if (!target) repository = check('repository', 'not_checked', 'target_required');
+  else if (targetError) repository = check('repository', 'invalid', targetError);
+  else if (!targetExists) repository = check('repository', 'invalid', 'directory_missing', { path: target });
+  else if (!usable('git')) repository = check('repository', 'not_checked', 'git_unavailable');
   else {
     const inside = await invoke(['rev-parse', '--is-inside-work-tree']), top = await invoke(['rev-parse', '--show-toplevel']);
     if (!inside.ok || inside.text !== 'true' || !top.ok) {
       const marked = existsSync(resolve(configRoot, '.git'));
-      checks.push(check('repository', 'invalid', inside.ok && inside.text === 'false' ? 'not_worktree' :
-        marked ? 'not_readable_worktree' : 'not_git_repository', { path: target }));
-    } else {
-      root = top.text;
-      checks.push(check('repository', 'ready', 'worktree', { path: root }));
-      const head = await invoke(['rev-parse', '--verify', 'HEAD']), symbolic = await invoke(['symbolic-ref', '-q', 'HEAD']);
-      checks.push(head.ok ? check('repository.history', 'ready', 'has_commit', { commit: head.text }) :
-        check('repository.history', symbolic.ok ? 'missing' : 'invalid', symbolic.ok ? 'unborn_branch' : 'head_unreadable'));
-      checks.push(...await inspectRemotes(invoke, configuration.github));
+      repository = check('repository', 'invalid', inside.ok && inside.text === 'false' ? 'not_worktree' :
+        marked ? 'not_readable_worktree' : 'not_git_repository', { path: target });
+    } else repository = check('repository', 'ready', undefined, { path: top.text });
+  }
+  checks.push(repository);
+  let remote;
+  if (repository.status === 'ready') {
+    const head = await invoke(['rev-parse', '--verify', 'HEAD']);
+    if (head.ok) repository.details.commit = head.text;
+    else {
+      const symbolic = await invoke(['symbolic-ref', '-q', 'HEAD']);
+      repository.status = symbolic.ok ? 'missing' : 'invalid';
+      repository.reason = symbolic.ok ? 'unborn_branch' : 'head_unreadable';
+    }
+    // A readable worktree can still supply authors/remotes before its first commit.
+    const author = await invoke(['var', 'GIT_AUTHOR_IDENT']);
+    const match = author.ok && /^(.+) <([^<>\r\n]+)> \d+ [+-]\d{4}$/.exec(author.text);
+    checks.push(match ? check('git.author', 'ready', undefined, { name: match[1], email: match[2] }) :
+      check('git.author', 'failed', author.ok ? 'invalid_author_response' : author.reason));
+    remote = await inspectRemote(invoke, github);
+  } else {
+    checks.push(check('git.author', 'not_checked', 'repository_unavailable'));
+    remote = check('repository.remote', 'not_checked', 'repository_unavailable');
+  }
+  checks.push(remote);
+  if (offline) checks.push(check('github.identity', 'not_checked', 'offline'), check('git.remote_read', 'not_checked', 'offline'));
+  else {
+    if (!github.hostname || !github.account) checks.push(check('github.identity', 'not_checked', 'github_identity_configuration_required'));
+    else if (!usable('gh')) checks.push(check('github.identity', 'not_checked', 'gh_unavailable'));
+    else {
+      const result = await checkGitHubIdentity({ gh: bindings.gh.path, ...github },
+        (exe, args) => execute(exe, args, { cwd: targetExists ? target : undefined, env, timeoutMs: 15000 }));
+      checks.push(check('github.identity', result.status, result.reason, result.details));
+    }
+    if (remote.status !== 'ready') checks.push(check('git.remote_read', 'not_checked', 'remote_unavailable'));
+    else if (remote.details.protocol !== 'https') checks.push(check('git.remote_read', 'not_checked', 'https_remote_required'));
+    else {
+      const result = await invoke(['-c', 'credential.interactive=false', '-c', 'core.askPass=', 'ls-remote', '--', github.remote, 'HEAD'], 15000);
+      checks.push(check('git.remote_read', result.ok ? 'ready' : 'failed', result.reason, { remote: github.remote }));
     }
   }
-  if (!root) for (const id of ['repository.history', 'repository.remotes', 'repository.remote']) checks.push(check(id, 'not_checked', 'repository_unavailable'));
-  checks.push(...configuration.checks);
-  for (const id of ['github.identity', 'git.authentication']) checks.push(check(id, 'not_checked', 'offline_diagnostic'));
-  const required = ['binding.git','binding.gh','platform', 'tools.storage', 'tool.git', 'runtime', 'tool.gh', 'repository', 'repository.history',
-    'repository.remotes', 'repository.remote', 'repository.config', 'repository.config.validation', 'repository.config.github'];
-  return { schema: 'gidd.doctor/v1', status: required.every(id => checks.some(item => item.id === id && item.status === 'ready')) ? 'local_ready' : 'needs_setup', repository: target, checks };
-}
-
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try {
-    const result = await doctor(process.argv[2]); console.log(JSON.stringify(result)); process.exitCode = result.status === 'local_ready' ? 0 : 1;
-  } catch { console.log(JSON.stringify({ schema: 'gidd.doctor/v1', status: 'error', checks: [] })); process.exitCode = 2; }
+  const required = checks.filter(item => !offline || !['github.identity', 'git.remote_read'].includes(item.id));
+  return { schema: 'gidd.doctor/v1', mode: offline ? 'offline' : 'online',
+    status: required.every(item => item.status === 'ready') ? offline ? 'local_ready' : 'checks_passed' : 'needs_attention',
+    repository: target, checks };
 }

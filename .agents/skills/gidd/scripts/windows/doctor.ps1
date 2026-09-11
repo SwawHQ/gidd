@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param([string]$RepositoryPath)
+param([string]$RepositoryPath, [switch]$Offline)
 # Compatibility entry: operations forward through the generated shared launcher.
 . (Join-Path $PSScriptRoot 'lib/_entry.ps1')
-Invoke-GiddEntry -CommandArguments @('doctor','--repository',$RepositoryPath)
+$arguments = @('doctor','--repository',$RepositoryPath)
+if ($Offline) { $arguments += '--offline' }
+Invoke-GiddEntry -CommandArguments $arguments

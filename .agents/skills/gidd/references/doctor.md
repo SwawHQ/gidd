@@ -1,102 +1,71 @@
-# Windows 本地诊断
+# Windows 可用性诊断
 
-完整 doctor 位于 scripts/doctor.mjs，本身只读、离线。系统入口直接调用 [bootstrap](bootstrap.md) 已生成的 js_exec.cmd；启动器缺失时提示 tools --ensure，doctor 尚未执行。
-
-公开入口：`gidd.cmd doctor`。当前验证平台为 Windows x64、Windows PowerShell 5.1；需要 tools --ensure 已准备共享运行时启动器；不要求 gh 已安装。
-
-从目标仓库的 `.agents/skills/gidd/` 安装目录执行：
+公开入口：
 
 ```powershell
 .\gidd.cmd doctor
+.\gidd.cmd doctor --offline
 ```
 
-仓库内 `.agents/skills/gidd/` 的入口自动定位含 `.git` 标记的目标根（含 worktree），不依赖工作目录。Git 可用时另行验证工作树；配置不继承用户级文件。入口无法确定目标时，doctor 仍检查工具，repository 报 target_required，repository 字段为 null；Agent 先确认目标，不能把用户级技能安装目录或调用目录猜成目标。显式目标是普通目录时报告 not_git_repository，目录不存在时报告 directory_missing。工具固定存放于 `~/.agents/skills.tools/gidd/`，独立于技能安装位置，JS doctor 不建立工具目录。
+doctor 默认执行本地诊断和只读联网检查；--offline 跳过所有联网请求，仍检查工具、配置、工作树、作者及 remote 地址。平台为 Windows x64 / Windows PowerShell 5.1。identity 命令、独立脚本和协议已删除，不提供兼容入口；报告继续使用 gidd.doctor/v1。
 
-## 源码归属
+## 执行与工具边界
 
-scripts/doctor.mjs 组合诊断；scripts/tools.mjs 负责工具探测；scripts/storage.mjs 负责配置、固定路径与完整性校验；scripts/config.mjs 提供共用 GitHub 字段校验；scripts/github.mjs 的共用进程执行器提供超时、输出上限和错误脱敏。scripts/windows/doctor.ps1 仅为经共享启动器转发的旧 PowerShell 兼容入口。
+入口通过 tools --ensure 发布的 js_exec.cmd 启动 scripts/gidd.mjs。启动器缺失或运行时无法启动时，JS doctor 尚未执行，应运行 tools --ensure；不通过其他运行时回退重跑。
 
-## 工具选择
+doctor 只验证当前执行链：
 
-先检查受管 executable，再检查有效绑定中的外部路径，最后检查 PATH 候选。所有版本要求由代码维护；内部下载策略只用于需要下载时解析，doctor 不联网查询最新版本或 LTS 状态。仅执行 `--version`，每个子进程最多等待 5 秒，stdin 关闭。首版不运行 `.cmd` 包装器，只在子进程范围使用选定 Git 的 PATH。
+- js_runtime 来自当前进程的运行时种类、路径和版本。成功进入 doctor 证明本次启动链可运行；不再次调用兼容脚本，也不探测另一个运行时。
+- scripts/bindings.mjs 读取一次固定共享目录中的 tool-bindings.json，检查 schema、平台、字段和路径格式。
+- 对已绑定 Git、gh 各执行一次 --version，最多等待 5 秒；要求版本可解析、达到现有最低要求且与绑定记录一致。失败返回具体 reason 和 tools --ensure 提示，不搜索 PATH 或选用替代工具。
+- 工具根直接按固定用户路径解析，不依赖仓库工具下载配置。配置损坏仍可报告已绑定工具的状态。
 
-共享工具须先通过同目录 `install.json` 的文件集合、长度、SHA-256 检查，再运行版本查询；缺少清单或文件损坏时报告 `managed_integrity_failed`，不执行该候选。此校验不适用于外部管理的普通 PATH 工具。若将 GIDD 的同一工具路径加入 PATH，仍需通过共享工具完整性检查。
+不检查安装清单、完整文件哈希、其他运行时、候选工具、安装缓存或恢复事务。tools --check 保留完整工具诊断；tools --ensure 负责准备、校验和修复，并报告其自身错误。基本版本调用成功不证明所有工具组件或业务调用均可用。
 
-进程退出和 stdout/stderr 读取共用同一个 5 秒期限；父进程退出后，后代仍持有输出管道时也会返回 `process_timeout`，不会重新开始计时或无限等待。辅助函数不负责终止所有后代进程。
+## 本地检查
 
-| 工具 | 基础版本门槛 | 受管候选（先于 PATH） |
-| --- | --- | --- |
-| Git | 2.0 | `<工具根>/git/cmd/git.exe` |
-| Node.js | 只观察版本，不检查兼容性 | `<工具根>/node/node.exe`；可用 `gidd.cmd tools --ensure --jsruntime=node` 准备并选择 |
-| Bun | 只观察版本，不检查兼容性 | `<工具根>/bun/bun.exe` |
-| gh | 2.98.0 | `<工具根>/gh/gh.exe` |
+仓库内 .agents/skills/gidd/ 入口从自身位置定位含 .git 标记的目标根，支持 worktree，不依赖 cwd。无明确目标时 repository=null，repository.reason=target_required；不猜测用户级技能目录为目标。
 
-runtime 描述当前正在执行 doctor 的进程：path、version、selected 与 compatibility_checked=false。不重新选择运行时，也不执行兼容方法。tool.node/bun 是对安装文件和 --version 的独立观察，候选拒绝原因保留在 details.rejected；这不等于 tools --ensure 的兼容结果。
+配置只读取目标仓库 .agents/skills/gidd/config.toml。config 一项组合文件读取、schema 及 github.hostname/account/remote 字段校验；缺失或非法字段才列出 missing_fields/invalid_fields，不输出非法值。缺少 Git、普通目录或绑定错误不阻止明确目标的配置检查。配置不补默认账号、主机或 remote。
 
-上述版本是诊断门槛，不证明所有对应版本的未来业务兼容性。JavaScript 业务代码须使用 Node/Bun 共同支持的标准 API，同一功能在两者上验证；doctor 由共用 JavaScript 执行，测试同时覆盖 Node 与 Bun。
+repository 组合工作树与 HEAD 检查，成功给出根路径和 commit；新仓库没有提交时报告 unborn_branch。可读工作树即使尚无提交，仍检查作者和 remote。损坏 .git 标记、普通目录、bare repository、目录不存在分别报告 not_readable_worktree、not_git_repository、not_worktree、directory_missing。
 
-## 输出与退出码
+git.author 使用 git var GIT_AUTHOR_IDENT，报告当前进程的有效姓名与邮箱，不推断 GitHub 身份。
 
-stdout 为单个 UTF-8 JSON 对象：
+repository.remote 只诊断配置指定的 remote，不列出其他 remote。使用 Git 展开 insteadOf 后的 fetch URL，要求只有一个地址并匹配 github.hostname。支持 https://host/owner/repo、git@host:owner/repo、ssh://git@host[:port]/owner/repo，可带 .git 和末尾斜线。带凭据、查询参数、片段、百分号编码、不明确路径或多个地址等返回具体原因，不输出原始 URL。
 
-```json
-{
-  "schema": "gidd.doctor/v1",
-  "status": "needs_setup",
-  "repository": "D:\\work\\project",
-  "checks": [
-    { "id": "runtime", "status": "ready", "reason": "current_process", "details": { "selected": "tool.bun", "compatibility_checked": false } }
-  ]
-}
-```
+## 联网检查
 
-示例省略其他检查项。`reason` 是稳定标识，Agent 自行用用户语言解释；不得依赖检查项顺序。
+仅 doctor 默认模式包含：
 
-| 项状态 | 含义 |
+| 检查 | 行为 |
 | --- | --- |
-| `ready` | 通过该项明确限定的检查 |
-| `missing` | 未找到所需对象 |
-| `invalid` | 对象存在但不可用，或目标不是可读取工作树 |
-| `not_checked` | 前置条件缺失、未实现或不属于离线诊断 |
+| github.identity | gh api --hostname <host> --method GET user --jq .login，比较实际账号与配置账号，忽略大小写 |
+| git.remote_read | 本地 remote 校验通过且为 HTTPS 时，非交互执行 git ls-remote -- <remote> HEAD；空仓库无 HEAD 也可读取成功 |
+
+API 身份检查只依赖 gh、有效 hostname/account；工作树或 Git 检查失败不阻止它。remote 读取依赖可读工作树、可用 Git、有效 hostname/remote 和符合条件的 URL，不依赖 API 请求或作者检查成功。一项失败仍执行独立项。
+
+SSH fetch 地址可通过本地校验，但当前不执行 SSH 联网探测，git.remote_read 为 not_checked / https_remote_required。其他不符合条件的 remote 同样不联网。API 请求失败可能来自网络、凭据或服务问题，不直接解释为未登录。
+
+每个联网子进程最多 15 秒，退出和管道读取共用期限；终止确认最多额外 500 毫秒。关闭 stdin，禁用 Git/GCM 交互和 gh 提示，限制输出为 1 MiB，不传播原始失败输出或 stderr。继承调用环境中的 gh 认证选择，Git 保留现有凭据配置；只给子进程设置已绑定 Git 的 PATH。
+
+doctor 不调用 auth login、auth switch、auth setup-git，不创建提交或执行 push。只在用户明确要求授权时调用 auth，其行为不变。远程读取不确定 Git 传输账号，也不证明推送权限；不再输出永远 not_checked 的 git.authentication 项。仓库启用记录、SSH 身份和推送预检尚未实现。
+
+## 报告和退出码
+
+stdout 为单个 JSON 对象。字段为 schema=gidd.doctor/v1、mode=online|offline、status、repository 和 checks。
+
+正常平台下有九项：js_runtime、git、gh、config、repository、git.author、repository.remote、github.identity、git.remote_read。不支持的平台通过公共入口报错；内部诊断额外给出 platform=unsupported。
+
+成功项仅包含 id、status=ready 和有用的 details，不输出重复 reason 或空 details。异常项包含稳定 reason，工具异常另含 hint=Run gidd tools --ensure。不能依赖 checks 的顺序。
 
 | 退出码 / 总体状态 | 含义 |
 | --- | --- |
-| `0` / `local_ready` | 平台、Git、当前运行时、gh、工作树、commit、配置 schema、GitHub 必需字段及所选 remote 的本地主机匹配均通过 |
-| `1` / `needs_setup` | 正常完成诊断，基础条件尚不齐备 |
-| `2` / `error` | 调用参数错误或诊断程序无法完成；stderr 提供说明 |
+| 0 / checks_passed | 默认模式九项检查均通过，仍不证明推送权限或仓库启用 |
+| 0 / local_ready | --offline 的本地检查全部通过；两个联网项明确为 not_checked / offline |
+| 1 / needs_attention | 诊断正常完成，有失败、缺项、不匹配或非离线原因的未检查项 |
+| 2 / error | 参数、平台或入口错误，未完成诊断 |
 
-检查项为 `platform`、`tools.storage`、`tool.git`、`tool.node`、`tool.bun`、`tool.gh`、`runtime`、`repository`、`repository.history`、`repository.remotes`、`repository.remote`、`repository.config`、`repository.config.validation`、`repository.config.github`、`github.identity`、`git.authentication`。无法读取工作树时，history/remotes/remote 为 not_checked；没有 commit 的新仓库报告 unborn_branch。
+项状态为 ready、missing、invalid、failed、mismatch、not_checked；unsupported 仅用于内部平台诊断。SSH remote 在默认模式下因读取未检查而返回 needs_attention，不将跳过等同通过。
 
-`repository.config` 检查固定路径文件存在性；`repository.config.validation` 验证 [configuration.md](configuration.md) 的 schema v1；`repository.config.github` 使用共用字段校验器检查 hostname/account/remote，分别列出 missing_fields 与 invalid_fields，不输出字段原值。目标明确时，即使缺少 Git 或尚未建立 Git 仓库，也检查该位置的配置。配置存在和字段完整都不是初始化记录。
-
-`binding.git`、`binding.gh` 校验绑定是否匹配选定工具和受管安装记录；待恢复备份报告 tool_recovery_pending。这两项也参与 local_ready 判定。
-
-`tools.storage` 只报告工具配置和解析位置，不输出 GitHub 字段。配置语法或工具存储错误时该项为 invalid，managed_tools_checked=false，仅继续外部 PATH 探测，不回退默认受管目录。GitHub 字段值错误单独报告，不阻止工具诊断。Git 也优先检查受管 git/cmd/git.exe，再检查 PATH；通过校验的所选路径用于所有仓库探测。source=managed 表示受管工具，实际位置以 tools.storage 为准。GitHub 身份与 Git 传输认证仍为 not_checked；local_ready 不代表仓库启用、账号正确或具备推送权限。
-
-remote 检查只执行本地 Git 查询，不访问网络。`repository.remotes` 列出本地 remote；`repository.remote` 检查 config.toml 的 github.remote，存在其他 remote 不代表所选 remote 可用。读取所选 remote 的 fetch URL（Git 展开 insteadOf 后），要求恰好一个地址，多个地址报告 remote_url_ambiguous。
-
-支持 `https://host/owner/repo`、`git@host:owner/repo`、`ssh://git@host[:port]/owner/repo`，可带 .git 后缀与末尾斜线。主机忽略大小写，与 github.hostname 比较，成功时给出 hostname 和 github_repository；这只表示地址结构与配置主机匹配，不能离线证明该主机运行 GitHub 或仓库真实存在。含 HTTPS 凭据、查询参数、片段、百分号编码、额外路径、其他协议或 SSH 别名等无法匹配的形式，需要用户另行检查，不自动修改 remote。不会输出完整 URL、非法配置值或子进程原始错误。
-
-| 检查原因 | Agent 应说明的情况 |
-| --- | --- |
-| target_required | 尚未确定目标目录，先确认目标 |
-| git_unavailable | Git 程序不可用，不能判断仓库状态 |
-| not_git_repository / not_worktree | 目标尚非 Git 仓库或不是工作树 |
-| no_remotes | 工作树未配置 remote |
-| github_fields_missing / github_fields_invalid | 配置缺项或字段值无效，按字段列表处理 |
-| configured_remote_missing | 配置指定的 remote 不存在 |
-| remote_hostname_mismatch | 所选 remote 的主机与配置不符，需确认目标或修正设置 |
-| unsupported_remote_url / remote_url_ambiguous | 当前离线解析无法确定单一目标，需核对地址 |
-
-这里只检查所选 fetch 地址，不验证 push URL、推送权限或仓库归属记录；归属记录与初始化流程尚未实现。不把这些原因统一解释为需要重新初始化。
-
-## Agent 如何使用结果
-
-- tools --ensure 只负责运行时与共享启动器，不检查 Git、仓库归属或登录；Git 和 gh 的可用性由 JS doctor 报告。
-- 用户说“当前仓库启用 GIDD”：先对明确的目标仓库诊断。已有运行时通过时直接复用，不要求同时安装 Node 和 Bun。
-- 启动失败：报告共享启动器或运行时执行错误，提示重新 tools --ensure。完整 doctor 尚未执行，不把未检查项报告为通过。
-- `repository.config` 缺失：说明该仓库尚无固定位置配置，再按用户授权进入配置流程；不要用目录存在代替启用记录。
-- `github.identity` 未检查：说明尚未检查，不能说“未登录”。用户要求检查当前账号时使用独立的 [身份检查入口](identity.md)，该入口会联网。需要登录时另行展示 URL 与一次性代码，当前 doctor 不启动登录。
-- 初始化或修复后重新诊断。退出码 1 不是脚本崩溃；不要无条件重复执行或把结果当作自动安装授权。
-
-doctor 自身不安装工具、不写目标仓库或工具目录、不切换账号、不写 Git 配置、不修改全局环境。它会执行找到的本机 executable 的版本查询，不能保证任意第三方 executable 本身没有副作用。
+JS 实现位于 scripts/doctor.mjs，API 账号检查和共用进程执行器位于 scripts/github.mjs；旧 scripts/windows/doctor.ps1 转发相同实现，-Offline 对应 --offline。测试使用离线 fixture 验证默认模式，不接触真实登录；同一套用例在 Node/Bun 执行。诊断不写仓库配置或工具目录，外部 executable 和凭据助手本身的行为由其实现决定。

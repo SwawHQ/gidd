@@ -6,7 +6,7 @@
 
 技能发布入口为 `.agents/skills/gidd/gidd.cmd`，先运行 `.\.agents\skills\gidd\gidd.cmd tools --ensure` 准备一个运行时、Git、gh 和共享绑定；仅检查用 `tools --check`，再运行 help zh。产品用法见 [技能说明](.agents/skills/gidd/SKILL.md)；统一入口的开发验收使用 `.\dev.cmd .test entry`。tools 命令使用系统 Shell。普通命令经共享 js_exec.cmd 直接启动共用 JavaScript；不探测运行时或检查兼容性。
 
-`help`、`--help`、`-h` 等价。产品工具准备统一使用 `tools --ensure`，旧 `setup` 已移除，开发双运行时继续使用 `dev.cmd .setup bun/node`。本项目的唯一技能源码位于 `.agents/skills/gidd/`，与仓库安装布局一致；入口从自身位置定位目标，支持 Git worktree，不依赖调用目录。可直接运行 `.\.agents\skills\gidd\gidd.cmd doctor` 或 `config show`。doctor 无法自动定位目标时仍报告工具和 target_required；显式目标是普通目录时报告 not_git_repository，缺少 Git 时仍诊断目标配置。内部参数 `--repository <目标绝对路径>` 仅供开发和测试指定其他目标，普通调用无需追加，也不展示在 help 中。配置使用 `config show/set` 管理。完整技能安装和更新由 [Issue #14](https://github.com/SwawHQ/gidd/issues/14) 跟踪，Bun/Node/gh 下载来源由配置管理，工具版本策略内部维护，工具目录固定共享；配置增加可选的 github 表，执行身份检查或授权时相关字段必须齐备。doctor 的 local_ready 要求 Git/gh 绑定有效，并要求 hostname/account/remote 完整且所选 remote 的本地主机匹配；这不证明仓库已初始化或登录成功。
+`help`、`--help`、`-h` 等价。产品工具准备统一使用 `tools --ensure`，旧 `setup` 已移除，开发双运行时继续使用 `dev.cmd .setup bun/node`。本项目的唯一技能源码位于 `.agents/skills/gidd/`，与仓库安装布局一致；入口从自身位置定位目标，支持 Git worktree，不依赖调用目录。可直接运行 `.\.agents\skills\gidd\gidd.cmd doctor` 或 `config show`。doctor 无法自动定位目标时仍报告工具和 target_required；显式目标是普通目录时报告 not_git_repository，缺少 Git 时仍诊断目标配置。内部参数 `--repository <目标绝对路径>` 仅供开发和测试指定其他目标，普通调用无需追加，也不展示在 help 中。配置使用 `config show/set` 管理。完整技能安装和更新由 [Issue #14](https://github.com/SwawHQ/gidd/issues/14) 跟踪，Bun/Node/gh 下载来源由配置管理，工具版本策略内部维护，工具目录固定共享；配置增加可选的 github 表，执行身份检查或授权时相关字段必须齐备。doctor 默认进行联网身份和 HTTPS remote 读取检查，全部通过返回 checks_passed；--offline 的 local_ready 要求当前运行时、绑定 Git/gh 基本可用，并要求配置、工作树、作者与所选 remote 本地校验通过。两者均不证明仓库启用或推送权限。工具完整安装检查由 tools --check 提供，doctor 不搜索候选、不扫描完整安装树。
 
 ```powershell
 .\dev.cmd .help zh
@@ -117,7 +117,7 @@ tools --ensure 先完成原生 Shell 运行时阶段，再由 JS 准备 Git/gh �
 
 `bun run test` 使用相同的双运行时入口；`bun run test:bun`、`bun run test:node` 分别选择一种。已有 npm 时也可以使用相应的 `npm run` 命令，但便携安装不提供 npm。
 
-测试保留诊断只读、依赖缺失、PATH/受管工具选择、Node/Bun 复用、凭据脱敏、损坏目标保留、SHA/ZIP/版本拒绝、junction 拒绝、并发锁、强制终止恢复和共享超时期限等场景。`github` 组使用离线 fixture 验证 API 账号匹配、独立失败、凭据脱敏、进程超时和只读 Git 作者检查；不会触碰真实登录。产品身份检查用法见 [身份检查协议](.agents/skills/gidd/references/identity.md)，该入口需显式调用才会联网。
+测试保留诊断只读、依赖缺失、PATH/受管工具选择、Node/Bun 复用、凭据脱敏、损坏目标保留、SHA/ZIP/版本拒绝、junction 拒绝、并发锁、强制终止恢复和共享超时期限等场景。`doctor` 组使用离线 fixture 验证默认联网模式的 API 账号匹配、独立失败、请求抑制和作者/remote 检查；`github` 组验证共用进程执行器与授权逻辑，均不触碰真实登录。用法见 [doctor 协议](.agents/skills/gidd/references/doctor.md)：默认联网，--offline 不联网，identity 入口已删除，报告仍为 gidd.doctor/v1。
 
 官方归档验证需要显式运行：
 

@@ -1,77 +1,13 @@
 import { bindFixture, prepare } from './support/helpers.mjs';
 import { test } from 'node:test';
 import { copyFileSync, cpSync, mkdirSync } from 'node:fs';
-import { checkIdentity, runCommand } from '../.agents/skills/gidd/scripts/github.mjs';
+import { runCommand } from '../.agents/skills/gidd/scripts/github.mjs';
 import { authorize } from '../.agents/skills/gidd/scripts/auth.mjs';
 import { toolsRoot, adapter, assert, compile, dirname, existsSync, fixture, findGit, join, json, ok, ps, readFileSync, repo, run, snapshot, stub, write } from './support/helpers.mjs';
 
 const options = { repository: repo, gh: join(repo, 'fixture-gh.exe'), git: findGit(), account: 'octocat' };
 const success = text => ({ ok: true, reason: 'process_exit', text });
-const byId = (report, id) => report.checks.find(check => check.id === id);
 const githubConfig = '\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "origin"\n';
-function scenario(overrides = {}) {
-  const calls = [];
-  return { calls, execute: async (exe, args, settings) => {
-    calls.push({ exe, args, settings });
-    const key = args[0] === 'api' ? 'api' : args[0] === 'rev-parse' ? 'repository' :
-      args[0] === 'var' ? 'author' : args.includes('--get-url') ? 'remote' : 'read';
-    return overrides[key] || success({ api: 'Octocat', repository: repo,
-      author: 'Local Author <author@example.test> 1234567890 +0800',
-      remote: 'https://github.com/owner/repo.git', read: '' }[key]);
-  } };
-}
-
-test('identity separates verified API user, remote reading and effective commit author', async () => {
-  const s = scenario(), report = await checkIdentity(options, s.execute);
-  assert.equal(report.status, 'checks_passed');
-  assert.equal(byId(report, 'github.api').details.login, 'Octocat');
-  assert.equal(byId(report, 'git.author').details.email, 'author@example.test');
-  assert.equal(byId(report, 'git.remote_read').status, 'ready');
-  assert.equal(byId(report, 'git.authentication').status, 'not_checked');
-  assert.deepEqual(s.calls[0].args, ['api', '--hostname', 'github.com', '--method', 'GET', 'user', '--jq', '.login']);
-  assert.ok(s.calls.every(call => call.settings.cwd === repo));
-  assert.ok(s.calls.every(call => !call.args.some(arg => ['login','switch','setup-git','push'].includes(arg))));
-  const mismatch = await checkIdentity({ ...options, account: 'someone-else' }, scenario().execute);
-  assert.equal(mismatch.status, 'needs_attention');
-  assert.equal(byId(mismatch, 'github.api').status, 'mismatch');
-  assert.equal(byId(mismatch, 'git.author').status, 'ready');
-  const enterprise = scenario({ remote: success('https://gh--enterprise.example/owner/repo') });
-  assert.equal((await checkIdentity({ ...options, hostname: 'gh--enterprise.example' }, enterprise.execute)).status, 'checks_passed');
-  assert.equal(enterprise.calls[0].args[2], 'gh--enterprise.example');
-});
-
-test('missing dependencies and independent failures never become authentication success', async () => {
-  const missing = await checkIdentity({ repository: repo }, () => assert.fail('Must not invoke missing tools'));
-  assert.equal(missing.status, 'needs_attention');
-  assert.equal(byId(missing, 'github.api').status, 'missing');
-  assert.equal(byId(missing, 'git.author').status, 'not_checked');
-  for (const key of ['api', 'repository', 'author', 'read']) {
-    const s = scenario({ [key]: { ok: false, reason: 'process_timeout', text: 'ghp_PRIVATE_TOKEN' } });
-    const report = await checkIdentity(options, s.execute);
-    assert.equal(report.status, 'needs_attention');
-    assert.ok(!JSON.stringify(report).includes('PRIVATE_TOKEN'));
-    if (key !== 'repository') assert.equal(s.calls.length, 5, 'One failure must not suppress independent checks');
-  }
-  const invalid = await checkIdentity(options, scenario({ api: success('token=ghp_PRIVATE_TOKEN') }).execute);
-  assert.equal(byId(invalid, 'github.api').reason, 'invalid_api_response');
-  assert.ok(!JSON.stringify(invalid).includes('PRIVATE_TOKEN'));
-});
-
-test('only eligible HTTPS remotes are read, with no URL credentials exposed', async () => {
-  for (const remote of ['git@github.com:owner/repo.git', 'https://elsewhere.test/owner/repo',
-    'https://user:PRIVATE_TOKEN@github.com/owner/repo', 'https://github.com/owner/repo?PRIVATE_TOKEN',
-    'http://github.com/owner/repo', 'https:github.com/owner/repo', 'https://github.com\\owner/repo', 'origin']) {
-    const s = scenario({ remote: success(remote) }), report = await checkIdentity(options, s.execute);
-    assert.equal(byId(report, 'git.remote_read').status, 'not_checked');
-    assert.equal(report.status, 'needs_attention');
-    assert.equal(s.calls.length, 4, 'Ineligible remotes must not trigger a transport request');
-    assert.ok(!JSON.stringify(report).includes('PRIVATE_TOKEN'));
-  }
-  for (const patch of [{ repository: '.' }, { hostname: '-h' }, { hostname: 'github.com/token' },
-    { account: 'bad account' }, { remote: '--upload-pack=evil' }, { gh: 'ghbw.cmd' }]) {
-    await assert.rejects(checkIdentity({ ...options, ...patch }, () => assert.fail('Invalid input must not execute')));
-  }
-});
 
 test('process adapter bounds hangs and output, redacts failures and isolates repository overrides', { timeout: 15000 }, async () => {
   const common = { cwd: repo, timeoutMs: 5000 };
@@ -88,45 +24,7 @@ test('process adapter bounds hangs and output, redacts failures and isolates rep
   assert.equal((await runCommand(join(repo, 'does-not-exist.exe'), [], common)).reason, 'process_start_failed');
 });
 
-test('CLI reads real Git author and remains read-only in an isolated repository', async () => {
-  const f = fixture();
-  try {
-    const git = findGit();
-    ok(run(git, ['init', f.root]));
-    ok(run(git, ['-C', f.root, 'config', 'user.name', 'Fixture Author']));
-    ok(run(git, ['-C', f.root, 'config', 'user.email', 'fixture@example.test']));
-    ok(run(git, ['-C', f.root, 'remote', 'add', 'origin', 'git@github.com:owner/repo.git']));
-    write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n[tools]\n' + githubConfig);
-    const before = snapshot(f.root);
-    const result = run(process.execPath, [join(repo, '.agents/skills/gidd/scripts/github.mjs'), '--repository', f.root, '--git', git]);
-    assert.equal(result.status, 1);
-    const report = json(result);
-    assert.equal(byId(report, 'github.api').status, 'missing');
-    assert.equal(byId(report, 'git.author').details.name, 'Fixture Author');
-    assert.equal(byId(report, 'git.remote_read').reason, 'https_remote_required');
-    assert.deepEqual(snapshot(f.root), before);
-    const invalid = run(process.execPath, [join(repo, '.agents/skills/gidd/scripts/github.mjs'), '--repository', '.']);
-    assert.equal(invalid.status, 2);
-    assert.equal(json(invalid).reason, 'repository_must_be_absolute');
-    ok(adapter(f.root,{action:'bootstrap',repositoryRoot:f.root,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
-    // Ordinary errors must produce JSON without changing the prepared installation.
-    write(join(f.root, '.agents/skills/gidd/config.toml'), 'invalid = true');
-    const configured = snapshot(f.root);
-    const bootstrap = ps(join(repo, '.agents/skills/gidd/scripts/windows/check-identity.ps1'), ['-RepositoryPath', f.root]);
-    assert.equal(bootstrap.status, 2);
-    assert.match(json(bootstrap).reason, /^config_/);
-    assert.deepEqual(snapshot(f.root), configured);
-    write(join(f.root, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\n' + githubConfig);
-    const valid = snapshot(f.root);
-    const bootstrapped = ps(join(repo, '.agents/skills/gidd/scripts/windows/check-identity.ps1'), ['-RepositoryPath', f.root],
-      { env: { PATH: [dirname(process.execPath), dirname(git)].join(';') } });
-    assert.equal(bootstrapped.status, 2, bootstrapped.stdout + bootstrapped.stderr);
-    assert.equal(json(bootstrapped).reason,'tool_bindings_missing');
-    assert.deepEqual(snapshot(f.root), valid, 'Identity must use the existing launcher without writes');
-  } finally { f.dispose(); }
-});
-
-test('identity subprocess deadline also covers pipes inherited by descendants', { timeout: 15000 }, async () => {
+test('GitHub subprocess deadline also covers pipes inherited by descendants', { timeout: 15000 }, async () => {
   const f = fixture(), pidFiles = [];
   try {
     const exe = compile(f.root, 'pipe-parent.cs');

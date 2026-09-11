@@ -35,8 +35,8 @@ live('official unified bootstrap, local commit clone fetch and gh Git discovery'
     invoke(['remote','add','origin','https://github.com/example/gidd-fixture.git']);
     invoke(['config','remote.origin.gh-resolved','base']);
     assert.equal(ok(run(gh.path,['repo','set-default','--view'],{env,cwd:source})).stdout.trim(),'example/gidd-fixture');
-    const diagnosis=json(product(['doctor','--repository',source],{env:{PATH:''}}));
-    assert.equal(diagnosis.checks.find(item=>item.id==='tool.git').details.path,git.path);
+    const diagnosis=json(product(['doctor','--offline','--repository',source],{env:{PATH:''}}));
+    assert.equal(diagnosis.checks.find(item=>item.id==='git').details.path,git.path);
     assert.equal(diagnosis.checks.find(item=>item.id==='repository').status,'ready');
   } finally {f.dispose();}
 });
@@ -55,8 +55,8 @@ live('official Bun cold bootstrap, post-install doctor and reuse', { timeout: 30
     assert.deepEqual(report.tools.map(t=>[t.name,t.action]),[['git','reused'],['gh','reused']]);
     assert.equal(existsSync(join(toolsRoot(f.root),'node')),false);
     assert.equal(existsSync(join(toolsRoot(f.root),'bun')),true,'stage0 supplies the runtime before JS installs gh');
-    const diagnosis=json(ps(join(code,'doctor.ps1'),['-RepositoryPath',f.root],{env:{PATH:''}}));
-    for (const id of ['tool.bun','tool.gh','runtime']) assert.equal(diagnosis.checks.find(x=>x.id===id).status,'ready');
+    const diagnosis=json(ps(join(code,'doctor.ps1'),['-RepositoryPath',f.root,'-Offline'],{env:{PATH:''}}));
+    for (const id of ['js_runtime','gh']) assert.equal(diagnosis.checks.find(x=>x.id===id).status,'ready');
     const again=json(ok(invoke()));
     assert.deepEqual(again.tools.map(t=>[t.name,t.action]),[['git','reused'],['gh','reused']]);
   } finally { f.dispose(); }
@@ -79,7 +79,7 @@ live('official Node download and reuse through bootstrap', { timeout: 300000 }, 
     assert.equal(existsSync(join(root,'bun')),false);
     assert.equal(existsSync(join(root,'gh')),true); assert.equal(existsSync(join(root,'git')),true);
     assert.equal(existsSync(join(root,'node/npm.cmd')),false);
-    const diagnosis=json(ps(join(code,'doctor.ps1'),['-RepositoryPath',f.root],{env:{PATH:''}}));
-    assert.equal(diagnosis.checks.find(c=>c.id==='tool.node').status,'ready');
+    const diagnosis=json(ps(join(code,'doctor.ps1'),['-RepositoryPath',f.root,'-Offline'],{env:{PATH:''}}));
+    assert.equal(diagnosis.checks.find(c=>c.id==='js_runtime').status,'ready');
   } finally { f.dispose(); }
 });

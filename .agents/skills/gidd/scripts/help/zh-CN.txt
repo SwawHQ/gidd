@@ -3,15 +3,15 @@ GIDD（Windows x64 / PowerShell 5.1）
 帮助与诊断：
   gidd help en                           Show English help
   gidd help zh                           显示中文帮助
-  gidd doctor                            可用性诊断
+  gidd doctor                            检查工具、仓库及 GitHub 身份（含联网检查）
+  gidd doctor --offline                  仅检查本地工具、配置和仓库，不联网
 
 技能设置：
   gidd config show                       列出 config.toml 当前内容
   gidd config set <字段> <值>            设置 config.toml 中指定字段的值
   gidd config set github.account SwawHQ  (示例) 设置 github.account 的值为 SwawHQ
 
-GitHub 身份：
-  gidd identity                          按配置检查 API 身份、Git 远程读取和提交作者
+GitHub 授权：
   gidd auth                              按配置申请设备授权并等待确认；gh 可能保存凭据
 
 外部工具：

@@ -88,10 +88,10 @@ export function prepare(repository, name = 'gh', options = {}) {
 }
 export function bindFixture(home, tools) {
   const bindings={schema:'gidd.tool-bindings/v1',platform:'windows-x64',tools:{}};
-  for(const [name,path] of Object.entries(tools)) if(path) bindings.tools[name]={path,source:'path',version:name==='gh'?'2.98.0':'2.55.0'};
+  for(const [name,path] of Object.entries(tools)) if(path) bindings.tools[name]={path,source:'path',version:ok(run(path,['--version'])).stdout.match(/\d+\.\d+\.\d+/)[0]};
   write(join(toolsRoot(home),'tool-bindings.json'),JSON.stringify(bindings));
 }
-export function diagnosis(target, options) { return run(process.execPath,[join(code,'../doctor.mjs'),target],options); }
+export function diagnosis(target, options) { return product(['doctor','--offline','--repository',target],options); }
 export function jsAdapter(root, spec, options) {
   if (!['configuration','release','validate','find','stage','guide','install','prepare'].includes(spec.action)) return adapter(root,spec,options);
   const path = request(root,spec);
