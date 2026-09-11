@@ -3,11 +3,11 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { configure, configurationHint, readGitHubConfiguration } from './config.mjs';
 import { doctor } from './doctor.mjs';
-import { checkIdentity } from './github.mjs';
+import { checkIdentity, runCommand } from './github.mjs';
 import { authorize } from './auth.mjs';
 import { resolveStorage, repositoryRoot } from './storage.mjs';
-import { findTool } from './tools.mjs';
-import { setupGh } from './install.mjs';
+import { findTool, toolEnvironment } from './tools.mjs';
+import { setupTool } from './install.mjs';
 
 export async function main(args) {
   let command = (args.shift() || 'help').toLowerCase();
@@ -23,15 +23,15 @@ export async function main(args) {
     }
     if (!Object.hasOwn(schemas,command)) throw new Error('unknown_command');
     if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');
-    let action, key, value;
+    let action, key, value, tool = 'gh';
     if (command === 'config') {
       action = args.shift(); if (!['show','set'].includes(action)) throw new Error('invalid_arguments');
       if (action === 'set') { key = args.shift(); value = args.shift(); if (value === undefined) throw new Error('invalid_arguments'); }
     }
     if (command === 'setup' && args.length && !args[0].startsWith('--')) {
-      const tool = args.shift();
+      tool = args.shift();
       if (['bun','node'].includes(tool)) throw new Error('runtime_setup_removed');
-      if (tool !== 'gh') throw new Error('invalid_setup_tool');
+      if (!['gh','git'].includes(tool)) throw new Error('invalid_setup_tool');
     }
     if (['identity','auth'].includes(command) && args.some(arg => ['--hostname','--account','--remote'].includes(arg) || !arg.startsWith('--') && args.indexOf(arg) === 0)) throw new Error('github_parameters_moved_to_config');
     let repository;
@@ -54,18 +54,21 @@ export async function main(args) {
     else if (command === 'config') report = configure(repository,action,key,value);
     else {
       const storage = resolveStorage(repository);
-      if (command === 'setup') report = await setupGh(storage);
+      if (command === 'setup') report = await setupTool(storage, tool);
       else {
         const github = readGitHubConfiguration(repository,command === 'identity' ? ['hostname','account','remote'] : ['hostname','account']);
         const gh = await findTool('gh',{ root: storage.tools_root, requested: storage.tools.gh.version });
         if (command === 'auth' && gh.status !== 'ready') throw new Error('gh_unavailable');
+        const git = await findTool('git', { root: storage.tools_root });
+        const gitPath = git.status === 'ready' ? git.details.path : undefined;
+        const env = toolEnvironment(gitPath);
         const options = { repository, ...github, gh: gh.status === 'ready' ? gh.details.path : undefined };
         if (command === 'identity') {
-          const git = await findTool('git'); report = await checkIdentity({ ...options, git: git.status === 'ready' ? git.details.path : undefined });
+          report = await checkIdentity({ ...options, git: gitPath }, runCommand, env);
         } else {
           const controller = new AbortController(), cancel = () => controller.abort();
           process.on('SIGINT',cancel); process.on('SIGTERM',cancel);
-          try { report = await authorize(options,{ signal: controller.signal, onEvent: event => console.error(JSON.stringify(event)) }); }
+          try { report = await authorize(options,{ env, signal: controller.signal, onEvent: event => console.error(JSON.stringify(event)) }); }
           finally { process.removeListener('SIGINT',cancel); process.removeListener('SIGTERM',cancel); }
         }
       }

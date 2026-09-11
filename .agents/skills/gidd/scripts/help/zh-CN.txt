@@ -12,7 +12,8 @@ GIDD（Windows x64 / PowerShell 5.1）
   gidd.cmd help [zh|en]                              显示帮助；别名 --help、-h，无参数也显示帮助。
   gidd.cmd doctor                                    离线检查环境和目标仓库，不修改配置。
 
-GitHub CLI 准备（需要共享启动器）：
+工具准备（需要共享启动器）：
+  gidd.cmd setup git                                 复用 Git 或准备官方 MinGit，不修改仓库设置。
   gidd.cmd setup gh                                  准备 gh 2.98.0+，不发起登录。
 
 仓库配置：

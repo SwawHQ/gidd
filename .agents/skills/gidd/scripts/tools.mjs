@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
-import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { runCommand } from './github.mjs';
-import { compareVersions, executableName, managedToolValid, versionPattern } from './storage.mjs';
+import { compareVersions, executableName, managedExecutable, managedToolValid, versionPattern } from './storage.mjs';
 
 export const check = (id, status, reason, details = {}) => ({ id, status, reason, details });
 // Runtime discovery here is diagnostic/installation work, not a startup gate.
@@ -15,15 +15,26 @@ export function pathCandidates(name, env = process.env) {
     .map(part => join(part, executableName(name))).filter(existsSync))];
 }
 
+// One process-local environment per command, shared by Git and gh subprocesses.
+// A launcher is unnecessary after JS starts; execute the selected absolute path.
+export function toolEnvironment(git, env = process.env) {
+  const result = { ...env };
+  if (!git) return result;
+  const path = Object.entries(result).find(([key]) => key.toUpperCase() === 'PATH')?.[1] || '';
+  for (const key of Object.keys(result)) if (/^(path|git_exec_path)$/i.test(key)) delete result[key];
+  result.PATH = dirname(git) + (path ? delimiter + path : '');
+  return result;
+}
+
 export async function findTool(name, { root = '', requested = '', minimum = minimums[name], source = 'auto', execute = runCommand } = {}) {
-  const managed = root ? join(root, name, executableName(name)) : '';
+  const managed = root ? join(root, name, managedExecutable(name)) : '';
   const candidates = [];
   if (source !== 'path' && managed && existsSync(managed)) candidates.push({ path: managed, source: 'managed' });
   if (source !== 'managed') for (const path of pathCandidates(name)) candidates.push({ path, source: 'path' });
   const rejected = [];
   for (const candidate of candidates) {
-    const isManaged = candidate.source === 'managed' || (managed && resolve(candidate.path).toLowerCase() === resolve(managed).toLowerCase());
-    if (isManaged && !managedToolValid(dirname(candidate.path), name)) {
+    const isManaged = candidate.source === 'managed' || (managed && (resolve(candidate.path).toLowerCase() === resolve(managed).toLowerCase() || name === 'git' && resolve(candidate.path).toLowerCase().startsWith(resolve(root, name).toLowerCase() + sep)));
+    if (isManaged && !managedToolValid(join(root, name), name)) {
       rejected.push({ ...candidate, reason: 'managed_integrity_failed', version: null }); continue;
     }
     const probe = await execute(candidate.path, ['--version'], { timeoutMs: 5000 });

@@ -69,7 +69,7 @@ stdout 为单个 UTF-8 JSON 对象：
 
 `repository.config` 检查固定路径文件存在性；`repository.config.validation` 验证 [configuration.md](configuration.md) 的 schema v1；`repository.config.github` 使用共用字段校验器检查 hostname/account/remote，分别列出 missing_fields 与 invalid_fields，不输出字段原值。目标明确时，即使缺少 Git 或尚未建立 Git 仓库，也检查该位置的配置。配置存在和字段完整都不是初始化记录。
 
-`tools.storage` 只报告工具配置和解析位置，不输出 GitHub 字段。配置语法或工具存储错误时该项为 invalid，managed_tools_checked=false，仅继续外部 PATH 探测，不回退默认受管目录。GitHub 字段值错误单独报告，不阻止工具诊断。source=managed 表示受管工具，实际位置以 tools.storage 为准。GitHub 身份与 Git 传输认证仍为 not_checked；local_ready 不代表仓库启用、账号正确或具备推送权限。
+`tools.storage` 只报告工具配置和解析位置，不输出 GitHub 字段。配置语法或工具存储错误时该项为 invalid，managed_tools_checked=false，仅继续外部 PATH 探测，不回退默认受管目录。GitHub 字段值错误单独报告，不阻止工具诊断。Git 也优先检查受管 git/cmd/git.exe，再检查 PATH；通过校验的所选路径用于所有仓库探测。source=managed 表示受管工具，实际位置以 tools.storage 为准。GitHub 身份与 Git 传输认证仍为 not_checked；local_ready 不代表仓库启用、账号正确或具备推送权限。
 
 remote 检查只执行本地 Git 查询，不访问网络。`repository.remotes` 列出本地 remote；`repository.remote` 检查 config.toml 的 github.remote，存在其他 remote 不代表所选 remote 可用。读取所选 remote 的 fetch URL（Git 展开 insteadOf 后），要求恰好一个地址，多个地址报告 remote_url_ambiguous。
 

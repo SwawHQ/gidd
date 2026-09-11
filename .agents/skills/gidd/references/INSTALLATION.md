@@ -5,6 +5,12 @@ It is shared by repositories and independent of the skill installation directory
 It is not a skill: do not add SKILL.md or repository config.toml here.
 
 - bun/, node/ and gh/: verified executables, upstream licenses and install.json.
+- git/: official Windows x64 MinGit, including cmd/git.exe, its dependencies
+  and upstream licenses. Keep the directory tree intact. setup git reuses a
+  qualifying Git or downloads the official stable release; no tools.git settings.
+  Git uses gidd.install/v2 with relative paths; other tools retain v1.
+  GIDD selects absolute Git/gh paths per command. Only child-process PATH gets
+  the chosen Git directory; no system PATH change or extra cmd launchers.
 - js_exec.cmd: bootstrap-generated shared runtime launcher; no repository binding.
   Normal commands execute it directly without runtime selection or compatibility checks.
   Rerun bootstrap after skill updates, runtime changes or a broken launcher.

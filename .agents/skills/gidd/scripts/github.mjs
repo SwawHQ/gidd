@@ -93,12 +93,12 @@ export function validateOptions(options) {
   }
 }
 
-export async function checkIdentity(input, execute = runCommand) {
+export async function checkIdentity(input, execute = runCommand, env = process.env) {
   const options = { hostname: 'github.com', account: '', remote: 'origin', ...input };
   validateOptions(options);
   const checks = [];
   const add = (id, status, reason, details = {}) => checks.push({ id, status, reason, details });
-  const invoke = (name, args) => execute(options[name], args, { cwd: options.repository });
+  const invoke = (name, args) => execute(options[name], args, { cwd: options.repository, env });
   if (!options.gh) add('github.api', 'missing', 'gh_unavailable');
   else {
     const result = await invoke('gh', ['api', '--hostname', options.hostname, '--method', 'GET', 'user', '--jq', '.login']);
