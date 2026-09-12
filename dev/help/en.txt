@@ -29,4 +29,3 @@ Portable Node includes the runtime and license, without npm; tests have no npm d
 .auth can save gh credentials; it never opens a browser or configures Git credential helpers.
 Tests never log in. No command enables GIDD or changes user skills or system PATH.
 Product JavaScript must still work in both Node.js and Bun.
-See DEVELOPMENT.md for boundaries, test adapters and cleanup.

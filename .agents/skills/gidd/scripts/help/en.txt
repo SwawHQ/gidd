@@ -10,9 +10,17 @@ Skill settings:
   gidd config show                       Show current config.toml contents
   gidd config set <key> <value>           Set a field in config.toml
   gidd config set github.account SwawHQ  (Example) Set github.account to SwawHQ
+  If config.toml is missing, config set creates minimal configuration; tool download sources use built-in defaults.
 
 GitHub authorization:
   gidd auth                              Request device authorization using config and wait for confirmation; gh may save credentials
 
-Documentation:
-  SKILL.md / references/                 Full usage, configuration fields, result protocols and current feature scope
+Diagnostic results:
+  Each check includes severity (info / warning / error); follow hint and commands, then rerun doctor.
+  Exit 0: no errors; 1: blocking errors; 2: argument or execution failure. Offline success does not prove GitHub login or push access.
+  Supply actual values for commands.required_inputs; auth requires explicit user authorization.
+  Configuration fields: github.hostname/account/remote/repository, tools.node/bun/gh.source (HTTPS download roots).
+  git.worktree checks the local Git worktree and HEAD; config_file checks the configuration file and schema.
+  config.github.remote/hostname/repository/account check individual fields; the first three also check the local fetch target.
+  The config. prefix is only part of check IDs; config set still uses field names such as github.remote.
+  Review configuration before setting github.repository when missing or changed; it records neither commits nor a separate push target.

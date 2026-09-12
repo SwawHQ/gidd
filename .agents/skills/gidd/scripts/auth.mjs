@@ -74,7 +74,8 @@ async function main() {
       if (!args[i].startsWith('--') || !['repository','gh'].includes(key) || key in options || !args[i + 1]) throw new Error('invalid_arguments');
       options[key] = args[i + 1];
     }
-    const result = await authorize({ ...options, ...readGitHubConfiguration(options.repository, ['hostname', 'account']) }, { signal: controller.signal,
+    const { hostname, account } = readGitHubConfiguration(options.repository, ['hostname', 'account']);
+    const result = await authorize({ ...options, hostname, account }, { signal: controller.signal,
       onEvent: event => console.error(JSON.stringify(event)) });
     console.log(JSON.stringify(result, null, 2));
     process.exitCode = result.status === 'ready' ? 0 : 1;

@@ -7,7 +7,7 @@ import { toolsRoot, adapter, assert, compile, dirname, existsSync, fixture, find
 
 const options = { repository: repo, gh: join(repo, 'fixture-gh.exe'), git: findGit(), account: 'octocat' };
 const success = text => ({ ok: true, reason: 'process_exit', text });
-const githubConfig = '\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "origin"\n';
+const githubConfig = '\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "origin"\nrepository = "https://github.com/owner/repo"\n';
 
 test('process adapter bounds hangs and output, redacts failures and isolates repository overrides', { timeout: 15000 }, async () => {
   const common = { cwd: repo, timeoutMs: 5000 };
@@ -127,6 +127,10 @@ test('authorization uses bindings, rejects retired gh versions and never discove
     assert.equal(json(ok(invoke())).reason, 'authenticated');
     assert.equal(existsSync(managedGh + '.started'), true);
     assert.equal(existsSync(oldGh + '.started'), false);
+    write(managedGh + '.mode','existing');
+    const direct = run(process.execPath,[join(repo,'.agents/skills/gidd/scripts/auth.mjs'),
+      '--repository',f.root,'--gh',managedGh],{env});
+    assert.equal(json(ok(direct)).reason,'already_authenticated','Remote identity must not replace the local repository path');
   } finally { f.dispose(); }
 });
 
@@ -134,7 +138,7 @@ test('dev.cmd .auth requires identity config and uses shared storage', { timeout
   const f = fixture();
   try {
     const checkout = join(f.root,'checkout');
-    for (const path of ['dev.cmd','dev','.agents/skills/gidd/gidd.cmd','.agents/skills/gidd/scripts','.agents/skills/gidd/references','.agents/skills/gidd/config.example.toml']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    for (const path of ['dev.cmd','dev','.agents/skills/gidd/gidd.cmd','.agents/skills/gidd/scripts']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
     ok(adapter(f.root,{action:'bootstrap',repositoryRoot:checkout,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
     const compiled = compile(f.root,'auth-gh.cs');
     const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
@@ -159,7 +163,7 @@ test('dev.cmd .auth dispatches real JavaScript with one runtime and never instal
   const f = fixture();
   try {
     const checkout = join(f.root, 'repo with spaces');
-    for (const path of ['dev.cmd','dev','.agents/skills/gidd/gidd.cmd','.agents/skills/gidd/scripts','.agents/skills/gidd/references','.agents/skills/gidd/config.example.toml']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
+    for (const path of ['dev.cmd','dev','.agents/skills/gidd/gidd.cmd','.agents/skills/gidd/scripts']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
     write(join(checkout, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\n' + githubConfig);
     ok(adapter(f.root,{action:'bootstrap',repositoryRoot:checkout,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
     const compiled = compile(f.root, 'auth-gh.cs'), gh = join(f.root, 'bin/gh.exe');

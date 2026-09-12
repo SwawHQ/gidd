@@ -235,7 +235,8 @@ test(`setup ${engine}: install, integrity, interrupted publication, locks, prese
     const tools = join(f.root,'技能 space/gidd.tools');
     ok(adapter(f.root,{action:'guide',root:tools}));
     write(join(tools,'INSTALLATION.md'),'old guide'); ok(adapter(f.root,{action:'guide',root:tools}));
-    assert.ok(readFileSync(join(tools,'INSTALLATION.md'),'utf8').startsWith('# GIDD-managed tools'));
+    assert.equal(readFileSync(join(tools,'INSTALLATION.md'),'utf8'),
+      readFileSync(new URL('../.agents/skills/gidd/scripts/INSTALLATION.md',import.meta.url),'utf8'));
     assert.equal(json(ok(install(tools))).action,'installed'); assert.equal(valid(tools),true);
     assert.equal(existsSync(join(tools,'.cache/bun')),false,'Successful install must remove downloads and extraction');
     assert.equal(existsSync(join(tools,'.cache/install.lock')),false,'Finished installer releases its lock');

@@ -29,4 +29,3 @@ Node 仅包含运行时和许可证，不附带 npm；当前测试无 npm 依赖
 .auth 可以保存 gh 凭据，不打开浏览器、不设置 Git 凭据助手。
 测试不发起登录；所有入口均不启用 GIDD，不修改用户技能或系统 PATH。
 产品 JavaScript 仍须同时支持 Node.js 和 Bun。
-开发边界、测试适配和清理方式见 DEVELOPMENT.md。

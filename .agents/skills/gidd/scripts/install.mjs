@@ -72,7 +72,7 @@ export function removeStage(root, name) {
 export function writeInstallationGuide(root) {
   const path = join(root, 'INSTALLATION.md'), temporary = join(root, `.INSTALLATION-${randomUUID()}.tmp`);
   plainPath(path);
-  const text = readFileSync(new URL('../references/INSTALLATION.md', import.meta.url));
+  const text = readFileSync(new URL('./INSTALLATION.md', import.meta.url));
   if (existsSync(path) && readFileSync(path).equals(text)) return;
   try { durableFile(temporary, text); renameSync(temporary, path); }
   finally { if (existsSync(temporary)) unlinkSync(temporary); }

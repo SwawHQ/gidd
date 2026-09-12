@@ -4,11 +4,12 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseConfiguration } from './storage.mjs';
 
-const fields = new Set(['hostname', 'account', 'remote']);
+const fields = new Set(['hostname', 'account', 'remote', 'repository']);
 const stringLiteral = String.raw`(?:"(?:[^"\\]|\\["\\])*"|'[^']*')`;
-const assignment = new RegExp(`^([ \\t]*)(hostname|account|remote)([ \\t]*=[ \\t]*)(${stringLiteral})([ \\t]*(?:#.*)?)$`);
+const assignment = new RegExp(`^([ \\t]*)(hostname|account|remote|repository)([ \\t]*=[ \\t]*)(${stringLiteral})([ \\t]*(?:#.*)?)$`);
 const decode = literal => literal[0] === "'" ? literal.slice(1, -1) : JSON.parse(literal);
-const editableKey = /^(?:github\.(?:hostname|account|remote)|tools\.(?:node|bun|gh)\.source)$/;
+const editableKey = /^(?:github\.(?:hostname|account|remote|repository)|tools\.(?:node|bun|gh)\.source)$/;
+const initialConfiguration = 'schema_version = 1\n\n[github]\nhostname = "github.com"\nremote = "origin"\n';
 
 function validateSetting(key, value) {
   if (!editableKey.test(key || '')) throw new Error('config_unknown_key');
@@ -77,13 +78,10 @@ export function editConfiguration(text, key, value) {
     doc.lines[entry.index] = line + (doc.lines[entry.index].endsWith('\r') ? '\r' : '');
     text = doc.lines.join('\n');
   } else {
-    // A missing inline table gets its companion field from the published template.
-    const defaults = parseTools(readFileSync(new URL('../config.example.toml', import.meta.url), 'utf8')).entries[name].fields;
-    const source = field === 'source' ? value : defaults.source.value;
-    const setting = `${name} = { source = ${JSON.stringify(source)} }`;
+    const setting = `${name} = { source = ${literal} }`;
     text = insertSetting(text, doc, 'tools', setting);
   }
-  parseGitHub(text);
+  parseGitHub(text, { validate: false });
   if (Buffer.byteLength(text) > 16384) throw new Error('config_too_large');
   return text;
 }
@@ -112,12 +110,24 @@ function readText(path) {
 
 export function validateGitHubField(key, value) {
   if (!fields.has(key)) throw new Error('config_unknown_github_field');
+  if (key === 'repository') { normalizeRepositoryIdentity(value); return; }
   const patterns = {
     hostname: /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i,
     account: /^[a-z0-9][a-z0-9-]{0,99}$/i,
     remote: /^[a-z0-9][a-z0-9._/-]*$/i,
   };
   if (typeof value !== 'string' || /[\x00-\x20\x7f]/.test(value) || !patterns[key].test(value)) throw new Error(`config_invalid_github_${key}`);
+}
+
+// Store one transport-independent identity, not a commit, branch or push target.
+export function normalizeRepositoryIdentity(value) {
+  const match = typeof value === 'string' && /^https:\/\/([^/:@]+)\/([a-z0-9_.-]+)\/([a-z0-9_.-]+)\/?$/i.exec(value);
+  if (!match) throw new Error('config_invalid_github_repository');
+  const [, hostname, owner, name] = match;
+  try { validateGitHubField('hostname', hostname); }
+  catch { throw new Error('config_invalid_github_repository'); }
+  if (![owner, name].every(part => part && !['.', '..'].includes(part))) throw new Error('config_invalid_github_repository');
+  return `https://${hostname}/${owner}/${name}`.toLowerCase();
 }
 
 // The shared JavaScript parser validates the schema; this reader owns GitHub values.
@@ -160,6 +170,7 @@ export function readGitHubConfiguration(repository, required) {
 }
 
 export function configurationHint(reason) {
+  if (reason === 'config_invalid_github_repository' || reason === 'config_missing_github_repository') return 'Run gidd.link.cmd doctor --offline, review the repository configuration, then record the canonical HTTPS identity reported by doctor with config set github.repository.';
   const missing = /^config_missing_github_(hostname|account|remote)$/.exec(reason);
   if (missing) return `Set github.${missing[1]} with: gidd.cmd config set github.${missing[1]} <value>`;
   if (reason === 'config_missing') return 'Create repository config with: gidd.cmd config set github.account <login>';
@@ -169,6 +180,7 @@ export function configurationHint(reason) {
 }
 
 export function editGitHub(text, key, value) {
+  if (key === 'repository') value = normalizeRepositoryIdentity(value);
   validateGitHubField(key, value);
   const doc = parseGitHub(text, { validate: false });
   const literal = JSON.stringify(value);
@@ -179,7 +191,8 @@ export function editGitHub(text, key, value) {
   } else {
     text = insertSetting(text, doc, 'github', `${key} = ${literal}`);
   }
-  parseGitHub(text);
+  // Validate the edited value above; other invalid fields can be repaired in later calls.
+  parseGitHub(text, { validate: false });
   if (Buffer.byteLength(text) > 16384) throw new Error('config_too_large');
   return text;
 }
@@ -193,6 +206,7 @@ export function configure(repository, action, key, value) {
     return { schema: 'gidd.config/v1', status: 'ready', config_path: path, content };
   }
   if (action !== 'set') throw new Error('config_invalid_arguments');
+  if (key === 'github.repository') value = normalizeRepositoryIdentity(value);
   validateSetting(key, value);
   mkdirSync(dirname(path), { recursive: true });
   plainPath(path);
@@ -202,7 +216,7 @@ export function configure(repository, action, key, value) {
     try { lock = openSync(lockPath, 'wx'); }
     catch (error) { if (error.code === 'EEXIST') throw new Error('config_locked'); throw error; }
     const original = existsSync(path) ? readText(path) : null;
-    const text = original ?? readFileSync(new URL('../config.example.toml', import.meta.url), 'utf8');
+    const text = original ?? initialConfiguration;
     const result = editConfiguration(text, key, value);
     parseConfiguration(result);
     const fd = openSync(temporary, 'wx');

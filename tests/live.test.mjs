@@ -44,7 +44,7 @@ live('official unified bootstrap, local commit clone fetch and gh Git discovery'
     assert.equal(ok(run(gh.path,['repo','set-default','--view'],{env,cwd:source})).stdout.trim(),'example/gidd-fixture');
     const diagnosis=json(product(['doctor','--offline','--repository',source],{env:{PATH:''}}));
     assert.equal(diagnosis.checks.find(item=>item.id==='git').details.path,git.path);
-    assert.equal(diagnosis.checks.find(item=>item.id==='repository').status,'ready');
+    assert.equal(diagnosis.checks.find(item=>item.id==='git.worktree').status,'ready');
   } finally {f.dispose();}
 });
 

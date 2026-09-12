@@ -1,47 +1,57 @@
 ---
 name: gidd
-description: 为指定 Git 仓库准备或检查 GIDD、编辑 GitHub 配置、诊断身份，并按用户明确要求进行登录授权。当前支持 Windows；初始化及 Issue/PR 业务尚未实现。
+description: 用 gh 命令操作 GitHub Issue、PR ... 用 GitHub Issue Driven Development 实现更规范、更可视-可审计的开发流程。目前仅支持 Windows
 license: MIT
 ---
 
-# GIDD
+## 功能示例
 
-按用户请求确定目标 Git 工作树。只检查时不准备工具或写配置；技能、入口和配置存在不代表启用仓库开发流程。
+```
+.\.agents\skills\gidd\gidd.link.cmd --help
+GIDD（Windows x64 / PowerShell 5.1）
 
-当前已验证 Windows x64 / PowerShell 5.1。`config init`、初始化归属记录、doctor 评级、`gidd.link.sh` 和 Issue/PR 业务尚未实现，不要执行或模拟这些能力。
+帮助与诊断：
+  gidd help en                           Show English help
+  gidd help zh                           显示中文帮助
+  gidd doctor                            检查工具、仓库及 GitHub 身份（含联网检查）
+  gidd doctor --offline                  仅检查本地工具、配置和仓库，不联网
 
-## 仓库入口流程
+技能设置：
+  gidd config show                       列出 config.toml 当前内容
+  gidd config set <字段> <值>            设置 config.toml 中指定字段的值
+  gidd config set github.account SwawHQ  (示例) 设置 github.account 的值为 SwawHQ
+  config.toml 不存在时，config set 会创建最小配置；工具下载来源使用内置默认值。
 
-入口固定为 `<目标仓库根>/.agents/skills/gidd/gidd.link.cmd`，配置为同目录的 `config.toml`，不继承用户级配置。下文的 `gidd.link.cmd` 均指该入口的绝对路径，可从任意工作目录调用，不能改指其他仓库。
+GitHub 授权：
+  gidd auth                              按配置申请设备授权并等待确认；gh 可能保存凭据
 
-1. **已有入口先诊断。** 执行 `gidd.link.cmd doctor --offline`。取得完整 JSON、退出码为 `0` 且 `status=local_ready`，才进入第 4 步；不能仅凭输出没有 `error` 放行。链接无法启动时转第 2 步，诊断报告问题时转第 3 步。
+诊断结果：
+  每项含 severity（info / warning / error）；按 hint 和 commands 修复后重新检查。
+  退出码 0：无 error；1：存在 error；2：参数或执行异常。离线通过不代表 GitHub 已登录或可推送。
+  commands 的 required_inputs 需补入真实值；auth 须获用户明确授权。
+  配置字段：github.hostname/account/remote/repository、tools.node/bun/gh.source（HTTPS 下载根地址）。
+  git.worktree 检查本地 Git 工作树及 HEAD；config_file 检查配置文件及结构。
+  config.github.remote/hostname/repository/account 分别检查对应字段；前三项还检查与本地 fetch 目标是否匹配。
+  config. 前缀仅用于检查项 ID；config set 仍使用 github.remote 等实际字段名。
+  身份缺失或变化时先重审配置，再按建议命令设置 github.repository；不记录 commit 或独立 push 地址。
+```
 
-2. **缺失或失效时准备。** 从实际技能安装目录执行：
+## 启用步骤
 
-   ```powershell
-   & "<技能安装目录>\gidd.pre.ensure.cmd" --repo "<目标仓库根>"
-   ```
+1. 确认`<目标仓库根>/.agents/skills/gidd/gidd.link.cmd`已存在（不存在请跳到第 4 步）
+2. 使用完整路径可在任意目录调用（仓库操作固定针对其所属仓库）：`gidd.link.cmd doctor --offline`查看诊断（命令若已损坏视同不存在，请跳到第 4 步）
+3. 若退出码为 `0`，则可以执行`gidd.link.cmd --help`，按帮助使用其中介绍的功能，结束准备流程；否则按 doctor 提示的信息进行修复或配置（有些项目必须要人类协助）
 
-   `--repo` 必填，目标必须已有 Git 工作树和合适的 GitHub remote。命令准备 JS 运行时、Git、gh 和仓库入口，复用健康工具及已有配置。仅检查时追加 `--check`；`help zh` 无需仓库或运行时。按失败原因处理，保留未知文件。
+4. `gidd.link.cmd`若不存在，请执行`gidd.pre.ensure.cmd --repo <仓库路径>`（此命令应存在于本技能的安装目录），它会确保有 JS运行时、Git、gh 可用，然后创建`<目标仓库根>/.agents/skills/gidd/gidd.link.cmd`
+5. `gidd.link.cmd`被创建后，运行`gidd.link.cmd doctor --offline`，按提示的信息进行修复或配置（有些项目必须要人类协助）
+6. doctor 退出码为 `0`，视为通过, 则可以执行`gidd.link.cmd --help`按给出的提示和使用其中介绍的功能进行开发
 
-3. **按问题配置或修复。** 当前用 `config show/set` 补齐 `github.hostname`、`github.account`、`github.remote`，核实模板默认值，保留无关配置和注释。账号是预期登录身份，remote 是名称，不是 URL。工具问题返回准备入口；工作树、作者和 remote 问题按 Git 诊断处理。完成后重新执行第 1 步。详见 [配置协议](references/configuration.md)。
+## 配置与授权
 
-4. **本地就绪后查看帮助。** 执行 `gidd.link.cmd --help` 或 `help zh`。首次 GitHub 操作前再执行普通 `doctor`；离线通过不证明登录或推送权限。API 身份、Git 传输和 commit 作者分别判断，网络失败不等于未登录。详见 [doctor 协议](references/doctor.md)。
+ `github.hostname`、`github.account`、`github.remote`，核实生成的默认值，保留无关配置和注释。账号是预期登录身份，remote 是名称。`github.repository` 保存 doctor 给出的规范化 fetch 身份；缺失或变化时，先核对上述配置，再用 `config set` 记录。
 
-仓库内 `.agents/skills/gidd/` 或 `.claude/skills/gidd/` 安装只能指定所属工作树；Git 树外共享安装可指定目标，Git 树内布局不明则报错。链接规则及恢复方式见 [仓库专用入口](references/repository-entry.md)。
-
-## 待实现的初始化约定
-
-新建入口、配置缺失、初始化未完成或归属不匹配时，目标流程是 `config init`，完成后仍回到离线诊断。当前仅编辑配置，不写初始化字段或宣称初始化完成。
-
-计划中的初始化幂等且无交互，支持分段输入并报告缺项；明确账号、选择 remote，记录一条规范化 GitHub 仓库身份。草稿写入 `config.toml.temp`，全部校验后原子替换正式配置，保留已有有效信息。doctor 将新增 `severity=info|warning|error`，完整诊断无 `error` 才继续；当前仍按 `local_ready` 判断。
-
-## 登录授权
-
-检查登录使用 `doctor`；用户明确要求登录时才执行 `auth`，读取配置中的主机和账号。复用匹配身份，不自动切换账号。展示本次 URL 和一次性代码，等待用户授权并验证实际账号；不自动打开浏览器，不在配置中保存凭据。见 [授权协议](references/authorization.md)。
+用户明确要求登录时才执行 `auth`，读取配置中的主机和账号，展示本次 URL 和一次性代码，等待用户授权并验证实际账号；不自动打开浏览器，不在配置中保存凭据。
 
 ## 工具与文件管理
 
-工具固定共用 `~/.agents/skills.tools/gidd/`，不提供路径覆盖。运行时选择和强制修复见 [准备协议](references/bootstrap.md)，完整性与清理见 [安装协议](references/setup.md)。
-
-复制技能时排除 `config.toml`、`config.toml.*`、`gidd.link.cmd` 及 `gidd.link.cmd.*`，保留目标配置；当前模板仍是 `config.example.toml`。仅卸载一个仓库不得自动删除共享工具，完整卸载须明确包含它们；不得删除复用的外部工具，也不能把删除文件当作撤销 GitHub 授权。
+工具固定共用 `~/.agents/skills.tools/gidd/`，不提供路径覆盖。仓库级别停用本技能，不应删除 skills.tools/gidd/ 共享工具，明确的完整卸载则应包含它们。卸载范围按实际技能安装目录、仓库配置目录和共享工具目录确认；保留复用的外部工具，删除文件不代表撤销 GitHub 授权

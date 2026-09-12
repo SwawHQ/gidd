@@ -10,9 +10,17 @@ GIDD（Windows x64 / PowerShell 5.1）
   gidd config show                       列出 config.toml 当前内容
   gidd config set <字段> <值>            设置 config.toml 中指定字段的值
   gidd config set github.account SwawHQ  (示例) 设置 github.account 的值为 SwawHQ
+  config.toml 不存在时，config set 会创建最小配置；工具下载来源使用内置默认值。
 
 GitHub 授权：
   gidd auth                              按配置申请设备授权并等待确认；gh 可能保存凭据
 
-文档：
-  SKILL.md / references/                 完整用法、配置字段、结果协议及当前功能范围
+诊断结果：
+  每项含 severity（info / warning / error）；按 hint 和 commands 修复后重新检查。
+  退出码 0：无 error；1：存在 error；2：参数或执行异常。离线通过不代表 GitHub 已登录或可推送。
+  commands 的 required_inputs 需补入真实值；auth 须获用户明确授权。
+  配置字段：github.hostname/account/remote/repository、tools.node/bun/gh.source（HTTPS 下载根地址）。
+  git.worktree 检查本地 Git 工作树及 HEAD；config_file 检查配置文件及结构。
+  config.github.remote/hostname/repository/account 分别检查对应字段；前三项还检查与本地 fetch 目标是否匹配。
+  config. 前缀仅用于检查项 ID；config set 仍使用 github.remote 等实际字段名。
+  身份缺失或变化时先重审配置，再按建议命令设置 github.repository；不记录 commit 或独立 push 地址。

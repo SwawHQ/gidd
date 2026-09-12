@@ -244,8 +244,8 @@ test('repository links preserve target, arguments, idempotence and unknown files
     const other = s.create('other');
     const output = s.invoke(link, ['doctor', '--offline'], { cwd: other, env: { GIT_DIR: join(other, '.git'), GIT_WORK_TREE: other } });
     const report = json(output); assert.equal(report.repository, target);
-    assert.equal(report.checks.find(c => c.id === 'config').reason, 'config_missing');
-    assert.equal(realpathSync.native(report.checks.find(c => c.id === 'repository').details.path), realpathSync.native(target));
+    assert.equal(report.checks.find(c => c.id === 'config_file').reason, 'config_missing');
+    assert.equal(realpathSync.native(report.checks.find(c => c.id === 'git.worktree').details.path), realpathSync.native(target));
     const rejected = s.invoke(link, ['config', 'show', '--repository', other]);
     assert.equal(json(rejected).reason, 'repository_override_forbidden');
     assert.equal(json(s.invoke(link, ['--repository=' + other])).reason, 'repository_override_forbidden');
@@ -254,6 +254,19 @@ test('repository links preserve target, arguments, idempotence and unknown files
     const set = json(ok(s.invoke(link, ['config', 'set', 'tools.node.source', source])));
     assert.equal(set.value, source);
     assert.ok(readFileSync(join(target, '.agents/skills/gidd/config.toml'), 'utf8').includes(source));
+    const gitMarker = join(target, '.git'), savedMarker = join(target, '.git.saved');
+    renameSync(gitMarker, savedMarker);
+    try {
+      const broken = s.invoke(link, ['doctor', '--offline'], { cwd: other });
+      const diagnosis = json(broken);
+      assert.equal(broken.status, 1); assert.equal(diagnosis.schema, 'gidd.doctor/v1');
+      const repositoryCheck = diagnosis.checks.find(c => c.id === 'git.worktree');
+      assert.equal(repositoryCheck.reason, 'not_git_repository'); assert.equal(repositoryCheck.severity, 'error');
+      assert.ok(repositoryCheck.hint);
+      assert.equal(diagnosis.checks.find(c => c.id === 'config_file').details.path, join(target, '.agents/skills/gidd/config.toml'));
+      assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /Help and diagnosis/);
+      assert.equal(json(s.invoke(link, ['config', 'show'])).reason, 'not_git_repository_root');
+    } finally { renameSync(savedMarker, gitMarker); }
     const beforeRemoved = snapshot(f.root);
     for (const args of [['tools'], ['tools','--check'], ['tools','--ensure']]) {
       assert.equal(json(s.invoke(link, args)).reason, 'unknown_command');
@@ -294,7 +307,7 @@ test('repository-relative links survive moves and accept Git worktrees', { timeo
       const moved = join(f.root, 'moved-' + layout); renameSync(target, moved);
       const report = json(s.invoke(s.link(moved), ['doctor', '--offline']));
       assert.equal(report.repository, moved);
-      assert.equal(report.checks.find(c => c.id === 'repository').reason, 'unborn_branch');
+      assert.equal(report.checks.find(c => c.id === 'git.worktree').reason, 'unborn_branch');
     }
     const parent = s.create('parent');
     ok(run(s.git, ['-C', parent, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '--quiet', '-m', 'fixture']));

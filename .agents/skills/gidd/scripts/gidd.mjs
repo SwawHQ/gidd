@@ -38,7 +38,7 @@ export async function main(args, { boundRepository } = {}) {
     if (boundRepository) {
       if (args.length) throw new Error('invalid_arguments');
       repository = boundRepository;
-      if (!existsSync(resolve(repository, '.git'))) throw new Error('not_git_repository_root');
+      if (command !== 'doctor' && !existsSync(resolve(repository, '.git'))) throw new Error('not_git_repository_root');
     } else if (args.length) {
       if (args.length !== 2 || args[0] !== '--repository' || !args[1]) throw new Error('invalid_arguments');
       repository = args[1];
@@ -54,14 +54,15 @@ export async function main(args, { boundRepository } = {}) {
     if (command !== 'doctor' && !boundRepository) repository = repositoryRoot(repository);
     schema = schemas[command];
     let report;
-    if (command === 'doctor') report = await doctor(repository, { offline });
+    if (command === 'doctor') report = await doctor(repository, { offline, fixedRepository: !!boundRepository });
     else if (command === 'config') report = configure(repository,action,key,value);
     else {
       const storage = resolveStorage(repository,{inspect:false});
       const github = readGitHubConfiguration(repository,['hostname','account']);
       const bindings = boundTools(storage.tools_root,['gh']);
       const execute = boundExecutor(bindings);
-      const options = { repository, ...github, gh:bindings.gh?.path, git:bindings.git?.path };
+      const options = { repository, hostname:github.hostname, account:github.account,
+        gh:bindings.gh?.path, git:bindings.git?.path };
       const controller = new AbortController(), cancel = () => controller.abort();
       process.on('SIGINT',cancel); process.on('SIGTERM',cancel);
       try { report = await authorize(options,{ execute, signal: controller.signal, onEvent: event => console.error(JSON.stringify(event)) }); }

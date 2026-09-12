@@ -10,7 +10,6 @@ function installation(f, prepare = true) {
   const skill = join(f.root, 'installed skill & spaces'), target = join(f.root, '目标 repo & spaces');
   copySkill(skill);
   assert.equal(existsSync(join(skill, 'config.toml')), false, 'Installation must not inherit development configuration');
-  assert.equal(existsSync(join(skill, 'config.example.toml')), true, 'Installation must include the configuration template');
   mkdirSync(target);
   const git = findGit();
   ok(run(git, ['-C',target,'init','--quiet']));
@@ -293,10 +292,10 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
     const unbound = s.invoke(['doctor']);
     assert.equal(unbound.status,1);
     assert.equal(json(unbound).repository,null);
-    assert.equal(json(unbound).checks.find(c => c.id === 'repository').reason,'target_required');
+    assert.equal(json(unbound).checks.find(c => c.id === 'git.worktree').reason,'target_required');
     const absent = s.invoke(['doctor','--repository',join(s.target,'absent')]);
     assert.equal(absent.status,1);
-    assert.equal(json(absent).checks.find(c => c.id === 'repository').reason,'directory_missing');
+    assert.equal(json(absent).checks.find(c => c.id === 'git.worktree').reason,'directory_missing');
     const result = s.invoke(['doctor',...s.args]);
     assert.equal(result.status, 1);
     const report = json(result);
@@ -348,7 +347,7 @@ test('repository installation locates its own Git worktree independently of cwd'
     });
     assert.equal(unboundReport.status,1);
     assert.equal(json(unboundReport).repository,null);
-    assert.equal(json(unboundReport).checks.find(c => c.id === 'repository').reason,'target_required');
+    assert.equal(json(unboundReport).checks.find(c => c.id === 'git.worktree').reason,'target_required');
     for (const root of [target,worktree]) {
       const skill = join(root,'.agents/skills/gidd');
       copySkill(skill);
@@ -374,7 +373,7 @@ test('shell doctor and auth preserve JavaScript results, events and exit codes',
   try {
     const s = installation(f), git = findGit();
     const config = join(s.target,'.agents/skills/gidd/config.toml');
-    const configured = 'schema_version = 1\n[tools]\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "fixture"\n';
+    const configured = 'schema_version = 1\n[tools]\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "fixture"\nrepository = "https://github.com/owner/repo"\n';
     write(config,configured);
     for (const args of [['init'], ['config','user.name','Fixture Author'], ['config','user.email','author@example.test'],
       ['remote','add','fixture','git@github.com:owner/repo.git']]) ok(run(git, ['-C',s.target,...args]));
@@ -385,16 +384,19 @@ test('shell doctor and auth preserve JavaScript results, events and exit codes',
       GH_TOKEN:'', GITHUB_TOKEN:'', GH_ENTERPRISE_TOKEN:'', GITHUB_ENTERPRISE_TOKEN:'' };
     const before = snapshot(s.target);
     const diagnosis = s.invoke(['doctor',...s.args],env);
-    assert.equal(diagnosis.status, 1);
+    assert.equal(diagnosis.status, 0);
     const report = json(diagnosis);
     assert.equal(report.schema,'gidd.doctor/v1');
     assert.equal(report.checks.find(c => c.id === 'github.identity').status,'ready');
     assert.equal(report.checks.find(c => c.id === 'git.author').details.email,'author@example.test');
     assert.equal(report.checks.find(c => c.id === 'git.remote_read').reason,'https_remote_required');
+    assert.equal(report.checks.find(c => c.id === 'git.remote_read').severity,'warning');
+    assert.equal(report.checks.find(c => c.id === 'git.worktree').severity,'warning');
+    assert.ok(report.checks.every(c => c.severity !== 'error'));
     assert.equal(json(ok(s.invoke(['auth',...s.args],env))).reason,'already_authenticated');
     write(config,configured.replace('remote = "fixture"\n',''));
     assert.equal(json(ok(s.invoke(['auth',...s.args],env))).reason,'already_authenticated');
-    assert.deepEqual(json(s.invoke(['doctor',...s.args],env)).checks.find(c=>c.id==='config').details.missing_fields,['remote']);
+    assert.equal(json(s.invoke(['doctor',...s.args],env)).checks.find(c=>c.id==='config.github.remote').reason,'config_missing_github_remote');
     write(config,configured.replace('"Octocat"','"OtherAccount"'));
     const mismatch = s.invoke(['auth',...s.args],env);
     assert.equal(mismatch.status,1);
@@ -419,7 +421,7 @@ test('config shell command creates and edits defaults; auth rejects missing conf
     for (const args of [['auth','--account','Octocat'],['auth','--hostname','github.com'],['auth','--remote','origin'],['auth','Octocat']]) {
       assert.equal(json(s.invoke([...args,...s.args],env)).reason,'github_parameters_moved_to_config');
     }
-    for (const [key,value] of [['hostname','github.com'],['account','Octocat'],['remote','upstream']]) {
+    for (const [key,value] of [['hostname','github.com'],['account','Octocat'],['remote','upstream'],['repository','https://github.com/owner/repo']]) {
       const result = json(ok(s.invoke(['config','set',`github.${key}`,value,...s.args],env)));
       assert.equal(result.key,`github.${key}`);
     }

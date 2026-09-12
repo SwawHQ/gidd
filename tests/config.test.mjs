@@ -29,6 +29,24 @@ test('retired runtime configuration is rejected without writes; sources remain e
   } finally {f.dispose();}
 });
 
+test('config set repairs invalid GitHub fields independently without losing other values', () => {
+  const f=fixture();
+  try {
+    const path=join(f.root,'.agents/skills/gidd/config.toml');
+    const original=configText()+'[github]\nhostname = "bad:host" # preserve\naccount = "bad account"\nremote = "--bad"\nrepository = "bad url"\n';
+    write(path,original);
+    configure(f.root,'set','github.hostname','github.com');
+    assert.equal(readFileSync(path,'utf8'),original.replace('bad:host','github.com'));
+    const before=readFileSync(path,'utf8');
+    assert.throws(()=>configure(f.root,'set','github.account','still bad'),/config_invalid_github_account/);
+    assert.equal(readFileSync(path,'utf8'),before);
+    configure(f.root,'set','tools.gh.source','https://example.test/releases');
+    for (const [key,value] of [['account','Octocat'],['remote','origin'],['repository','https://github.com/owner/repo']]) configure(f.root,'set',`github.${key}`,value);
+    assert.deepEqual(readGitHubConfiguration(f.root,['hostname','account','remote','repository']),{hostname:'github.com',account:'Octocat',remote:'origin',repository:'https://github.com/owner/repo'});
+    assert.match(readFileSync(path,'utf8'),/# preserve/);
+  } finally {f.dispose();}
+});
+
 for (const engine of ['shell','javascript']) {
 // gh metadata is JavaScript-only; native stage0 prepares Bun/Node only.
 const adapter = (root, spec, options) => (engine === 'shell' && !(spec.action === 'release' && spec.name === 'gh') ? shellAdapter : jsAdapter)(root,spec,options);
@@ -76,6 +94,15 @@ test('GitHub config editing preserves comments, BOM, line endings and unrelated 
     assert.equal(existsSync(dirname(path)),false);
     configure(f.root,'set','github.account','Octocat');
     assert.deepEqual(readGitHubConfiguration(f.root,['hostname','account','remote']),{hostname:'github.com',account:'Octocat',remote:'origin'});
+    const recorded=configure(f.root,'set','github.repository','https://GitHub.com/Owner/Repo/');
+    assert.equal(recorded.value,'https://github.com/owner/repo');
+    assert.equal(readGitHubConfiguration(f.root,['repository']).repository,recorded.value);
+    for (const invalid of ['https://u:secret@github.com/a/b','https://github.com/a/b?token=secret',
+      'https://github.com/a/b/commit/123','git@github.com:a/b','https://github.com/../repo']) {
+      const original=readFileSync(path,'utf8');
+      assert.throws(()=>configure(f.root,'set','github.repository',invalid),/config_invalid_github_repository/);
+      assert.equal(readFileSync(path,'utf8'),original);
+    }
     for (const newline of ['\n','\r\n']) {
       const original = '\uFEFF' + ['# 顶部注释','schema_version = 1','[github] # identity',"  account = 'OldAccount' # 保留此注释",'hostname = "github.com"','[tools] # 工具段','# untouched tools comment',''].join(newline);
       write(path,original);
@@ -86,6 +113,9 @@ test('GitHub config editing preserves comments, BOM, line endings and unrelated 
       const updated = readFileSync(path,'utf8');
       assert.equal(updated,replaced.replace('[tools] # 工具段',`remote = "upstream"${newline}[tools] # 工具段`));
       assert.equal(configure(f.root,'show').content,updated);
+      configure(f.root,'set','github.repository','https://github.com/owner/repo');
+      assert.equal(readGitHubConfiguration(f.root,['repository']).repository,'https://github.com/owner/repo');
+      assert.ok(readFileSync(path,'utf8').startsWith(replaced.split('[tools]')[0]));
       const before = hash(path);
       for (const [key,value] of [['hostname','https://github.com'],['account','a b'],['account','Octocat\n'],['remote','--upload-pack=bad']]) {
         assert.throws(() => configure(f.root,'set',`github.${key}`,value),/config_invalid_github/);
@@ -136,7 +166,8 @@ test('configuration: fixed shared home, repository independence and read-only va
       assert.equal('directory' in result,false); assert.equal('scope' in result,false);
       assert.equal(hash(path),before); assert.equal(existsSync(root),false);
     }
-    write(path,readFileSync(join(repo,'.agents/skills/gidd/config.example.toml'),'utf8'));
+    unlinkSync(path);
+    configure(repositoryRoot,'set','github.account','Octocat');
     samePath(json(ok(resolve())).tools_root,root);
     samePath(json(ok(resolve(other,{USERPROFILE:join(f.root,'separate home')}))).tools_root,toolsRoot(join(f.root,'separate home')));
     assert.notEqual(resolve(other,{USERPROFILE:'relative'}).status,0);
@@ -166,12 +197,14 @@ test('configured setup reuses gh without knowing a skill installation directory'
     const report=json(ok(invoke())); samePath(report.tools_root,tools);
     assert.deepEqual(report.tools.map(x=>x.name),['gh']); assert.ok(report.tools.every(x=>x.action==='reused'));
     assert.equal(existsSync(join(tools,'bun')),false); assert.equal(hash(path),before);
-    assert.match(readFileSync(join(tools,'INSTALLATION.md'),'utf8'),/independent of the skill installation directory/);
+    assert.equal(readFileSync(join(tools,'INSTALLATION.md'),'utf8'),
+      readFileSync(join(repo,'.agents/skills/gidd/scripts/INSTALLATION.md'),'utf8'));
     const git=findGit(); ok(run(git,['-C',f.root,'init','--quiet']));
     const diagnosis=json(runDiagnosis(f.root,{env:{PATH:dirname(git)}}));
     samePath(diagnosis.checks.find(x=>x.id==='gh').details.path,join(tools,'gh/gh.exe'));
     assert.equal(diagnosis.checks.find(x=>x.id==='js_runtime').details.name,process.versions.bun?'bun':'node');
-    assert.equal(diagnosis.checks.find(x=>x.id==='config').reason,'github_fields_missing');
+    assert.equal(diagnosis.checks.find(x=>x.id==='config_file').status,'ready');
+    assert.equal(diagnosis.checks.find(x=>x.id==='config.github.account').reason,'config_missing_github_account');
     assert.equal(diagnosis.checks.find(x=>x.id==='github.identity').status,'not_checked');
     write(path,configText()+'directory = "../outside"\n'); assert.notEqual(invoke().status,0);
   } finally { f.dispose(); }

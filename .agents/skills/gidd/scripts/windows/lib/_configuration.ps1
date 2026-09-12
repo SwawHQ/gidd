@@ -62,7 +62,7 @@ function Read-GiddToolConfiguration {
             if (-not $tables.Add($section)) { throw "config_duplicate_${section}_table" }
             $inTools = $section -eq 'tools'; continue
         }
-        if ($section -eq 'github' -and $line -cmatch ('^[ \t]*(hostname|account|remote)[ \t]*=[ \t]*(' + $stringPattern + ')[ \t]*(?:#.*)?$')) {
+        if ($section -eq 'github' -and $line -cmatch ('^[ \t]*(hostname|account|remote|repository)[ \t]*=[ \t]*(' + $stringPattern + ')[ \t]*(?:#.*)?$')) {
             $key = 'github.' + $Matches[1]
             if ($values.ContainsKey($key)) { throw "config_duplicate_key:$key" }
             $values.Add($key, (ConvertFrom-GiddConfigString $Matches[2])); continue

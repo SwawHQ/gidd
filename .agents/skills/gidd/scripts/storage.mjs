@@ -73,7 +73,7 @@ export function parseConfiguration(text) {
       schema = true; continue;
     }
     if (section === 'github') {
-      const names = 'hostname|account|remote';
+      const names = 'hostname|account|remote|repository';
       const field = new RegExp(`^[ \\t]*(${names})[ \\t]*=[ \\t]*(${stringPattern})[ \\t]*(?:#.*)?$`).exec(line);
       if (!field) throw new Error(`config_unsupported_syntax_or_field:${index + 1}`);
       const key = `${section}.${field[1]}`;
