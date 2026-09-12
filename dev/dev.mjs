@@ -19,7 +19,8 @@ if (extra.length || !['.test', '.test-live'].includes(command) ||
   process.exit(1);
 }
 const files = command === '.test-live' ? ['tests/live.test.mjs'] :
-  (argument && argument !== 'all' ? [argument] : suites).map(suite => `tests/${suite}.test.mjs`);
+  (argument && argument !== 'all' ? [argument] : suites).flatMap(suite => suite === 'entry'
+    ? ['tests/entry.test.mjs', 'tests/repository-entry.test.mjs'] : [`tests/${suite}.test.mjs`]);
 console.log(`Runtime: ${process.versions.bun ? 'Bun ' + process.versions.bun : 'Node ' + process.versions.node}`);
 const started = performance.now();
 const results = [];
@@ -55,7 +56,7 @@ console.log(`\nSuite summary: ${results.length - failures.length} passed, ${fail
 const quote = value => `'${value.replaceAll("'", "''")}'`;
 for (const { file, seconds } of failures) {
   const rerun = command === '.test-live' ? '.test-live' :
-    `.test-${process.versions.bun ? 'bun' : 'node'} ${file.split('/').at(-1).replace('.test.mjs', '')}`;
+    `.test-${process.versions.bun ? 'bun' : 'node'} ${file.includes('repository-entry') ? 'entry' : file.split('/').at(-1).replace('.test.mjs', '')}`;
   console.log(`FAIL ${file} (${seconds}s)\nRerun (PowerShell): & ${quote(fileURLToPath(new URL('../dev.cmd', import.meta.url)))} ${rerun}`);
 }
 process.exit(failures.length ? 1 : 0);

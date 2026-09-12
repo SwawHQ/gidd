@@ -19,9 +19,10 @@ export const support = join(repo, 'tests/support');
 export function copySkill(destination) {
   const source = join(repo, '.agents/skills/gidd');
   const config = join(source, 'config.toml');
+  const link = join(source, 'gidd.link.cmd');
   // Repository settings and in-flight editor files are not part of the skill.
   cpSync(source, destination, { recursive: true,
-    filter: path => path !== config && !path.startsWith(config + '.'),
+    filter: path => path !== config && !path.startsWith(config + '.') && path !== link && !path.startsWith(link + '.'),
   });
 }
 const windowsRoot = process.env.SystemRoot || process.env.SYSTEMROOT || 'C:\\Windows';

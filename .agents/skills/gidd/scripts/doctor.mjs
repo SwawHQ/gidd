@@ -67,7 +67,7 @@ function managedRuntime(name) {
 }
 
 // Parse only unambiguous addresses. Raw URLs may contain credentials and never enter reports.
-function remoteAddress(text) {
+export function remoteAddress(text) {
   if (/[\s\\%?#]/.test(text)) return null;
   let protocol = 'https', match = /^https:\/\/([^/:@]+)\/([^/]+)\/([^/]+)\/?$/i.exec(text);
   if (!match) { protocol = 'ssh'; match = /^git@([^/:@]+):([^/]+)\/([^/]+)\/?$/i.exec(text); }

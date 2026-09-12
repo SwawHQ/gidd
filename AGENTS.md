@@ -34,6 +34,8 @@
 
 ## Maintainer Notes
 
+仓库专用入口由 Issue #45 跟踪：`gidd.tools.ensure.cmd --repository <绝对工作树根>` 必须显式指定目标，原生 Shell 先检查目录和 .git 标记，复用共享运行时后由 JS 准备 Git、验证工作树根和 GitHub remote，再准备 gh 并原子创建 `.agents/skills/gidd/gidd.link.cmd`。生成逻辑位于 `scripts/repository-entry.mjs`；项目内真实入口使用相对位置，外部入口使用绝对位置，普通调用经共享启动器进入同一 JS 分发器，不切换代码页。链接从自身位置固定目标并拒绝覆盖，不创建配置、初始化 Git 或登录。仅有本地 remote 地址验证，不证明远端存在、权限或 GIDD 启用；无首次提交允许建立入口。健康工具及相同入口复用，未知链接文件保留。链接及其锁/临时文件排除发布和提交；配置初始化与 doctor 评级另行实现。详细协议见 `.agents/skills/gidd/references/repository-entry.md`；`.test entry` 包含两份入口测试文件。
+
 以下记录当前可执行实现；共用 JS 迁移由 Issue #21、显式 tools --ensure 与共享启动器由 Issue #23 跟踪。兼容规则只在 scripts/runtime-compat.mjs 维护，由 tools --ensure 及开发测试调用；普通命令不检查兼容性。
 
 - 维护本源码仓库时，先查看 PATH 中的 `ghbw.cmd --help`，通过该入口访问 GitHub；先创建 Issue，再创建其关联分支，修订和验证后提交 PR，由人工 merge。`ghbw.cmd` 仅是本仓库维护所用的身份入口，不得成为公开 GIDD 技能或产品脚本的依赖。

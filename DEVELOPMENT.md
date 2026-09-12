@@ -1,5 +1,7 @@
 # 仓库开发
 
+新增仓库专用准备入口：`.\.agents\skills\gidd\gidd.tools.ensure.cmd --repository <目标仓库绝对路径>`。它在工作树和 GitHub remote 本地验证通过后生成 `<目标仓库>/.agents/skills/gidd/gidd.link.cmd`，适用于项目内、用户级和插件目录中的真实技能。链接携带目标，支持从其他 cwd 调用；不生成配置或启用记录。复用、失败保留、迁移及结果协议见 [仓库专用入口](.agents/skills/gidd/references/repository-entry.md)。`dev.cmd .test entry` 同时运行普通入口和仓库链接测试，Node/Bun 使用同一套用例。
+
 产品 stage0 的已确认边界与验收范围见 [tools --ensure 协议](.agents/skills/gidd/references/bootstrap.md)。显式 tools --ensure 与共享启动器由 Issue #23 跟踪；dev.cmd 保留 managed/sys 模式和离线测试隔离。
 
 `dev.cmd` 管理 GIDD 源码仓库自身的开发环境。已验证目标为 Windows x64 和 Windows PowerShell 5.1；它不代表在这个仓库启用了 GIDD。

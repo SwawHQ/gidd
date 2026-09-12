@@ -23,18 +23,18 @@ test('test command executes every suite and rejects failures or premature zero e
   try {
     const runner=join(f.root,'dev/dev.mjs');
     write(runner,readFileSync(join(repo,'dev/dev.mjs'),'utf8'));
-    for (const suite of ['doctor','setup','process','dev','config','github','entry']) {
+    for (const suite of ['doctor','setup','process','dev','config','github','entry','repository-entry']) {
       const marker=join(f.root,`${suite}.ran`);
       write(join(f.root,`tests/${suite}.test.mjs`),
         `import {test,after} from 'node:test'; import {writeFileSync} from 'node:fs';\nafter(() => writeFileSync(process.env.GIDD_TEST_COMPLETION, 'completed'));\ntest('${suite}', () => { writeFileSync(${JSON.stringify(marker)}, 'ran'); ${suite === 'setup' ? "throw new Error('expected fixture failure');" : suite === 'entry' ? 'process.exit(0);' : ''} });\n`);
     }
     const result=run(process.execPath,[runner,'.test']);
     assert.equal(result.status,1,'A failing suite must fail the command');
-    assert.match(result.stdout,/Suite summary: 5 passed, 2 failed/);
+    assert.match(result.stdout,/Suite summary: 6 passed, 2 failed/);
     assert.match(result.stderr,/Test worker did not complete: tests\/entry.test.mjs/);
     assert.match(result.stdout,/FAIL tests\/setup.test.mjs \(\d+\.\d+s\)/);
     assert.match(result.stdout,/Rerun \(PowerShell\): .*\.test-(bun|node) setup/);
-    for (const suite of ['doctor','setup','process','dev','config','github','entry']) {
+    for (const suite of ['doctor','setup','process','dev','config','github','entry','repository-entry']) {
       assert.equal(existsSync(join(f.root,`${suite}.ran`)),true,`${suite} must actually execute, including after a failure`);
     }
     const selected=ok(run(process.execPath,[runner,'.test','doctor']));
