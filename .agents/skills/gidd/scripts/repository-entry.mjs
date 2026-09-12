@@ -98,7 +98,7 @@ export function inspectEntryDestination(repository) {
   return existingEntry(entryPath(repository));
 }
 
-export function publishRepositoryEntry(repository, entry = sourceEntry) {
+function desiredEntry(repository, entry) {
   requireRoot(repository);
   plainPath(entry);
   if (!lstatSync(entry).isFile()) throw new Error('linked_skill_unavailable');
@@ -106,6 +106,21 @@ export function publishRepositoryEntry(repository, entry = sourceEntry) {
   const internal = !isAbsolute(fromRoot) && fromRoot !== '..' && !fromRoot.startsWith('..' + sep);
   const spec = { schema, entry: internal ? relative(dirname(path), entry) : resolve(entry) };
   const text = renderRepositoryEntry(spec);
+  return { text, path, target: repository, location: internal ? 'relative' : 'absolute' };
+}
+
+export function checkRepositoryLink(repository, entry = sourceEntry) {
+  const { text, ...details } = desiredEntry(repository, entry);
+  const original = inspectEntryDestination(repository);
+  if (existsSync(details.path + '.lock')) return { ...details, status: 'invalid', reason: 'repository_entry_locked' };
+  if (original === null) return { ...details, status: 'missing', reason: 'repository_entry_missing' };
+  return { ...details, status: original === text ? 'ready' : 'invalid',
+    reason: original === text ? 'repository_entry_verified' : 'repository_entry_outdated' };
+}
+
+export function publishRepositoryEntry(repository, entry = sourceEntry) {
+  const { text, ...details } = desiredEntry(repository, entry);
+  const { path } = details;
   inspectEntryDestination(repository);
   mkdirSync(dirname(path), { recursive: true });
   plainPath(path);
@@ -115,11 +130,11 @@ export function publishRepositoryEntry(repository, entry = sourceEntry) {
     try { lock = openSync(lockPath, 'wx'); }
     catch (error) { if (error.code === 'EEXIST') throw new Error('repository_entry_locked'); throw error; }
     const original = existingEntry(path);
-    if (original === text) return { status: 'ready', action: 'reused', path, target: repository, location: internal ? 'relative' : 'absolute' };
+    if (original === text) return { status: 'ready', action: 'reused', ...details };
     durableFile(temporary, text);
     if (existingEntry(path) !== original) throw new Error('repository_entry_changed');
     renameSync(temporary, path);
-    return { status: 'ready', action: original === null ? 'created' : 'updated', path, target: repository, location: internal ? 'relative' : 'absolute' };
+    return { status: 'ready', action: original === null ? 'created' : 'updated', ...details };
   } finally {
     if (existsSync(temporary)) unlinkSync(temporary);
     if (lock !== undefined) { closeSync(lock); unlinkSync(lockPath); }

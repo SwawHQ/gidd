@@ -18,7 +18,7 @@ function setup(f) {
     if (remote) ok(run(git, ['-C', target, 'remote', 'add', 'origin', remote]));
     return target;
   };
-  const ensure = (target, extra = [], entry = join(skill, 'gidd.tools.ensure.cmd')) => invoke(entry, ['--repository', target, ...extra]);
+  const ensure = (target, extra = [], entry = join(skill, 'gidd.tools.ensure.cmd')) => invoke(entry, ['--repo', target, ...extra]);
   const link = target => join(target, '.agents/skills/gidd/gidd.link.cmd');
   return { git, skill, invoke, create, ensure, link };
 }
@@ -52,12 +52,80 @@ test('repository ensure help works without tools or a repository and honors lang
       [['help', 'en', '--force'], {}, 'invalid_arguments'],
       [['--force', '--help'], {}, 'invalid_arguments'],
       [['--force'], {}, 'repository_required'],
+      [['--repo'], {}, 'invalid_arguments'],
+      [['--repo', f.root, '--repository', f.root], {}, 'invalid_arguments'],
+      [['--repository', f.root, '--repo', f.root], {}, 'invalid_arguments'],
+      [['--repo', f.root, '--repo', f.root], {}, 'invalid_arguments'],
+      [['--repo', f.root, '--check', '--force'], {}, 'option_requires_ensure'],
+      [['--repo', f.root, '--check', '--jsruntime=node'], {}, 'option_requires_ensure'],
+      [['--repo', f.root, '--check', '--ensure'], {}, 'invalid_arguments'],
     ]) {
       const result = invoke(args, env);
       assert.equal(result.status, 2); assert.equal(json(result).reason, reason);
     }
     assert.equal(existsSync(toolsRoot(f.root)), false);
     assert.deepEqual(snapshot(f.root), before, 'Help and invalid arguments must not prepare tools or write files');
+  } finally { f.dispose(); }
+});
+
+test('repository check reports missing, healthy and damaged state without writes or downloads', { timeout: 120000 }, () => {
+  const f = fixture();
+  try {
+    const s = setup(f), target = s.create('check target'), entry = join(s.skill, 'gidd.tools.ensure.cmd');
+    const inspect = (repository = target, env = {}) => {
+      const before = snapshot(f.root);
+      const result = s.invoke(entry, ['--repo', repository, '--check'], { env });
+      assert.ok([0, 1].includes(result.status), result.stdout + result.stderr);
+      const report = json(result); assert.equal(report.read_only, true);
+      assert.equal(result.status, report.status === 'ready' ? 0 : 1);
+      assert.equal(report.message, undefined, 'A check must not claim it prepared an entry');
+      assert.doesNotMatch(result.stderr, /download/i);
+      assert.deepEqual(snapshot(f.root), before, 'Check must not publish, recover, install, or edit files');
+      return report;
+    };
+    const noRuntime = inspect(target, { PATH: '' });
+    assert.equal(noRuntime.status, 'needs_tools');
+    assert.equal(noRuntime.entry.reason, 'runtime_unavailable');
+    assert.equal(noRuntime.repository_check.status, 'not_checked');
+    assert.equal(existsSync(toolsRoot(f.root)), false);
+    const noGit = inspect(target, { PATH: [dirname(process.execPath), join(f.root, 'bin')].join(';') });
+    assert.equal(noGit.repository_check.reason, 'git_unavailable');
+    assert.equal(noGit.tool_checks.find(c => c.id === 'tool.gh').status, 'ready');
+    assert.equal(noGit.entry.reason, 'repository_entry_missing');
+    const fresh = inspect();
+    assert.equal(fresh.status, 'needs_tools');
+    assert.equal(fresh.repository_check.status, 'ready');
+    assert.equal(fresh.entry.reason, 'repository_entry_missing');
+    assert.equal(existsSync(toolsRoot(f.root)), false);
+
+    ok(s.ensure(target));
+    assert.equal(inspect().status, 'ready');
+    const link = s.link(target), saved = readFileSync(link, 'utf8');
+    rmSync(link);
+    assert.equal(inspect().entry.reason, 'repository_entry_missing');
+    write(link, '@echo off\r\necho user owned\r\n');
+    assert.equal(inspect().entry.reason, 'repository_entry_occupied');
+    rmSync(link); mkdirSync(link);
+    assert.equal(inspect().entry.reason, 'repository_entry_occupied');
+    rmSync(link, { recursive: true }); write(link, saved);
+    write(link + '.lock', 'another writer');
+    assert.equal(inspect().entry.reason, 'repository_entry_locked');
+    rmSync(link + '.lock');
+    const replacement = join(f.root, 'other skill'); copySkill(replacement);
+    publishRepositoryEntry(target, join(replacement, 'gidd.cmd'));
+    assert.equal(inspect().entry.reason, 'repository_entry_outdated');
+    write(link, saved);
+    write(join(toolsRoot(f.root), '.cache/previous-gh/pending.txt'), 'do not recover');
+    const pending = inspect();
+    assert.equal(pending.tool_checks.find(c => c.id === 'binding.gh').reason, 'tool_recovery_pending');
+    assert.equal(pending.entry.status, 'ready');
+    ok(run(s.git, ['-C', target, 'remote', 'set-url', 'origin', 'https://gitlab.com/Other/Repo']));
+    const wrongRemote = inspect();
+    assert.equal(wrongRemote.repository_check.reason, 'github_remote_required');
+    assert.equal(wrongRemote.tool_checks.find(c => c.id === 'tool.gh').status, 'ready');
+    assert.equal(wrongRemote.entry.status, 'ready');
+    const bindings = join(toolsRoot(f.root), 'tool-bindings.json'); write(bindings, '{broken');
+    assert.equal(inspect().tool_checks.find(c => c.id === 'binding.git').reason, 'bootstrap_required');
   } finally { f.dispose(); }
 });
 
@@ -104,7 +172,7 @@ test('repository links preserve target, arguments, idempotence and unknown files
     assert.equal(existsSync(join(target, '.agents/skills/gidd/config.toml')), false);
     assert.ok([...readFileSync(link)].every(byte => byte < 128));
     const tree = snapshot(f.root), modified = statSync(link).mtimeMs;
-    const second = json(ok(s.ensure(target)));
+    const second = json(ok(s.invoke(join(s.skill, 'gidd.tools.ensure.cmd'), ['--repository', target])));
     assert.equal(second.entry.action, 'reused'); assert.equal(second.launcher_action, 'reused');
     assert.ok(second.tools.every(tool => tool.action === 'reused' && tool.binding_action === 'reused'));
     assert.deepEqual(snapshot(f.root), tree); assert.equal(statSync(link).mtimeMs, modified);

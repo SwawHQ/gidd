@@ -6,7 +6,7 @@ import { acquireInstallLock, installTool, removeStage, resolveRelease, writeInst
 import { compareVersions, hashFile, inspectToolTree, managedToolValid, resolveStorage } from './storage.mjs';
 import { findTool, check, minimums } from './tools.mjs';
 import { bindingPath, publishBinding, readBindings } from './bindings.mjs';
-import { inspectEntryDestination, inspectRepositoryEntry, publishRepositoryEntry } from './repository-entry.mjs';
+import { checkRepositoryLink, inspectEntryDestination, inspectRepositoryEntry, publishRepositoryEntry } from './repository-entry.mjs';
 
 const reasonOf = error => /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : 'tool_preparation_failed';
 export function bindingMatches(root,name,candidate) {
@@ -105,8 +105,21 @@ async function main(args) {
   let tools,entry,repositoryCheck;
   try {
     const storage=resolveStorage(repository);
-    if (repositoryEntry) {
-      if (checkOnly || !repository || !runtime || runtime.status!=='ready') throw new Error('invalid_arguments');
+    if (repositoryEntry && checkOnly) {
+      if (!repository) throw new Error('repository_required');
+      tools=await prepareTools(storage,{checkOnly,force});
+      const git=tools.checks.find(c=>c.id==='tool.git' && c.status==='ready');
+      try {
+        repositoryCheck=git ? await inspectRepositoryEntry(repository,git.details.path,storage.github) :
+          {status:'not_checked',reason:'git_unavailable'};
+      } catch(error) { repositoryCheck={status:'invalid',reason:reasonOf(error)}; }
+      try { entry=checkRepositoryLink(repository); }
+      catch(error) { entry={status:'invalid',reason:reasonOf(error)}; }
+      tools.checks.push(check('repository',repositoryCheck.status,repositoryCheck.reason || 'github_remote_verified',repositoryCheck),
+        check('repository.entry',entry.status,entry.reason,entry));
+      tools.status=tools.checks.every(c=>c.status==='ready')?'ready':'needs_bootstrap';
+    } else if (repositoryEntry) {
+      if (!repository || !runtime || runtime.status!=='ready') throw new Error('invalid_arguments');
       inspectEntryDestination(repository);
       tools=await prepareTools(storage,{force,names:['git']});
       if (tools.status==='ready') {
@@ -129,9 +142,9 @@ async function main(args) {
     tools:tools.tools,tool_checks:tools.checks,binding_path:tools.binding_path}:tools;
   if (repositoryEntry) {
     report.repository=repository;
-    report.entry=entry || {status:'not_published'};
-    if (repositoryCheck) report.repository_check=repositoryCheck;
-    if (entry) report.message=`已为目标仓库准备专用入口 ${entry.path}。可在任意工作目录调用，仓库操作固定针对 ${repository}；共享工具和认证不属于单个仓库。`;
+    report.entry=entry || (checkOnly?{status:'not_checked',reason:'tools_unavailable'}:{status:'not_published'});
+    if (repositoryCheck || checkOnly) report.repository_check=repositoryCheck || {status:'not_checked',reason:'tools_unavailable'};
+    if (entry && !checkOnly) report.message=`已为目标仓库准备专用入口 ${entry.path}。可在任意工作目录调用，仓库操作固定针对 ${repository}；共享工具和认证不属于单个仓库。`;
   }
   console.log(JSON.stringify(report));return report.status==='ready'?0:1;
 }

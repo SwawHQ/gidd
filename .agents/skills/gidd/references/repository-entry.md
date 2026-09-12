@@ -3,12 +3,13 @@
 Windows 首次准备一个目标仓库，或修复缺失/失效的仓库入口时，调用实际技能安装目录中的：
 
 ```text
-gidd.tools.ensure.cmd --repository <目标仓库绝对路径>
-gidd.tools.ensure.cmd --repository <目标仓库绝对路径> --jsruntime=node
-gidd.tools.ensure.cmd --repository <目标仓库绝对路径> --force
+gidd.tools.ensure.cmd --repo <目标仓库绝对路径>
+gidd.tools.ensure.cmd --repo <目标仓库绝对路径> --jsruntime=node
+gidd.tools.ensure.cmd --repo <目标仓库绝对路径> --force
+gidd.tools.ensure.cmd --repo <目标仓库绝对路径> --check
 ```
 
-执行准备时，--repository 必须明确提供本地盘上的 Git 工作树根目录，不推断 cwd，也不把传入的子目录自动提升到父仓库。不接受 --check 或 --ensure。--force 和运行时选择沿用 [tools 协议](bootstrap.md)，不会覆盖未知文件。旧 gidd.cmd tools --check/--ensure 继续提供共享工具管理。
+除帮助外，--repo 必须明确提供本地盘上的 Git 工作树根目录，不推断 cwd，也不把传入的子目录自动提升到父仓库。保留 --repository 作为兼容别名；同一参数重复或两种写法混用均报错。默认执行准备，--check 只读检查；不接受 --ensure。--check 不得与 --force 或 --jsruntime 搭配。--force 和运行时选择沿用 [tools 协议](bootstrap.md)，不会覆盖未知文件。旧 gidd.cmd tools --check/--ensure 继续提供共享工具管理。
 
 查看帮助使用 `gidd.tools.ensure.cmd help zh` 或 `help en`；不带参数、`help`、`--help`、`-h` 均显示帮助，帮助别名也可追加语言。语言选择与 `gidd help` 一致：显式语言、GIDD_LANG、LC_ALL、LC_MESSAGES、LANG、系统界面语言依次取首个非空值；显式语言或 GIDD_LANG 仅接受 zh/en 及其地区变体，其他系统语言回退英文。帮助由原生 Shell 读取 `scripts/help/tools-ensure/` 下的 UTF-8 文本，无需仓库参数或 JS 运行时，不读取配置、准备工具或写入文件；成功输出文本并退出 0。
 
@@ -24,6 +25,14 @@ gidd.tools.ensure.cmd --repository <目标仓库绝对路径> --force
 这只是本地地址检查，不联网验证远端仓库存在、权限或主机服务类型；不要求 HEAD、commit 作者或登录已经可用。没有提交但具备 remote 的工作树可以建立入口。push 目标与初始化归属匹配不属于此阶段，后续配置初始化另行实现。
 
 缺少 Git 时必须先准备它，才能可靠读取工作树和 remote；失败可能留下已成功准备的共享运行时或 Git，但不会发布新链接，不会删除旧链接。工具健康且生成内容相同时复用，不重新下载、不重写启动器、工具绑定或仓库链接；ensure 仍会进行安装完整性和兼容性校验。并发准备遵守共享安装锁，链接写入另用同目录独占锁；遇到占用可以在原进程结束后重试。
+
+## 只读检查
+
+--check 复用完整工具检查，报告运行时兼容性、工具可用性、受管工具完整性、共享启动器及 Git/gh 绑定，并验证目标工作树、GitHub remote 和仓库入口。入口检查比较当前技能应生成的内容，分别报告缺失、内容匹配、指向其他技能或过期、未知文件占用及锁占用。配置文件只读，未配置 github 字段时沿用准备阶段的本地 remote 检查规则。
+
+检查不下载、不创建目录或入口、不写绑定、不恢复中断安装，不改变已有配置。已有可用运行时但共享启动器缺失时，仍可继续 JS 检查；缺少 Git 时仓库检查报告 not_checked/git_unavailable，gh 和入口仍独立检查；缺少 JS 运行时则后续检查报告 not_checked/runtime_unavailable。GitHub remote 不符合时也保留工具和入口的其他检查结果，不联网验证仓库或权限。
+
+结果沿用 gidd.tools/v1，read_only=true；repository_check 与 entry 各自包含 status 和异常 reason，entry 成功为 ready/repository_entry_verified，没有 action，也不输出已准备入口的 message。全部就绪退出 0；缺失、损坏、待恢复或未执行的检查退出 1；参数、目录或配置读取导致原生前置检查失败时退出 2。若配置错误发生在 JS 阶段，后续仓库及入口检查标记为 not_checked，具体配置错误保留在 tool_checks。
 
 ## 链接执行与迁移
 

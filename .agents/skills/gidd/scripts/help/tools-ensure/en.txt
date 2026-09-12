@@ -1,13 +1,13 @@
 GIDD repository tools preparation (Windows x64 / PowerShell 5.1)
 
-  gidd.tools.ensure help en             #Show English help
-  gidd.tools.ensure help zh             #Show Chinese help
-  gidd.tools.ensure --repository <absolute-repository-path>   #Ensure JS runtime, Git and gh are available; create the repository's gidd.link.cmd
-  gidd.tools.ensure --repository <absolute-repository-path> --jsruntime=node   #As above, selecting Node; otherwise reuse an available runtime and download Bun only if none is usable
-  gidd.tools.ensure --repository <absolute-repository-path> --force            #Download and set up portable copies of the selected JS runtime, Git and gh again
+  gidd.tools.ensure help en            #Show English help
+  gidd.tools.ensure help zh            #Show Chinese help
+  gidd.tools.ensure --repo <repository-path>  #Ensure JS runtime, Git and gh are available; create the repository's gidd.link.cmd
+  gidd.tools.ensure --repo <repository-path> --jsruntime=node  #As above, selecting Node (otherwise Bun is preferred)
+  gidd.tools.ensure --repo <repository-path> --force           #Download and set up portable copies of the JS runtime, Git and gh again
+  gidd.tools.ensure --repo <repository-path> --check           #Check availability (read-only)
 
-  #The repository path must be a Git working-tree root; checks local GitHub remote URLs without verifying remote existence or permissions online
+  #Only Git repositories are supported
   #gidd.link.cmd is placed in <repository>/.agents/skills/gidd/
-  #Reuse available tools (managed or system tools); download official packages and set up portable copies when tools are missing
+  #Reuse available JS runtimes (Bun or Node), Git and gh; download official packages and set up portable copies when tools are missing
   #Portable tools are placed in ~/.agents/skills.tools/gidd/
-  #Repeated runs recheck and reuse healthy tools and unchanged entries; attempt repairs when missing or damaged, and return JSON results
