@@ -1,52 +1,47 @@
 ---
 name: gidd
-description: Prepare GIDD tools and repository entry, diagnose prerequisites, configure repository GitHub settings, check identity, and request device authorization when explicitly asked to log in. Currently verified on Windows; repository enablement and Issue/PR workflows are not yet implemented.
+description: 为指定 Git 仓库准备或检查 GIDD、编辑 GitHub 配置、诊断身份，并按用户明确要求进行登录授权。当前支持 Windows；初始化及 Issue/PR 业务尚未实现。
 license: MIT
 ---
 
 # GIDD
 
-Resolve the target repository from the user request. The skill can be installed inside or outside it, so the actual skill's preparation entry always requires an absolute Git working-tree root via --repo (--repository is also accepted). A suitable GitHub remote is required, but no commit or login. User-level installation alone does not select or enable a repository.
+按用户请求确定目标 Git 工作树。只检查时不准备工具或写配置；技能、入口和配置存在不代表启用仓库开发流程。
 
-A repository installation at .agents/skills/gidd or .claude/skills/gidd can only prepare its own worktree, even when another clone or worktree shares the same remote. Shared installations outside Git trees can prepare other targets. A Git-contained installation with an unrecognized layout fails with installation_scope_unknown; do not treat a Git-managed skill collection or plugin source as a shared installation automatically. See the installation boundaries in [references/repository-entry.md](references/repository-entry.md).
+当前已验证 Windows x64 / PowerShell 5.1。`config init`、初始化归属记录、doctor 评级、`gidd.link.sh` 和 Issue/PR 业务尚未实现，不要执行或模拟这些能力。
 
-```powershell
-& "<skill-directory>\gidd.pre.ensure.cmd" help en
-& "<skill-directory>\gidd.pre.ensure.cmd" --repo "<absolute-worktree-root>" --check
-& "<skill-directory>\gidd.pre.ensure.cmd" --repo "<absolute-worktree-root>"
-```
+## 仓库入口流程
 
---check inspects tools, bindings, Git/GitHub remote and repository entry without downloads, recovery or writes. When preparation is authorized, omit --check to prepare shared tools and create <repository>/.agents/skills/gidd/gidd.link.cmd. Missing or stale entries require rerunning preparation. This does not create config, initialize Git, authenticate or enable GIDD; config init remains unimplemented. Read [references/repository-entry.md](references/repository-entry.md) for preconditions, output and relative/external locations.
+入口固定为 `<目标仓库根>/.agents/skills/gidd/gidd.link.cmd`，配置为同目录的 `config.toml`，不继承用户级配置。下文的 `gidd.link.cmd` 均指该入口的绝对路径，可从任意工作目录调用，不能改指其他仓库。
 
-Preparation retains a compatible bound runtime, then tries managed Bun, managed Node, PATH Bun and PATH Node. If none is compatible it downloads stable Bun. --jsruntime=bun|node selects a kind; Node downloads use LTS. --force reinstalls the selected managed runtime, Git and gh, preserving external tools, the other runtime and unknown files. Without a selector force retains the bound kind or defaults to Bun. Neither option can accompany --check. Read [references/bootstrap.md](references/bootstrap.md) for selection, bindings and recovery.
+1. **已有入口先诊断。** 执行 `gidd.link.cmd doctor --offline`。取得完整 JSON、退出码为 `0` 且 `status=local_ready`，才进入第 4 步；不能仅凭输出没有 `error` 放行。链接无法启动时转第 2 步，诊断报告问题时转第 3 步。
 
-The native preparation entry verifies/prepares a runtime and publishes js_exec.cmd; JS then prepares Git, verifies the worktree/remote, prepares gh and publishes the repository entry. Failed stages preserve completed work without claiming overall readiness. Check diagnoses independent items when possible; missing runtime or Git marks dependent checks not_checked. The report remains gidd.tools/v1, with read_only identifying checks.
+2. **缺失或失效时准备。** 从实际技能安装目录执行：
 
-Tools and bindings live permanently in ~/.agents/skills.tools/gidd/, shared by all repositories and independent of skill installation. This path is not configurable. Ordinary commands start JS through js_exec.cmd and use bound Git/gh paths without searching PATH, version probes or full payload hashing. Only child-process PATH is adjusted so gh uses the same Git. Startup/binding errors direct users to gidd.pre.ensure; business errors do not trigger preparation or fallback retries. Shared binding changes affect all repositories for this user.
+   ```powershell
+   & "<技能安装目录>\gidd.pre.ensure.cmd" --repo "<目标仓库根>"
+   ```
 
-Use the generated repository entry from any working directory:
+   `--repo` 必填，目标必须已有 Git 工作树和合适的 GitHub remote。命令准备 JS 运行时、Git、gh 和仓库入口，复用健康工具及已有配置。仅检查时追加 `--check`；`help zh` 无需仓库或运行时。按失败原因处理，保留未知文件。
 
-```powershell
-& "<repository>\.agents\skills\gidd\gidd.link.cmd" help en
-& "<repository>\.agents\skills\gidd\gidd.link.cmd" doctor --offline
-& "<repository>\.agents\skills\gidd\gidd.link.cmd" doctor
-& "<repository>\.agents\skills\gidd\gidd.link.cmd" auth
-```
+3. **按问题配置或修复。** 当前用 `config show/set` 补齐 `github.hostname`、`github.account`、`github.remote`，核实模板默认值，保留无关配置和注释。账号是预期登录身份，remote 是名称，不是 URL。工具问题返回准备入口；工作树、作者和 remote 问题按 Git 诊断处理。完成后重新执行第 1 步。详见 [配置协议](references/configuration.md)。
 
-The link fixes its target and rejects overrides. A repository-installed gidd.cmd can also locate its own target from its path and .git marker, including worktrees. An unbound doctor reports target_required if no target is available. Ordinary gidd commands have no tools subcommand; preparation is only through gidd.pre.ensure.cmd.
+4. **本地就绪后查看帮助。** 执行 `gidd.link.cmd --help` 或 `help zh`。首次 GitHub 操作前再执行普通 `doctor`；离线通过不证明登录或推送权限。API 身份、Git 传输和 commit 作者分别判断，网络失败不等于未登录。详见 [doctor 协议](references/doctor.md)。
 
-Use help en / help zh; --help, -h and no arguments also show help. Ordinary help requires js_exec.cmd; preparation help works before a runtime or target is available. Language follows the argument, GIDD_LANG, then locale; unsupported system languages use English. Argument errors use gidd.cli/v1 for ordinary commands. Linux/macOS launchers are not implemented or verified.
+仓库内 `.agents/skills/gidd/` 或 `.claude/skills/gidd/` 安装只能指定所属工作树；Git 树外共享安装可指定目标，Git 树内布局不明则报错。链接规则及恢复方式见 [仓库专用入口](references/repository-entry.md)。
 
-Use [references/doctor.md](references/doctor.md) for read-only diagnosis. Doctor defaults to local checks plus GitHub API identity and eligible HTTPS remote reads; doctor --offline makes no network requests. It probes the running runtime and bound Git/gh only; gidd.pre.ensure with --repo and --check performs complete tool checks. Configuration, repository, binding and network errors remain distinct. local_ready is offline-only; checks_passed does not prove enablement or push access.
+## 待实现的初始化约定
 
-Use config show / config set with [references/configuration.md](references/configuration.md). Runtime config is only <repository>/.agents/skills/gidd/config.toml; do not inherit user-level settings. Editable fields are github.hostname/account/remote and tools.node/bun/gh.source. Remove retired [bootstrap] and tool version fields while preserving unrelated comments and settings. First set creates the template; edits preserve comments, BOM and line endings. Editing does not install, authenticate or enable a repository.
+新建入口、配置缺失、初始化未完成或归属不匹配时，目标流程是 `config init`，完成后仍回到离线诊断。当前仅编辑配置，不写初始化字段或宣称初始化完成。
 
-When asked to check GitHub login, use doctor. Read hostname/account/remote from repository config; never infer missing values. Report API identity, Git remote readability and commit author separately. SSH remote reads remain not_checked; network failure does not imply logged out. Doctor does not install, log in or switch accounts. The old identity command is removed without a compatibility alias; the doctor report remains gidd.doctor/v1.
+计划中的初始化幂等且无交互，支持分段输入并报告缺项；明确账号、选择 remote，记录一条规范化 GitHub 仓库身份。草稿写入 `config.toml.temp`，全部校验后原子替换正式配置，保留已有有效信息。doctor 将新增 `severity=info|warning|error`，完整诊断无 `error` 才继续；当前仍按 `local_ready` 判断。
 
-For explicit login requests use auth and [references/authorization.md](references/authorization.md). It requires github.hostname/account and a gh binding validated by bootstrap. Reuse a matching login; report another account without switching. Display this attempt's URL and one-time code, keep the waiting process and let the user authorize on any device. Verify actual API identity before success. Do not open a browser automatically. gh manages credentials; editing config does not authorize account changes.
+## 登录授权
 
-Read [references/setup.md](references/setup.md) for installation integrity, MinGit scope, locks and cleanup. Bootstrap repairs only installations with clear ownership; preserve unknown files. Damaged bindings are backed up before rebuilding. Downloaded tools, installation records, launchers and caches stay outside skill/source; the shared tree must not contain SKILL.md, config.toml or Git metadata. INSTALLATION.md explains ownership and cleanup.
+检查登录使用 `doctor`；用户明确要求登录时才执行 `auth`，读取配置中的主机和账号。复用匹配身份，不自动切换账号。展示本次 URL 和一次性代码，等待用户授权并验证实际账号；不自动打开浏览器，不在配置中保存凭据。见 [授权协议](references/authorization.md)。
 
-When copying the skill, exclude config.toml, config.toml.* edit files, gidd.link.cmd and gidd.link.cmd.* generated files; preserve target config and use config.example.toml for a new instance. For removal identify actual skill location, repository config and shared root. Removing one repository does not authorize deleting shared storage. Full removal must explicitly include it; other repositories may still use it. Never remove reused external tools or call deletion GitHub logout/revocation.
+## 工具与文件管理
 
-Windows gidd.pre.ensure --repo <repository-path>, bindings, diagnosis, configuration and identity/device authorization are implemented. Full skill installation/update, enablement records and Issue/PR business scripts remain unimplemented. Shared JS must use standard APIs supported and tested by Node and Bun.
+工具固定共用 `~/.agents/skills.tools/gidd/`，不提供路径覆盖。运行时选择和强制修复见 [准备协议](references/bootstrap.md)，完整性与清理见 [安装协议](references/setup.md)。
+
+复制技能时排除 `config.toml`、`config.toml.*`、`gidd.link.cmd` 及 `gidd.link.cmd.*`，保留目标配置；当前模板仍是 `config.example.toml`。仅卸载一个仓库不得自动删除共享工具，完整卸载须明确包含它们；不得删除复用的外部工具，也不能把删除文件当作撤销 GitHub 授权。
