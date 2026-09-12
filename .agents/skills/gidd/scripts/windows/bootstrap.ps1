@@ -10,6 +10,16 @@ try {
         $repositoryEntry = $true
         $inputArgs = @($inputArgs | Select-Object -Skip 1)
     }
+    if ($repositoryEntry -and (-not $inputArgs.Count -or $inputArgs[0] -in @('help','--help','-h'))) {
+        if ($inputArgs.Count -gt 2) { throw 'invalid_arguments' }
+        $explicitLanguage = if ($inputArgs.Count -eq 2 -and $inputArgs[1]) { [string]$inputArgs[1] } else { $env:GIDD_LANG }
+        if ($explicitLanguage -and $explicitLanguage -cnotmatch '^(zh|en)(?:$|[-_])') { throw 'unsupported_help_language' }
+        $choice = @($explicitLanguage,$env:LC_ALL,$env:LC_MESSAGES,$env:LANG,[Globalization.CultureInfo]::CurrentUICulture.Name) |
+            Where-Object { $_ } | Select-Object -First 1
+        $language = if ($choice -cmatch '^zh(?:$|[-_])') { 'zh-CN' } else { 'en' }
+        [Console]::WriteLine([IO.File]::ReadAllText((Join-Path $PSScriptRoot "../help/tools-ensure/$language.txt"), [Text.Encoding]::UTF8))
+        exit 0
+    }
     for ($i=0; $i -lt $inputArgs.Count; $i++) {
         $argument = [string]$inputArgs[$i]
         if ($argument -match '^--jsruntime=(bun|node)$') {

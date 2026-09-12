@@ -8,7 +8,9 @@ gidd.tools.ensure.cmd --repository <目标仓库绝对路径> --jsruntime=node
 gidd.tools.ensure.cmd --repository <目标仓库绝对路径> --force
 ```
 
---repository 必须明确提供本地盘上的 Git 工作树根目录，不推断 cwd，也不把传入的子目录自动提升到父仓库。不接受 --check 或 --ensure；该入口始终执行准备。--force 和运行时选择沿用 [tools 协议](bootstrap.md)，不会覆盖未知文件。旧 gidd.cmd tools --check/--ensure 继续提供共享工具管理。
+执行准备时，--repository 必须明确提供本地盘上的 Git 工作树根目录，不推断 cwd，也不把传入的子目录自动提升到父仓库。不接受 --check 或 --ensure。--force 和运行时选择沿用 [tools 协议](bootstrap.md)，不会覆盖未知文件。旧 gidd.cmd tools --check/--ensure 继续提供共享工具管理。
+
+查看帮助使用 `gidd.tools.ensure.cmd help zh` 或 `help en`；不带参数、`help`、`--help`、`-h` 均显示帮助，帮助别名也可追加语言。语言选择与 `gidd help` 一致：显式语言、GIDD_LANG、LC_ALL、LC_MESSAGES、LANG、系统界面语言依次取首个非空值；显式语言或 GIDD_LANG 仅接受 zh/en 及其地区变体，其他系统语言回退英文。帮助由原生 Shell 读取 `scripts/help/tools-ensure/` 下的 UTF-8 文本，无需仓库参数或 JS 运行时，不读取配置、准备工具或写入文件；成功输出文本并退出 0。
 
 ## 验证及执行顺序
 
@@ -41,6 +43,6 @@ gidd.tools.ensure.cmd --repository <目标仓库绝对路径> --force
 
 ## 结果与发布
 
-stdout 为单个 gidd.tools/v1 JSON，保留运行时、工具及各阶段检查结果，增加 repository、repository_check、entry 和成功时的 message。entry 成功包括 action=created|updated|reused、path、target、location=relative|absolute。失败未发布链接时 entry.status=not_published，已有链接仍保留。成功退出 0，JS 工具或仓库检查失败退出 1，参数或原生前置检查失败退出 2。
+除帮助外，stdout 为单个 gidd.tools/v1 JSON，保留运行时、工具及各阶段检查结果，增加 repository、repository_check、entry 和成功时的 message。entry 成功包括 action=created|updated|reused、path、target、location=relative|absolute。失败未发布链接时 entry.status=not_published，已有链接仍保留。成功退出 0，JS 工具或仓库检查失败退出 1，参数或原生前置检查失败退出 2。
 
 gidd.link.cmd 及其锁/临时文件为生成数据，发布或复制技能时排除它们，保留目标已有配置；本仓库使用精确的 .gitignore 规则排除这些文件。新机器或插件路径变化后重新生成。config.toml 的提交策略仍独立处理，不忽略整个 .agents 目录。当前仅验证 Windows x64；生成与路径逻辑使用共用 JS，但 Linux/macOS 启动器尚未提供。

@@ -1,0 +1,24 @@
+GIDD repository tools preparation (Windows x64 / PowerShell 5.1)
+
+Help:
+  gidd.tools.ensure.cmd help en                              Show English help
+  gidd.tools.ensure.cmd help zh                              Show Chinese help
+  gidd.tools.ensure.cmd --help                               Show help; -h and no arguments also work
+
+Repository preparation:
+  gidd.tools.ensure.cmd --repository <absolute-root>         Ensure JS runtime, Git and gh; create the repository's gidd.link.cmd
+  gidd.tools.ensure.cmd --repository <absolute-root> --jsruntime=node  Select Node; --jsruntime=bun selects Bun
+  gidd.tools.ensure.cmd --repository <absolute-root> --force  Download and reinstall managed copies of the selected runtime, Git and gh
+
+Requirements and result:
+  --repository must name an existing local Git working-tree root with a GitHub remote; repository subdirectories are rejected.
+  Healthy tools and an unchanged link are reused. --check and --ensure are not accepted by this entry.
+  Creates <repository>/.agents/skills/gidd/gidd.link.cmd; call that entry from any directory to target its repository.
+  Preparation returns JSON. It does not create or modify config.toml, initialize Git, or log in to GitHub.
+
+Help language:
+  Explicit language > GIDD_LANG > LC_ALL > LC_MESSAGES > LANG > system UI language; other system languages use English.
+  Help needs no --repository or JS runtime and does not prepare tools or write files.
+
+Documentation:
+  references/repository-entry.md / references/bootstrap.md  Repository entry and shared tool preparation protocols
