@@ -19,7 +19,7 @@ Suites: all (default), doctor, setup, process, dev, config, github, entry.
 Each suite reports its result and duration; failures include PowerShell rerun commands.
 Use a focused suite while editing, then run .test before submitting changes.
 No arguments show help. Help language: argument, GIDD_DEV_LANG, locale, then English.
-.setup/.test-live can download tools; .auth requires the product tools --ensure launcher. .test never installs tools.
+.setup/.test-live can download tools; .auth requires the product gidd.pre.ensure --repo <repository-path> launcher. .test never installs tools.
 bun/node forward caller cwd, arguments and stdio; the invoked command controls its own effects.
 Portable and sys modes never fall back to each other; both use the internal compatibility method.
 Tools: ~/.agents/skills.tools/gidd/; download sources follow repository config.toml; version policy is internal.

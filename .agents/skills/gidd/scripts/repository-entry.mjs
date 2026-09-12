@@ -2,7 +2,6 @@ import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, re
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { spawn } from 'node:child_process';
 import { durableFile } from './install.mjs';
 import { plainPath } from './storage.mjs';
 import { remoteAddress } from './doctor.mjs';
@@ -69,12 +68,12 @@ export function renderRepositoryEntry(spec) {
   const encoded = Buffer.from(JSON.stringify(spec), 'utf8').toString('base64');
   // A single JS process decodes the location and enters the installed dispatcher.
   // Keeping batch source ASCII avoids CHCP, extra CMD expansion, and an extra shell.
-  const loader = "const p=require('node:path'),u=require('node:url'),d=process.env.GIDD_LINK_DIRECTORY,s=JSON.parse(Buffer.from(process.env.GIDD_LINK_SPEC,'base64').toString('utf8'));import(u.pathToFileURL(p.join(p.dirname(p.resolve(d,s.entry)),'scripts','repository-entry.mjs')).href).then(m=>m.runLink(d,s,process.argv.slice(1))).then(c=>process.exitCode=c).catch(()=>{console.error('GIDD linked skill is unavailable. Rerun gidd.tools.ensure.cmd --repository with the target directory.');console.log(JSON.stringify({schema:'gidd.repository-entry/v1',status:'error',reason:'linked_skill_unavailable'}));process.exitCode=2})";
+  const loader = "const p=require('node:path'),u=require('node:url'),d=process.env.GIDD_LINK_DIRECTORY,s=JSON.parse(Buffer.from(process.env.GIDD_LINK_SPEC,'base64').toString('utf8'));import(u.pathToFileURL(p.join(p.dirname(p.resolve(d,s.entry)),'scripts','repository-entry.mjs')).href).then(m=>m.runLink(d,s,process.argv.slice(1))).then(c=>process.exitCode=c).catch(()=>{console.error('GIDD linked skill is unavailable. Rerun gidd.pre.ensure.cmd --repo with the target directory.');console.log(JSON.stringify({schema:'gidd.repository-entry/v1',status:'error',reason:'linked_skill_unavailable'}));process.exitCode=2})";
   return ['@echo off', 'setlocal DisableDelayedExpansion', 'rem GIDD_LINK ' + encoded,
     'set "GIDD_LINK_DIRECTORY=%~dp0"', 'set "GIDD_LINK_SPEC=' + encoded + '"',
     'if not exist "%USERPROFILE%\\.agents\\skills.tools\\gidd\\js_exec.cmd" goto :missing',
     '"%USERPROFILE%\\.agents\\skills.tools\\gidd\\js_exec.cmd" -e "' + loader + '" -- %*',
-    ':missing', '>&2 echo GIDD runtime launcher missing. Rerun gidd.tools.ensure.cmd --repository with the target directory.',
+    ':missing', '>&2 echo GIDD runtime launcher missing. Rerun gidd.pre.ensure.cmd --repo with the target directory.',
     'echo {"schema":"gidd.repository-entry/v1","status":"error","reason":"bootstrap_required"}',
     'exit /b 2', ''].join('\r\n');
 }
@@ -152,20 +151,10 @@ export async function runLink(directory, spec, args) {
     if (!samePath(entry, sourceEntry)) throw new Error('repository_entry_target_mismatch');
     if (args.some(arg => arg === '--repository' || arg.startsWith('--repository='))) throw new Error('repository_override_forbidden');
     delete process.env.GIDD_LINK_DIRECTORY; delete process.env.GIDD_LINK_SPEC;
-    if ((args[0] || '').toLowerCase() === 'tools') {
-      requireRoot(repository);
-      const shell = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/WindowsPowerShell/v1.0/powershell.exe');
-      return await new Promise((resolveResult, reject) => {
-        const child = spawn(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
-          join(dirname(entry), 'scripts/windows/bootstrap.ps1'), ...args, '--repository', repository],
-        { stdio: 'inherit', windowsHide: true, env: { ...process.env, PSModulePath: join(dirname(shell), 'Modules') } });
-        child.on('error', reject); child.on('close', code => resolveResult(code ?? 2));
-      });
-    }
     const { main } = await import('./gidd.mjs');
     return await main([...args], { boundRepository: repository });
   } catch (error) {
-    console.error('GIDD repository entry failed. Check the target or rerun gidd.tools.ensure.cmd --repository with the target directory.');
+    console.error('GIDD repository entry failed. Check the target or rerun gidd.pre.ensure.cmd --repo with the target directory.');
     console.log(JSON.stringify({ schema, status: 'error', reason: reasonOf(error) }));
     return 2;
   }

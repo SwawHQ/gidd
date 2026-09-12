@@ -18,7 +18,7 @@ function setup(f) {
     if (remote) ok(run(git, ['-C', target, 'remote', 'add', 'origin', remote]));
     return target;
   };
-  const ensure = (target, extra = [], entry = join(skill, 'gidd.tools.ensure.cmd')) => invoke(entry, ['--repo', target, ...extra]);
+  const ensure = (target, extra = [], entry = join(skill, 'gidd.pre.ensure.cmd')) => invoke(entry, ['--repo', target, ...extra]);
   const link = target => join(target, '.agents/skills/gidd/gidd.link.cmd');
   return { git, skill, invoke, create, ensure, link };
 }
@@ -27,7 +27,7 @@ test('repository ensure help works without tools or a repository and honors lang
   const f = fixture();
   try {
     const skill = join(f.root, 'help skill'); copySkill(skill);
-    const entry = join(skill, 'gidd.tools.ensure.cmd');
+    const entry = join(skill, 'gidd.pre.ensure.cmd');
     const invoke = (args, env = {}) => run(join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe'),
       ['/d', '/s', '/c', `""${entry}" ${args.map(quote).join(' ')}"`],
       { windowsVerbatimArguments: true, cwd: f.root,
@@ -44,7 +44,7 @@ test('repository ensure help works without tools or a repository and honors lang
     ]) {
       const output = ok(invoke(args, env));
       assert.equal(output.stderr, '');
-      assert.equal(output.stdout.trim(), readFileSync(join(skill, `scripts/help/tools-ensure/${language}.txt`), 'utf8').trim());
+      assert.equal(output.stdout.trim(), readFileSync(join(skill, `scripts/help/pre-ensure/${language}.txt`), 'utf8').trim());
     }
     for (const [args, env, reason] of [
       [['help', 'fr'], {}, 'unsupported_help_language'],
@@ -56,8 +56,8 @@ test('repository ensure help works without tools or a repository and honors lang
       [['--repo', f.root, '--repository', f.root], {}, 'invalid_arguments'],
       [['--repository', f.root, '--repo', f.root], {}, 'invalid_arguments'],
       [['--repo', f.root, '--repo', f.root], {}, 'invalid_arguments'],
-      [['--repo', f.root, '--check', '--force'], {}, 'option_requires_ensure'],
-      [['--repo', f.root, '--check', '--jsruntime=node'], {}, 'option_requires_ensure'],
+      [['--repo', f.root, '--check', '--force'], {}, 'check_conflicts_with_preparation'],
+      [['--repo', f.root, '--check', '--jsruntime=node'], {}, 'check_conflicts_with_preparation'],
       [['--repo', f.root, '--check', '--ensure'], {}, 'invalid_arguments'],
     ]) {
       const result = invoke(args, env);
@@ -71,7 +71,7 @@ test('repository ensure help works without tools or a repository and honors lang
 test('repository check reports missing, healthy and damaged state without writes or downloads', { timeout: 120000 }, () => {
   const f = fixture();
   try {
-    const s = setup(f), target = s.create('check target'), entry = join(s.skill, 'gidd.tools.ensure.cmd');
+    const s = setup(f), target = s.create('check target'), entry = join(s.skill, 'gidd.pre.ensure.cmd');
     const inspect = (repository = target, env = {}) => {
       const before = snapshot(f.root);
       const result = s.invoke(entry, ['--repo', repository, '--check'], { env });
@@ -132,7 +132,7 @@ test('repository check reports missing, healthy and damaged state without writes
 test('repository ensure rejects unsuitable targets and keeps configuration untouched', { timeout: 120000 }, () => {
   const f = fixture();
   try {
-    const s = setup(f), entry = join(s.skill, 'gidd.tools.ensure.cmd');
+    const s = setup(f), entry = join(s.skill, 'gidd.pre.ensure.cmd');
     const ordinary = join(f.root, 'ordinary'); mkdirSync(ordinary);
     const before = snapshot(f.root);
     for (const args of [['--repository'], ['--repository', '.'], ['--repository', ordinary],
@@ -172,7 +172,7 @@ test('repository links preserve target, arguments, idempotence and unknown files
     assert.equal(existsSync(join(target, '.agents/skills/gidd/config.toml')), false);
     assert.ok([...readFileSync(link)].every(byte => byte < 128));
     const tree = snapshot(f.root), modified = statSync(link).mtimeMs;
-    const second = json(ok(s.invoke(join(s.skill, 'gidd.tools.ensure.cmd'), ['--repository', target])));
+    const second = json(ok(s.invoke(join(s.skill, 'gidd.pre.ensure.cmd'), ['--repository', target])));
     assert.equal(second.entry.action, 'reused'); assert.equal(second.launcher_action, 'reused');
     assert.ok(second.tools.every(tool => tool.action === 'reused' && tool.binding_action === 'reused'));
     assert.deepEqual(snapshot(f.root), tree); assert.equal(statSync(link).mtimeMs, modified);
@@ -195,7 +195,11 @@ test('repository links preserve target, arguments, idempotence and unknown files
     const set = json(ok(s.invoke(link, ['config', 'set', 'tools.node.source', source])));
     assert.equal(set.value, source);
     assert.ok(readFileSync(join(target, '.agents/skills/gidd/config.toml'), 'utf8').includes(source));
-    const checked = json(ok(s.invoke(link, ['tools', '--check']))); assert.equal(checked.read_only, true);
+    const beforeRemoved = snapshot(f.root);
+    for (const args of [['tools'], ['tools','--check'], ['tools','--ensure']]) {
+      assert.equal(json(s.invoke(link, args)).reason, 'unknown_command');
+    }
+    assert.deepEqual(snapshot(f.root), beforeRemoved);
     const fresh = s.create('new repository'); const shared = snapshot(toolsRoot(f.root));
     assert.equal(json(ok(s.ensure(fresh))).entry.action, 'created'); assert.deepEqual(snapshot(toolsRoot(f.root)), shared);
     const saved = readFileSync(link, 'utf8'); write(link, '@echo off\r\necho user owned\r\n');
@@ -225,7 +229,7 @@ test('repository-relative links survive moves and accept Git worktrees', { timeo
     const s = setup(f);
     for (const layout of ['.agents', '.claude']) {
       const target = s.create('local-' + layout), skill = join(target, layout, 'skills/gidd'); copySkill(skill);
-      const result = json(ok(s.ensure(target, [], join(skill, 'gidd.tools.ensure.cmd'))));
+      const result = json(ok(s.ensure(target, [], join(skill, 'gidd.pre.ensure.cmd'))));
       assert.equal(result.entry.location, 'relative');
       assert.match(ok(s.invoke(s.link(target), ['help', 'en'])).stdout, /Help and diagnosis/);
       const moved = join(f.root, 'moved-' + layout); renameSync(target, moved);

@@ -141,7 +141,7 @@ test('doctor probes only published tools and reports minimal repair hints withou
       ['gh version 2.97.0','version_below_minimum'],['gh version 2.99.0','tool_binding_version_changed'],['hang','process_timeout']]) {
       write(gh+'.mode',mode);
       const report=invoke();
-      assert.equal(byId(report,'gh').reason,reason); assert.match(byId(report,'gh').hint,/tools --ensure/);
+      assert.equal(byId(report,'gh').reason,reason); assert.match(byId(report,'gh').hint,/gidd\.pre\.ensure/);
       assert.equal(byId(report,'git').status,'ready');
     }
     rmSync(gh);

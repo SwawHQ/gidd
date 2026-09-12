@@ -17,7 +17,7 @@ gidd.cmd doctor
 gidd.cmd auth
 ```
 
-`config show/set` 使用可用 Node/Bun 执行共用 `scripts/config.mjs`；入口直接通过共享 js_exec.cmd 启动，缺少启动器先执行 tools --ensure。`show` 只读；`set <字段> <值>` 支持下表全部可编辑字段，拒绝未知字段和凭据字段，`schema_version` 由程序管理。仍可手工编辑 TOML。首次 set 创建完整模板，明确写入 hostname=github.com、remote=origin；账号由用户指定。已有配置不自动补齐其他缺项，Agent 按提示逐项设置。
+`config show/set` 使用可用 Node/Bun 执行共用 `scripts/config.mjs`；入口直接通过共享 js_exec.cmd 启动，缺少启动器先执行 gidd.pre.ensure --repo <repository-path>。`show` 只读；`set <字段> <值>` 支持下表全部可编辑字段，拒绝未知字段和凭据字段，`schema_version` 由程序管理。仍可手工编辑 TOML。首次 set 创建完整模板，明确写入 hostname=github.com、remote=origin；账号由用户指定。已有配置不自动补齐其他缺项，Agent 按提示逐项设置。
 
 | 可编辑字段 | 值与用途 |
 | --- | --- |
@@ -28,7 +28,7 @@ gidd.cmd auth
 
 写入前直接使用 scripts/storage.mjs 校验完整配置，不回调 PowerShell；校验失败保留原文件。配置编辑不创建共享工具目录。内联表只替换指定字段的字符串，保留空格和行尾注释；原本省略整个工具行时，使用模板来源，生成合法的完整内联表。
 
-旧配置中的 [bootstrap]、tools.bun.version、tools.node.version、tools.gh.version 报 config_retired_field，不静默忽略。升级时手工移除这些已退役字段，保留其他内容和注释，再运行 tools --ensure。修改下载来源只影响后续显式安装，不改动共享启动器。
+旧配置中的 [bootstrap]、tools.bun.version、tools.node.version、tools.gh.version 报 config_retired_field，不静默忽略。升级时手工移除这些已退役字段，保留其他内容和注释，再运行 gidd.pre.ensure --repo <repository-path>。修改下载来源只影响后续显式安装，不改动共享启动器。
 
 ```toml
 [github]
@@ -62,7 +62,7 @@ gh = { source = "https://github.com/cli/cli/releases" }
 
 Node LTS、Bun/gh/MinGit 稳定版均为内部下载策略，仓库不指定版本。只在需要下载安装时联网解析：Node 从官方 index.json 选择具有 Windows x64 ZIP 的最高匹配版本；Bun、gh 从官方 GitHub latest release 解析稳定 tag，拒绝 draft、prerelease 和非正式版本。API 不依赖已安装的 gh 或 GitHub 登录，限流或网络失败会报错，不静默改装其他版本。
 
-tools --ensure 优先复用通过兼容检查的运行时；gh 须满足自身最低版本要求，`lts/latest` 不要求每次检查时都更新到最新，也不联网证明复用的 Node 属于 LTS。所有工具都没有仓库版本约束，运行时由 tools --ensure 使用独立兼容方法。技能只需 Node/Bun 之一，tools --ensure 同时准备 Git 和 gh。修改 source 只影响未来下载，不改变已复用工具的来源。
+gidd.pre.ensure --repo <repository-path> 优先复用通过兼容检查的运行时；gh 须满足自身最低版本要求，`lts/latest` 不要求每次检查时都更新到最新，也不联网证明复用的 Node 属于 LTS。所有工具都没有仓库版本约束，运行时由 gidd.pre.ensure --repo <repository-path> 使用独立兼容方法。技能只需 Node/Bun 之一，gidd.pre.ensure --repo <repository-path> 同时准备 Git 和 gh。修改 source 只影响未来下载，不改变已复用工具的来源。
 
 `source` 是 HTTPS 下载根，不是安装脚本或完整 ZIP URL。模板完整展示官方默认值。自定义镜像必须保留对应上游的目录布局：
 
@@ -74,7 +74,7 @@ tools --ensure 优先复用通过兼容检查的运行时；gh 须满足自身�
 
 为避免配置输出暴露凭据，source 禁止用户名、密码、query 和 fragment；不支持带 token 的 URL。下载仍有大小与超时限制。无法取得校验信息时不安装。
 
-tools --ensure 可修复归属明确且无其他合格候选的运行时、Git 和 gh，先验证新副本，保留旧目录到启动器或绑定发布成功。--force 强制重装选定运行时、Git 和 gh，协议见 bootstrap.md。未知文件或安装记录保留并报错；后台自动升级与任意版本切换未实现。
+gidd.pre.ensure --repo <repository-path> 可修复归属明确且无其他合格候选的运行时、Git 和 gh，先验证新副本，保留旧目录到启动器或绑定发布成功。--force 强制重装选定运行时、Git 和 gh，协议见 bootstrap.md。未知文件或安装记录保留并报错；后台自动升级与任意版本切换未实现。
 
 安装只支持按配置联网下载或复用已有工具，不接受本地安装包目录。已安装且满足要求的工具直接复用，不联网。内置清单保留已验证确切版本的校验信息，不决定默认下载版本。
 
@@ -84,7 +84,7 @@ tools --ensure 可修复归属明确且无其他合格候选的运行时、Git �
 
 `gidd.cmd` 与 `dev.cmd` 使用同一位置；仓库移动、当前工作目录、是否已有配置及技能安装位置均不改变它。配置只决定 Bun/Node/gh 下载来源，不提供目录字段或路径覆盖参数。各工具占用固定 bun/、node/、gh/、git/ 子目录，所有仓库共用 js_exec.cmd 和 tool-bindings.json。Git 使用官方来源，不提供 tools.git 字段。
 
-stage0 路径解析由 `scripts/windows/lib/_configuration.ps1` 完成，不依赖 Bun/Node；JS 使用 scripts/storage.mjs 读取同一规则。只读解析不建目录；tools --ensure 即使复用 PATH 也会建立共享目录来发布 js_exec.cmd、tool-bindings.json 和 INSTALLATION.md。配置错误时 stage0 停止并报告启动失败；直接调用 JS doctor 时仍报告可检查的独立项目。
+stage0 路径解析由 `scripts/windows/lib/_configuration.ps1` 完成，不依赖 Bun/Node；JS 使用 scripts/storage.mjs 读取同一规则。只读解析不建目录；gidd.pre.ensure --repo <repository-path> 即使复用 PATH 也会建立共享目录来发布 js_exec.cmd、tool-bindings.json 和 INSTALLATION.md。配置错误时 stage0 停止并报告启动失败；直接调用 JS doctor 时仍报告可检查的独立项目。
 
 ## 读取与校验
 

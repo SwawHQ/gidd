@@ -91,22 +91,20 @@ export async function prepareTools(storage,{checkOnly=false,force=false,names=['
 }
 
 async function main(args) {
-  let repository,checkOnly=false,force=false,runtimeReport=false,repositoryEntry=false; const seen=new Set();
+  let repository,checkOnly=false,force=false; const seen=new Set();
   for(let i=0;i<args.length;i++) {
     const arg=args[i]; if(seen.has(arg))throw new Error('invalid_arguments');seen.add(arg);
     if(arg==='--check')checkOnly=true;
     else if(arg==='--force')force=true;
-    else if(arg==='--runtime-report')runtimeReport=true;
-    else if(arg==='--repository-entry')repositoryEntry=true;
     else if(arg==='--repository' && args[i+1])repository=args[++i];
     else throw new Error('invalid_arguments');
   }
-  const runtime=runtimeReport?JSON.parse(readFileSync(0,'utf8').replace(/^\uFEFF/,'')):null;
+  if (!repository) throw new Error('repository_required');
+  const runtime=JSON.parse(readFileSync(0,'utf8').replace(/^\uFEFF/,''));
   let tools,entry,repositoryCheck;
   try {
     const storage=resolveStorage(repository);
-    if (repositoryEntry && checkOnly) {
-      if (!repository) throw new Error('repository_required');
+    if (checkOnly) {
       tools=await prepareTools(storage,{checkOnly,force});
       const git=tools.checks.find(c=>c.id==='tool.git' && c.status==='ready');
       try {
@@ -118,8 +116,8 @@ async function main(args) {
       tools.checks.push(check('repository',repositoryCheck.status,repositoryCheck.reason || 'github_remote_verified',repositoryCheck),
         check('repository.entry',entry.status,entry.reason,entry));
       tools.status=tools.checks.every(c=>c.status==='ready')?'ready':'needs_bootstrap';
-    } else if (repositoryEntry) {
-      if (!repository || !runtime || runtime.status!=='ready') throw new Error('invalid_arguments');
+    } else {
+      if (!runtime || runtime.status!=='ready') throw new Error('invalid_arguments');
       inspectEntryDestination(repository);
       tools=await prepareTools(storage,{force,names:['git']});
       if (tools.status==='ready') {
@@ -133,19 +131,16 @@ async function main(args) {
           entry=publishRepositoryEntry(repository);
         }
       }
-    } else tools=await prepareTools(storage,{checkOnly,force});
+    }
   } catch(error) {
-    const failure=check(repositoryEntry?'repository.entry':'tools.storage','invalid',reasonOf(error));
+    const failure=check('repository.entry','invalid',reasonOf(error));
     tools={...tools,status:'needs_bootstrap',tools:tools?.tools || [],checks:[...(tools?.checks || []),failure]};
   }
-  const report=runtime?{...runtime,status:runtime.status==='ready' && tools.status==='ready'?'ready':'needs_tools',
-    tools:tools.tools,tool_checks:tools.checks,binding_path:tools.binding_path}:tools;
-  if (repositoryEntry) {
-    report.repository=repository;
-    report.entry=entry || (checkOnly?{status:'not_checked',reason:'tools_unavailable'}:{status:'not_published'});
-    if (repositoryCheck || checkOnly) report.repository_check=repositoryCheck || {status:'not_checked',reason:'tools_unavailable'};
-    if (entry && !checkOnly) report.message=`已为目标仓库准备专用入口 ${entry.path}。可在任意工作目录调用，仓库操作固定针对 ${repository}；共享工具和认证不属于单个仓库。`;
-  }
+  const report={...runtime,status:runtime.status==='ready' && tools.status==='ready'?'ready':'needs_tools',
+    tools:tools.tools,tool_checks:tools.checks,binding_path:tools.binding_path,repository,
+    entry:entry || (checkOnly?{status:'not_checked',reason:'tools_unavailable'}:{status:'not_published'})};
+  if (repositoryCheck || checkOnly) report.repository_check=repositoryCheck || {status:'not_checked',reason:'tools_unavailable'};
+  if (entry && !checkOnly) report.message=`已为目标仓库准备专用入口 ${entry.path}。可在任意工作目录调用，仓库操作固定针对 ${repository}；共享工具和认证不属于单个仓库。`;
   console.log(JSON.stringify(report));return report.status==='ready'?0:1;
 }
 if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)) {

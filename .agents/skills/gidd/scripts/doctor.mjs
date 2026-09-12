@@ -51,7 +51,7 @@ async function inspectTools(execute) {
           version !== tool.version ? 'tool_binding_version_changed' : null;
     }
     checks.push(failure ? { ...check(name, !tool && (!reason || reason === 'tool_bindings_missing') ? 'missing' : 'invalid', failure),
-      hint: 'Run gidd tools --ensure' } : check(name, 'ready', undefined, { path: tool.path, version, gidd_managed: tool.source === 'managed' }));
+      hint: 'Run gidd.pre.ensure.cmd --repo <repository-path>' } : check(name, 'ready', undefined, { path: tool.path, version, gidd_managed: tool.source === 'managed' }));
   }
   return { checks, bindings: bindings || {} };
 }

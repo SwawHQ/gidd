@@ -14,12 +14,5 @@ Skill settings:
 GitHub authorization:
   gidd auth                              Request device authorization using config and wait for confirmation; gh may save credentials
 
-External tools:
-  gidd.tools.ensure --repo <repository-path>  Prepare shared tools and create gidd.link.cmd after local Git/GitHub remote checks
-  gidd tools --check                     Read-only check of Git, gh, JS runtime (Bun or Node) and shared bindings
-  gidd tools --ensure                    Ensure JS runtime, Git and gh are available and repair bindings; download portable tools if missing
-  gidd tools --ensure --jsruntime=node   As above, but select Node; reuse the current runtime if unspecified
-  gidd tools --ensure --force            Download portable copies of the selected runtime, Git and gh again; reinstall and rebuild bindings
-
 Documentation:
   SKILL.md / references/                 Full usage, configuration fields, result protocols and current feature scope
