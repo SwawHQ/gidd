@@ -6,7 +6,7 @@ import { acquireInstallLock, installTool, removeStage, resolveRelease, writeInst
 import { compareVersions, hashFile, inspectToolTree, managedToolValid, resolveStorage } from './storage.mjs';
 import { findTool, check, minimums } from './tools.mjs';
 import { bindingPath, publishBinding, readBindings } from './bindings.mjs';
-import { checkRepositoryLink, inspectEntryDestination, inspectRepositoryEntry, publishRepositoryEntry } from './repository-entry.mjs';
+import { assertInstallationRepository, checkRepositoryLink, inspectEntryDestination, inspectRepositoryEntry, publishRepositoryEntry } from './repository-entry.mjs';
 
 const reasonOf = error => /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : 'tool_preparation_failed';
 export function bindingMatches(root,name,candidate) {
@@ -103,6 +103,7 @@ async function main(args) {
   const runtime=JSON.parse(readFileSync(0,'utf8').replace(/^\uFEFF/,''));
   let tools,entry,repositoryCheck;
   try {
+    assertInstallationRepository(repository);
     const storage=resolveStorage(repository);
     if (checkOnly) {
       tools=await prepareTools(storage,{checkOnly,force});

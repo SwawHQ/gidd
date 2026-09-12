@@ -8,6 +8,8 @@ license: MIT
 
 Resolve the target repository from the user request. The skill can be installed inside or outside it, so the actual skill's preparation entry always requires an absolute Git working-tree root via --repo (--repository is also accepted). A suitable GitHub remote is required, but no commit or login. User-level installation alone does not select or enable a repository.
 
+A repository installation at .agents/skills/gidd or .claude/skills/gidd can only prepare its own worktree, even when another clone or worktree shares the same remote. Shared installations outside Git trees can prepare other targets. A Git-contained installation with an unrecognized layout fails with installation_scope_unknown; do not treat a Git-managed skill collection or plugin source as a shared installation automatically. See the installation boundaries in [references/repository-entry.md](references/repository-entry.md).
+
 ```powershell
 & "<skill-directory>\gidd.pre.ensure.cmd" help en
 & "<skill-directory>\gidd.pre.ensure.cmd" --repo "<absolute-worktree-root>" --check
