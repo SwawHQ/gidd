@@ -2,6 +2,27 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
+
+function Assert-GiddInstallationRepository {
+    param([string]$Repository)
+    $skill = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..')).TrimEnd('\')
+    Assert-GiddPlainPath $skill
+    $ancestor = $skill
+    while ($ancestor) {
+        if (Test-Path -LiteralPath (Join-Path $ancestor '.git')) {
+            $knownLayout = $false
+            foreach ($layout in @('.agents','.claude')) {
+                $expected = [IO.Path]::GetFullPath((Join-Path $ancestor "$layout/skills/gidd"))
+                if ($skill -eq $expected) { $knownLayout = $true; break }
+            }
+            if (-not $knownLayout) { throw 'installation_scope_unknown' }
+            if ($ancestor.TrimEnd('\') -ne $Repository.TrimEnd('\')) { throw 'installation_repository_mismatch' }
+            return
+        }
+        $ancestor = [IO.Path]::GetDirectoryName($ancestor)
+    }
+}
+
 try {
     $inputArgs = @($args)
     $options = @{}; $repository = $null; $runtime = ''
@@ -40,6 +61,7 @@ try {
     if (-not [IO.Directory]::Exists($root)) { throw 'repository_directory_missing' }
     Assert-GiddPlainPath $root
     if (-not (Test-Path -LiteralPath (Join-Path $root '.git'))) { throw 'not_git_repository_root' }
+    Assert-GiddInstallationRepository $root
     $link = Join-Path $root '.agents/skills/gidd/gidd.link.cmd'
     if (-not $checkOnly) {
         Assert-GiddPlainPath $link

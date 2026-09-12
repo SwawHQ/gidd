@@ -2,6 +2,8 @@
 
 新增仓库专用准备入口：`.\.agents\skills\gidd\gidd.pre.ensure.cmd --repo <目标仓库绝对路径>`。它在工作树和 GitHub remote 本地验证通过后生成 `<目标仓库>/.agents/skills/gidd/gidd.link.cmd`，适用于项目内、用户级和插件目录中的真实技能。链接携带目标，支持从其他 cwd 调用；不生成配置或启用记录。复用、失败保留、迁移及结果协议见 [仓库专用入口](.agents/skills/gidd/references/repository-entry.md)。`dev.cmd .test entry` 同时运行普通入口和仓库链接测试，Node/Bun 使用同一套用例。
 
+仓库内标准 .agents/.claude 技能安装只能为所属工作树执行准备，--repo 仍必填；跨仓库测试应复制共享技能到临时 Git 树外。安装范围不明的 Git 内目录会被拒绝，不通过修改 remote 绕过；独立克隆及 worktree 分别归属各自本地根目录。
+
 产品 stage0 的已确认边界与验收范围见 [运行前准备协议](.agents/skills/gidd/references/bootstrap.md)。Issue #51 将准备统一到 gidd.pre.ensure.cmd，移除 gidd tools 和旧入口，不保留兼容；dev.cmd 保留 managed/sys 模式和离线测试隔离。
 
 `dev.cmd` 管理 GIDD 源码仓库自身的开发环境。已验证目标为 Windows x64 和 Windows PowerShell 5.1；它不代表在这个仓库启用了 GIDD。

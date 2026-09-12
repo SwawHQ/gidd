@@ -7,7 +7,7 @@ GIDD 运行前准备 (Windows x64 / PowerShell 5.1)
   gidd.pre.ensure --repo <仓库路径> --force           #重新下载并设置 JS运行时、Git、gh 的便携版
   gidd.pre.ensure --repo <仓库路径> --check           #检查可用情况（只读）
 
-  #只支持 Git 仓库；本工具未必只跟随仓库安装，所以 --repo 为必填
+  #只支持 Git 仓库，--repo 为必填；仓库内安装时只能指定所属仓库
   #gidd.link.cmd 会放置在 <目标仓库>/.agents/skills/gidd/
   #有可用的 JS运行时（bun 或 node）、git、gh 会优先使用，缺少的会自动下载官方的包，并设置为便携版
   #便携版工具会放置在 ~/.agents/skills.tools/gidd/

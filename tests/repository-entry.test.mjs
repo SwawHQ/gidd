@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { realpathSync, renameSync, statSync } from 'node:fs';
-import { publishRepositoryEntry } from '../.agents/skills/gidd/scripts/repository-entry.mjs';
+import { assertInstallationRepository, checkRepositoryLink, publishRepositoryEntry } from '../.agents/skills/gidd/scripts/repository-entry.mjs';
 import { assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, readFileSync, rmSync, run, snapshot, stub, toolsRoot, write } from './support/helpers.mjs';
 
 const quote = value => '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';
@@ -65,6 +65,65 @@ test('repository ensure help works without tools or a repository and honors lang
     }
     assert.equal(existsSync(toolsRoot(f.root)), false);
     assert.deepEqual(snapshot(f.root), before, 'Help and invalid arguments must not prepare tools or write files');
+  } finally { f.dispose(); }
+});
+
+test('repository installations reject other targets before preparation or JS publication', { timeout: 120000 }, () => {
+  const f = fixture();
+  try {
+    const s = setup(f), target = s.create('owner-other');
+    publishRepositoryEntry(target, join(s.skill, 'gidd.cmd'));
+    // All fixtures share the same remote: ownership belongs to the local worktree.
+    for (const layout of ['.agents', '.claude']) {
+      const owner = s.create('owner-' + layout), skill = join(owner, layout, 'skills/gidd'); copySkill(skill);
+      const entry = join(skill, 'gidd.pre.ensure.cmd'), source = join(skill, 'gidd.cmd');
+      const before = snapshot(f.root);
+      for (const args of [[], ['--check'], ['--force']]) {
+        const result = s.ensure(target, args, entry);
+        assert.equal(result.status, 2, result.stdout + result.stderr);
+        assert.equal(json(result).reason, 'installation_repository_mismatch');
+        assert.doesNotMatch(result.stderr, /download/i);
+        assert.deepEqual(snapshot(f.root), before);
+      }
+      assert.equal(json(s.invoke(entry, ['--repository', target])).reason, 'installation_repository_mismatch');
+      assert.throws(() => publishRepositoryEntry(target, source), /installation_repository_mismatch/);
+      assert.throws(() => checkRepositoryLink(target, source), /installation_repository_mismatch/);
+      assert.deepEqual(snapshot(f.root), before, 'Rejected sources must preserve existing links and tools');
+      assert.equal(existsSync(toolsRoot(f.root)), false);
+      assert.equal(assertInstallationRepository(owner, source), realpathSync.native(owner));
+      const normalized = owner.toUpperCase() + '\\.';
+      const check = s.ensure(normalized, ['--check'], entry);
+      assert.equal(check.status, 1, check.stdout + check.stderr);
+      assert.equal(json(check).entry.reason, 'repository_entry_missing');
+      assert.deepEqual(snapshot(f.root), before);
+    }
+  } finally { f.dispose(); }
+});
+
+test('ambiguous Git-contained installations fail closed while help remains available', { timeout: 120000 }, () => {
+  const f = fixture();
+  try {
+    const s = setup(f), owner = s.create('collection'), target = s.create('target');
+    for (const location of ['nested/.agents/skills/gidd', 'plugins/gidd', '.agents/skills/gidd']) {
+      const skill = join(owner, location); copySkill(skill);
+      // A Git-managed skill collection must not be mistaken for its parent repository.
+      if (location === '.agents/skills/gidd') ok(run(s.git, ['-C', join(owner, '.agents'), 'init', '--quiet']));
+      const entry = join(skill, 'gidd.pre.ensure.cmd'), source = join(skill, 'gidd.cmd');
+      const before = snapshot(f.root);
+      for (const repo of [owner, target]) {
+        for (const extra of [[], ['--check']]) {
+          const result = s.ensure(repo, extra, entry);
+          assert.equal(result.status, 2, result.stdout + result.stderr);
+          assert.equal(json(result).reason, 'installation_scope_unknown');
+        }
+        assert.throws(() => publishRepositoryEntry(repo, source), /installation_scope_unknown/);
+        assert.throws(() => checkRepositoryLink(repo, source), /installation_scope_unknown/);
+      }
+      assert.match(ok(s.invoke(entry, ['help', 'en'], { env: { PATH: '' } })).stdout, /GIDD prerequisites preparation/);
+      assert.deepEqual(snapshot(f.root), before);
+    }
+    assert.equal(assertInstallationRepository(target, join(s.skill, 'gidd.cmd')), null);
+    assert.equal(publishRepositoryEntry(target, join(s.skill, 'gidd.cmd')).location, 'absolute');
   } finally { f.dispose(); }
 });
 
@@ -241,7 +300,11 @@ test('repository-relative links survive moves and accept Git worktrees', { timeo
     ok(run(s.git, ['-C', parent, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '--quiet', '-m', 'fixture']));
     const worktree = join(f.root, 'linked worktree');
     ok(run(s.git, ['-C', parent, 'worktree', 'add', '--quiet', '--detach', worktree]));
-    assert.equal(realpathSync.native(json(ok(s.ensure(worktree))).entry.target), realpathSync.native(worktree));
+    const worktreeSkill = join(worktree, '.agents/skills/gidd'); copySkill(worktreeSkill);
+    const worktreeEntry = join(worktreeSkill, 'gidd.pre.ensure.cmd');
+    assert.equal(json(s.ensure(parent, ['--check'], worktreeEntry)).reason, 'installation_repository_mismatch');
+    assert.throws(() => publishRepositoryEntry(parent, join(worktreeSkill, 'gidd.cmd')), /installation_repository_mismatch/);
+    assert.equal(realpathSync.native(json(ok(s.ensure(worktree, [], worktreeEntry))).entry.target), realpathSync.native(worktree));
     const report = json(s.invoke(s.link(worktree), ['doctor', '--offline'])); assert.equal(report.repository, worktree);
     const nested = join(parent, 'nested'); mkdirSync(nested);
     assert.equal(json(s.ensure(nested)).reason, 'not_git_repository_root');

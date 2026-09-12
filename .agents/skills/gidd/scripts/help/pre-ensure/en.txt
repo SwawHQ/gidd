@@ -7,7 +7,7 @@ GIDD prerequisites preparation (Windows x64 / PowerShell 5.1)
   gidd.pre.ensure --repo <repository-path> --force           #Download and set up portable copies of the JS runtime, Git and gh again
   gidd.pre.ensure --repo <repository-path> --check           #Check availability (read-only)
 
-  #Only Git repositories are supported; this tool may be installed outside the repository, so --repo is required
+  #Only Git repositories are supported; --repo is required and repository installations can only target their own repository
   #gidd.link.cmd is placed in <repository>/.agents/skills/gidd/
   #Reuse available JS runtimes (Bun or Node), Git and gh; download official packages and set up portable copies when tools are missing
   #Portable tools are placed in ~/.agents/skills.tools/gidd/

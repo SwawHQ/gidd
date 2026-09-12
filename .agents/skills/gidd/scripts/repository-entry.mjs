@@ -1,5 +1,5 @@
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { durableFile } from './install.mjs';
@@ -20,6 +20,26 @@ function requireRoot(repository) {
   plainPath(repository);
   if (!existsSync(repository) || !lstatSync(repository).isDirectory()) throw new Error('repository_directory_missing');
   if (!existsSync(join(repository, '.git'))) throw new Error('not_git_repository_root');
+}
+
+// A Git ancestor alone does not establish repository installation: shared skill
+// collections and plugin sources can also be version controlled.
+export function assertInstallationRepository(repository, entry = sourceEntry) {
+  requireRoot(repository);
+  plainPath(entry);
+  if (!lstatSync(entry).isFile()) throw new Error('linked_skill_unavailable');
+  const skill = dirname(realpathSync.native(entry));
+  for (let root = skill; ; root = dirname(root)) {
+    if (existsSync(join(root, '.git'))) {
+      const layout = relative(root, skill).replaceAll('\\', '/');
+      if (!['.agents/skills/gidd', '.claude/skills/gidd'].includes(process.platform === 'win32' ? layout.toLowerCase() : layout)) {
+        throw new Error('installation_scope_unknown');
+      }
+      if (!samePath(root, repository)) throw new Error('installation_repository_mismatch');
+      return root;
+    }
+    if (dirname(root) === root) return null;
+  }
 }
 
 // Only Git can distinguish a valid worktree marker from a broken or redirected one.
@@ -98,11 +118,8 @@ export function inspectEntryDestination(repository) {
 }
 
 function desiredEntry(repository, entry) {
-  requireRoot(repository);
-  plainPath(entry);
-  if (!lstatSync(entry).isFile()) throw new Error('linked_skill_unavailable');
-  const path = entryPath(repository), fromRoot = relative(repository, entry);
-  const internal = !isAbsolute(fromRoot) && fromRoot !== '..' && !fromRoot.startsWith('..' + sep);
+  const internal = assertInstallationRepository(repository, entry) !== null;
+  const path = entryPath(repository);
   const spec = { schema, entry: internal ? relative(dirname(path), entry) : resolve(entry) };
   const text = renderRepositoryEntry(spec);
   return { text, path, target: repository, location: internal ? 'relative' : 'absolute' };
