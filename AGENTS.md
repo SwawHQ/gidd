@@ -34,7 +34,7 @@
 
 ## Maintainer Notes
 
-`gidd.tools.ensure.cmd` 帮助由 Issue #47 跟踪：支持 `help zh|en`、`--help`、`-h` 和不带参数，语言选择沿用 `gidd help`。原生 Shell 在参数要求及工具准备之前读取 `scripts/help/tools-ensure/` 文本，帮助不需要仓库或 JS 运行时；执行准备时仍必须显式指定 `--repository`。
+`gidd.tools.ensure.cmd` 帮助由 Issue #47 跟踪：支持 `help zh|en`、`--help`、`-h` 和不带参数，语言选择沿用 `gidd help`。原生 Shell 在参数要求及工具准备之前读取 `scripts/help/tools-ensure/` 文本，帮助不需要仓库或 JS 运行时。Issue #49 增加 `--repo`（兼容 `--repository`，两者不能重复或混用），帮助仅展示短名称；除帮助外必须提供目标。`--check` 只读检查完整工具状态、Git/GitHub remote 和仓库入口，不下载、修复或发布，不得与 `--force`、`--jsruntime` 搭配。各项独立报告；缺少运行时或 Git 时标记受影响的检查为 not_checked。协议见 `references/repository-entry.md`。
 
 仓库专用入口由 Issue #45 跟踪：`gidd.tools.ensure.cmd --repository <绝对工作树根>` 必须显式指定目标，原生 Shell 先检查目录和 .git 标记，复用共享运行时后由 JS 准备 Git、验证工作树根和 GitHub remote，再准备 gh 并原子创建 `.agents/skills/gidd/gidd.link.cmd`。生成逻辑位于 `scripts/repository-entry.mjs`；项目内真实入口使用相对位置，外部入口使用绝对位置，普通调用经共享启动器进入同一 JS 分发器，不切换代码页。链接从自身位置固定目标并拒绝覆盖，不创建配置、初始化 Git 或登录。仅有本地 remote 地址验证，不证明远端存在、权限或 GIDD 启用；无首次提交允许建立入口。健康工具及相同入口复用，未知链接文件保留。链接及其锁/临时文件排除发布和提交；配置初始化与 doctor 评级另行实现。详细协议见 `.agents/skills/gidd/references/repository-entry.md`；`.test entry` 包含两份入口测试文件。
 

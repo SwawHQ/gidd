@@ -1,13 +1,13 @@
 GIDD 仓库工具准备 (Windows x64 / PowerShell 5.1)
 
-  gidd.tools.ensure help en             #Show English help
-  gidd.tools.ensure help zh             #显示中文帮助
-  gidd.tools.ensure --repository <仓库绝对路径>   #确保 JS-runtime、Git、gh 可用，并创建仓库专用的 gidd.link.cmd
-  gidd.tools.ensure --repository <仓库绝对路径> --jsruntime=node   #同上，但指定 JS-runtime 为 Node；未指定时优先复用已有运行时，无可用运行时才下载 Bun
-  gidd.tools.ensure --repository <仓库绝对路径> --force            #重新下载并设置所选 JS-runtime、Git、gh 的便携版
+  gidd.tools.ensure help en            #Show English help
+  gidd.tools.ensure help zh            #显示中文帮助
+  gidd.tools.ensure --repo <仓库路径>  #确保 JS运行时、Git、gh 可用，并创建仓库专用的 gidd.link.cmd
+  gidd.tools.ensure --repo <仓库路径> --jsruntime=node  #同上，但指定 JS运行时为 node（否则 bun 优先）
+  gidd.tools.ensure --repo <仓库路径> --force           #重新下载并设置 JS运行时、Git、gh 的便携版
+  gidd.tools.ensure --repo <仓库路径> --check           #检查可用情况（只读）
 
-  #仓库路径必须是 Git 工作树根目录；检查本地 GitHub remote 地址，不联网验证远端存在或权限
+  #只支持 Git 仓库
   #gidd.link.cmd 会放置在 <目标仓库>/.agents/skills/gidd/
-  #优先复用已有可用工具（包括受管工具和系统工具），缺少的会自动下载官方的包，并设置为便携版
+  #有可用的 JS运行时（bun 或 node）、git、gh 会优先使用，缺少的会自动下载官方的包，并设置为便携版
   #便携版工具会放置在 ~/.agents/skills.tools/gidd/
-  #重复执行会重新检查，复用健康工具和相同入口；发现缺失或损坏时尝试修复，结果以 JSON 输出
