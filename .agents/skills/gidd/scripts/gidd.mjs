@@ -7,7 +7,7 @@ import { authorize } from './auth.mjs';
 import { resolveStorage, repositoryRoot } from './storage.mjs';
 import { boundTools, boundExecutor } from './bindings.mjs';
 
-export async function main(args) {
+export async function main(args, { boundRepository } = {}) {
   let command = (args.shift() || 'help').toLowerCase();
   const schemas = { config: 'gidd.config/v1', doctor: 'gidd.doctor/v1', auth: 'gidd.auth/v1' };
   let schema = 'gidd.cli/v1';
@@ -36,7 +36,11 @@ export async function main(args) {
       args = args.filter(arg => arg !== '--offline');
     }
     let repository;
-    if (args.length) {
+    if (boundRepository) {
+      if (args.length) throw new Error('invalid_arguments');
+      repository = boundRepository;
+      if (!existsSync(resolve(repository, '.git'))) throw new Error('not_git_repository_root');
+    } else if (args.length) {
       if (args.length !== 2 || args[0] !== '--repository' || !args[1]) throw new Error('invalid_arguments');
       repository = args[1];
     } else {
@@ -48,7 +52,7 @@ export async function main(args) {
       }
     }
     if (repository !== undefined && !isAbsolute(repository)) throw new Error('repository_must_be_absolute');
-    if (command !== 'doctor') repository = repositoryRoot(repository);
+    if (command !== 'doctor' && !boundRepository) repository = repositoryRoot(repository);
     schema = schemas[command];
     let report;
     if (command === 'doctor') report = await doctor(repository, { offline });

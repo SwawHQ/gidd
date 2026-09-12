@@ -1,5 +1,7 @@
 # 工具准备与共享绑定
 
+为目标仓库建立专用入口使用 `gidd.tools.ensure.cmd --repository <目标仓库绝对路径>`，它复用本协议的工具事务，并在 JS 中验证 Git 工作树及 GitHub remote 后发布 gidd.link.cmd。调用规则和前置检查见 [仓库专用入口](repository-entry.md)。此入口不创建 config.toml；下述 gidd.cmd tools 命令继续管理共享工具。
+
 Windows x64 / Windows PowerShell 5.1。统一准备由 Issue #39、tools 参数与 force 模式由 Issue #41 跟踪；此前运行时启动器由 #23 跟踪。Linux/macOS 启动器尚未实现或验证。
 
 | 命令 | 行为 |

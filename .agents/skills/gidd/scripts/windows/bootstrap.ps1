@@ -5,7 +5,11 @@ $ErrorActionPreference = 'Stop'
 try {
     $inputArgs = @($args)
     if ($inputArgs.Count -and $inputArgs[0] -eq 'tools') { $inputArgs = @($inputArgs | Select-Object -Skip 1) }
-    $options = @{}; $repository = $null; $runtime = ''
+    $options = @{}; $repository = $null; $runtime = ''; $repositoryEntry = $false
+    if ($inputArgs.Count -and $inputArgs[0] -eq '--repository-entry') {
+        $repositoryEntry = $true
+        $inputArgs = @($inputArgs | Select-Object -Skip 1)
+    }
     for ($i=0; $i -lt $inputArgs.Count; $i++) {
         $argument = [string]$inputArgs[$i]
         if ($argument -match '^--jsruntime=(bun|node)$') {
@@ -17,7 +21,12 @@ try {
             if ($i+1 -ge $inputArgs.Count -or -not $inputArgs[$i+1]) { throw 'invalid_arguments' }
             $i++; $repository = [string]$inputArgs[$i]
         } elseif ($argument -notin @('--check','--ensure','--force')) { throw 'invalid_arguments' }
+        if ($repositoryEntry -and $argument -in @('--check','--ensure')) { throw 'invalid_arguments' }
         $options[$argument] = $true
+    }
+    if ($repositoryEntry) {
+        if (-not $repository) { throw 'repository_required' }
+        $options['--ensure'] = $true
     }
     if ($options.ContainsKey('--check') -and $options.ContainsKey('--ensure')) { throw 'check_conflicts_with_ensure' }
     if (-not $options.ContainsKey('--ensure') -and ($options.ContainsKey('--force') -or $runtime)) { throw 'option_requires_ensure' }
@@ -30,7 +39,16 @@ try {
         if ($skill.Name -eq 'gidd' -and $skill.Parent.Name -eq 'skills' -and $skill.Parent.Parent.Name -eq '.agents' -and
             (Test-Path -LiteralPath (Join-Path $skill.Parent.Parent.Parent.FullName '.git'))) { $repository = $skill.Parent.Parent.Parent.FullName }
     }
-    $root = if ($repository) { Get-GiddRepositoryRoot $repository } else { $null }
+    if ($repositoryEntry) {
+        if ($repository -notmatch '^[A-Za-z]:[\\/]') { throw 'repository_absolute_local_path_required' }
+        $root = [IO.Path]::GetFullPath($repository)
+        if (-not [IO.Directory]::Exists($root)) { throw 'repository_directory_missing' }
+        Assert-GiddPlainPath $root
+        if (-not (Test-Path -LiteralPath (Join-Path $root '.git'))) { throw 'not_git_repository_root' }
+        $link = Join-Path $root '.agents/skills/gidd/gidd.link.cmd'
+        Assert-GiddPlainPath $link
+        if ([IO.Directory]::Exists($link)) { throw 'repository_entry_occupied' }
+    } else { $root = if ($repository) { Get-GiddRepositoryRoot $repository } else { $null } }
     $report = Invoke-GiddBootstrap (Resolve-GiddToolStorage $root) -Yes:($options.ContainsKey('--ensure')) -Runtime $runtime -Reinstall:($options.ContainsKey('--force'))
     $report.schema = 'gidd.tools/v1'
     if ($report.status -eq 'needs_bootstrap') { $report.status = 'needs_tools' }
@@ -40,6 +58,7 @@ try {
         exit 1
     }
     $jsArguments = @((Join-Path $PSScriptRoot '../bootstrap-tools.mjs'),'--runtime-report')
+    if ($repositoryEntry) { $jsArguments += '--repository-entry' }
     if ($options.ContainsKey('--check')) { $jsArguments += '--check' }
     if ($options.ContainsKey('--force')) { $jsArguments += '--force' }
     if ($root) { $jsArguments += @('--repository',$root) }
