@@ -23,13 +23,51 @@ function setup(f) {
   return { git, skill, invoke, create, ensure, link };
 }
 
+test('repository ensure help works without tools or a repository and honors language selection', { timeout: 120000 }, () => {
+  const f = fixture();
+  try {
+    const skill = join(f.root, 'help skill'); copySkill(skill);
+    const entry = join(skill, 'gidd.tools.ensure.cmd');
+    const invoke = (args, env = {}) => run(join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe'),
+      ['/d', '/s', '/c', `""${entry}" ${args.map(quote).join(' ')}"`],
+      { windowsVerbatimArguments: true, cwd: f.root,
+        env: { PATH: '', GIDD_LANG: '', LC_ALL: '', LC_MESSAGES: '', LANG: 'en', ...env } });
+    const before = snapshot(f.root);
+    for (const [args, env, language] of [
+      [[], {}, 'en'], [['help', 'en'], { GIDD_LANG: 'invalid' }, 'en'],
+      [['help', 'zh'], { GIDD_LANG: 'en', LC_ALL: 'en' }, 'zh-CN'],
+      [['--help'], { GIDD_LANG: 'zh-CN', LC_ALL: 'en' }, 'zh-CN'],
+      [['-h', 'en'], { GIDD_LANG: 'zh' }, 'en'],
+      [['help'], { LC_ALL: 'zh_CN.UTF-8', LC_MESSAGES: 'en' }, 'zh-CN'],
+      [['help'], { LC_MESSAGES: 'zh', LANG: 'en' }, 'zh-CN'],
+      [[], { LANG: 'zh' }, 'zh-CN'], [['help'], { LC_ALL: 'fr_FR', LANG: 'zh' }, 'en'],
+    ]) {
+      const output = ok(invoke(args, env));
+      assert.equal(output.stderr, '');
+      assert.equal(output.stdout.trim(), readFileSync(join(skill, `scripts/help/tools-ensure/${language}.txt`), 'utf8').trim());
+    }
+    for (const [args, env, reason] of [
+      [['help', 'fr'], {}, 'unsupported_help_language'],
+      [['--help'], { GIDD_LANG: 'invalid' }, 'unsupported_help_language'],
+      [['help', 'en', '--force'], {}, 'invalid_arguments'],
+      [['--force', '--help'], {}, 'invalid_arguments'],
+      [['--force'], {}, 'repository_required'],
+    ]) {
+      const result = invoke(args, env);
+      assert.equal(result.status, 2); assert.equal(json(result).reason, reason);
+    }
+    assert.equal(existsSync(toolsRoot(f.root)), false);
+    assert.deepEqual(snapshot(f.root), before, 'Help and invalid arguments must not prepare tools or write files');
+  } finally { f.dispose(); }
+});
+
 test('repository ensure rejects unsuitable targets and keeps configuration untouched', { timeout: 120000 }, () => {
   const f = fixture();
   try {
     const s = setup(f), entry = join(s.skill, 'gidd.tools.ensure.cmd');
     const ordinary = join(f.root, 'ordinary'); mkdirSync(ordinary);
     const before = snapshot(f.root);
-    for (const args of [[], ['--repository'], ['--repository', '.'], ['--repository', ordinary],
+    for (const args of [['--repository'], ['--repository', '.'], ['--repository', ordinary],
       ['--repository', join(f.root, 'absent')], ['--repository', ordinary, '--check'], ['--repository', ordinary, '--ensure']]) {
       const result = s.invoke(entry, args); assert.notEqual(result.status, 0);
       assert.deepEqual(snapshot(f.root), before, 'Invalid location must not prepare tools or create files');
