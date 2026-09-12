@@ -1,106 +1,47 @@
 ---
 name: gidd
-description: 在用户要求为指定 Git 仓库准备或检查 GIDD、修订 GitHub 配置、检查登录身份，或明确要求登录授权时使用。当前支持 Windows 下的工具准备、仓库入口、诊断、配置编辑和设备授权；配置初始化及 Issue/PR 开发流程尚未实现。
+description: 为指定 Git 仓库准备或检查 GIDD、编辑 GitHub 配置、诊断身份，并按用户明确要求进行登录授权。当前支持 Windows；初始化及 Issue/PR 业务尚未实现。
 license: MIT
 ---
 
 # GIDD
 
-根据用户请求确定目标 Git 仓库。用户要求“为这个仓库准备 GIDD”时，按下述流程准备和配置；只要求检查时使用只读诊断，不执行准备或配置写入。安装技能、创建入口或发现已有配置，都不能单独作为启用仓库开发流程的依据。
+按用户请求确定目标 Git 工作树。只检查时不准备工具或写配置；技能、入口和配置存在不代表启用仓库开发流程。
 
-当前已验证 Windows x64 / Windows PowerShell 5.1。`config init`、初始化归属记录、doctor 的逐项评级以及 `gidd.link.sh` 尚未实现；下文明确标记其目标行为，当前不要执行或模拟这些能力。Issue/PR 业务脚本也尚未实现。
+当前已验证 Windows x64 / PowerShell 5.1。`config init`、初始化归属记录、doctor 评级、`gidd.link.sh` 和 Issue/PR 业务尚未实现，不要执行或模拟这些能力。
 
-## 确定目标和入口
+## 仓库入口流程
 
-- **目标仓库根**：用户要操作的 Git 工作树根目录，使用绝对路径，支持 worktree。
-- **技能安装目录**：实际包含本文件和 `gidd.pre.ensure.cmd` 的目录。
-- **仓库专用入口**：固定为 `<目标仓库根>/.agents/skills/gidd/gidd.link.cmd`。
-- **仓库配置**：固定为 `<目标仓库根>/.agents/skills/gidd/config.toml`，不随技能安装范围改变，不继承用户级配置。
+入口固定为 `<目标仓库根>/.agents/skills/gidd/gidd.link.cmd`，配置为同目录的 `config.toml`，不继承用户级配置。下文的 `gidd.link.cmd` 均指该入口的绝对路径，可从任意工作目录调用，不能改指其他仓库。
 
-仓库专用入口根据自身位置确定目标，可从任意工作目录调用，不接受改指其他仓库。下文命令中的路径占位符必须替换为实际绝对路径；不要只凭当前工作目录选择仓库。
+1. **已有入口先诊断。** 执行 `gidd.link.cmd doctor --offline`。取得完整 JSON、退出码为 `0` 且 `status=local_ready`，才进入第 4 步；不能仅凭输出没有 `error` 放行。链接无法启动时转第 2 步，诊断报告问题时转第 3 步。
 
-## 进入仓库的流程
+2. **缺失或失效时准备。** 从实际技能安装目录执行：
 
-### 1. 入口已存在，先做离线诊断
+   ```powershell
+   & "<技能安装目录>\gidd.pre.ensure.cmd" --repo "<目标仓库根>"
+   ```
 
-```powershell
-& "<目标仓库根>\.agents\skills\gidd\gidd.link.cmd" doctor --offline
-```
+   `--repo` 必填，目标必须已有 Git 工作树和合适的 GitHub remote。命令准备 JS 运行时、Git、gh 和仓库入口，复用健康工具及已有配置。仅检查时追加 `--check`；`help zh` 无需仓库或运行时。按失败原因处理，保留未知文件。
 
-检查进程退出码和完整 JSON 报告。当前只有退出码为 `0` 且总体 `status=local_ready` 才表示本地检查通过，通过则直接转第 4 步；不要仅搜索输出中是否出现 `error`。检查项目前仍使用 `missing`、`invalid`、`not_checked` 等状态，没有 `severity` 评级。
+3. **按问题配置或修复。** 当前用 `config show/set` 补齐 `github.hostname`、`github.account`、`github.remote`，核实模板默认值，保留无关配置和注释。账号是预期登录身份，remote 是名称，不是 URL。工具问题返回准备入口；工作树、作者和 remote 问题按 Git 诊断处理。完成后重新执行第 1 步。详见 [配置协议](references/configuration.md)。
 
-诊断完成但有问题时，按第 3 步处理。若共享启动器缺失、真实技能被移动或链接无法启动，doctor 尚未执行，转到第 2 步修复入口；不要把启动失败解释为配置需要重置。
+4. **本地就绪后查看帮助。** 执行 `gidd.link.cmd --help` 或 `help zh`。首次 GitHub 操作前再执行普通 `doctor`；离线通过不证明登录或推送权限。API 身份、Git 传输和 commit 作者分别判断，网络失败不等于未登录。详见 [doctor 协议](references/doctor.md)。
 
-### 2. 入口不存在或启动链失效，执行准备
-
-从实际技能安装目录调用：
-
-```powershell
-& "<技能安装目录>\gidd.pre.ensure.cmd" --repo "<目标仓库根>"
-```
-
-目标必须已是 Git 工作树，并有合适的 GitHub remote。准备命令检查安装归属，确保一个 JS 运行时、Git 和 gh 可用，然后创建仓库专用入口；不会创建 Git 仓库、配置账号或发起登录。健康工具和相同入口会复用，已有配置不会因此重建。
-
-仓库内的 `.agents/skills/gidd/` 或 `.claude/skills/gidd/` 安装只能指定所属工作树。Git 树外的共享安装可指定目标；Git 树内但布局无法确认时会报错，不自动当作共享安装。`--repo` 始终必填。
-
-仅检查准备状态时追加 `--check`；它不下载、不修复、不写入。准备帮助无需仓库或 JS 运行时：
-
-```powershell
-& "<技能安装目录>\gidd.pre.ensure.cmd" help zh
-```
-
-失败时保留已完成的工作和原有文件，按具体错误处理；不要删除未知同名文件或反复重跑相同失败命令。前提、安装归属及链接恢复规则见 [仓库专用入口](references/repository-entry.md)。
-
-### 3. 配置或修复后，重新诊断
-
-新建入口后的目标步骤是 `gidd.link.cmd config init`；已有入口遇到配置缺失、初始化未完成或归属不匹配时，也应进入初始化。**该命令及归属检查尚未实现，当前使用下面的配置编辑流程，不宣称完成了初始化。**
-
-| 当前发现的问题 | 当前处理方式 |
-| --- | --- |
-| 配置缺失或 GitHub 字段不全 | 使用 `config show/set`，补齐预期主机、账号和 remote |
-| 配置语法或字段无效 | 按具体错误修订，保留无关字段和注释，不重建文件以丢弃未知内容 |
-| 运行时、Git、gh 或绑定不可用 | 调用第 2 步的准备入口 |
-| 工作树、HEAD、Git 作者或 remote 有问题 | 按对应诊断处理 Git 设置，不用 GIDD 配置覆盖这些问题 |
-
-已有配置可先用仓库入口执行 `config show`。编辑使用 `config set <字段> <值>`；需要补齐的是 `github.hostname`、`github.account`、`github.remote`。账号是预期登录身份，不是仓库所有者或 commit 作者；remote 是 Git remote 名称，不是 URL。
-
-首次 `config set` 会从现有模板创建配置，包含 `hostname=github.com` 和 `remote=origin`；必须核实它们适用于目标仓库。已有配置只修改需要修订的字段。工具下载来源按需设置，完整字段和原子编辑规则见 [配置协议](references/configuration.md)。
-
-当前没有初始化归属记录，不能因配置字段齐全就认定它适用于另一个 GitHub 仓库。根据用户请求核对目标与配置；不要手写尚未支持的初始化字段或草稿文件。
-
-每次配置或修复完成后，都重新执行第 1 步的 `doctor --offline`，根据新报告决定下一步。doctor 只诊断，不自动准备工具、改配置、登录或切换账号。具体检查和退出码见 [doctor 协议](references/doctor.md)。
-
-### 4. 本地就绪后，查看帮助使用已有功能
-
-```powershell
-& "<目标仓库根>\.agents\skills\gidd\gidd.link.cmd" --help
-```
-
-需要中文帮助时使用 `help zh`。按帮助描述的实际功能操作，不推断尚未提供的开发命令。普通帮助依赖共享启动器；准备入口的帮助可在工具缺失时使用。
-
-离线通过表示本地条件就绪。首次执行 GitHub 操作前，运行不带 `--offline` 的 `doctor`，检查 GitHub API 身份和符合条件的远端读取。分别报告 API 身份、Git 传输检查和 commit 作者；网络失败不等于未登录，SSH 远端目前仍可能报告读取未检查。诊断通过也不证明推送权限或仓库开发流程已经启用。
+仓库内 `.agents/skills/gidd/` 或 `.claude/skills/gidd/` 安装只能指定所属工作树；Git 树外共享安装可指定目标，Git 树内布局不明则报错。链接规则及恢复方式见 [仓库专用入口](references/repository-entry.md)。
 
 ## 待实现的初始化约定
 
-以下用于后续实现和更新本技能，当前不能作为可执行能力使用：
+新建入口、配置缺失、初始化未完成或归属不匹配时，目标流程是 `config init`，完成后仍回到离线诊断。当前仅编辑配置，不写初始化字段或宣称初始化完成。
 
-- `config init` 从仓库专用入口确定目标，支持无交互调用和分段提供配置；每次报告缺失字段及下一步提示。
-- 重复执行复用有效信息。新建或修复链接不要求重建配置；配置完整且归属匹配时直接报告完成。
-- 初始化时确定 remote 和主机，明确预期账号，记录一条所选 remote 对应的规范化 GitHub 仓库身份。多个合适 remote 需要明确选择；身份字段不代表实际登录。
-- 分段配置保存在 `config.toml.temp`，全部校验通过后原子替换正式配置；发布成功前保留原正式文件，不让业务命令读取半成品。
-- doctor 保留检查项 `status`，另加 `severity=info|warning|error`；完整诊断无 `error` 才允许继续。主动离线跳过为 `info`，空仓库尚无首次提交可为 `warning`；当前版本不能提前按这些评级放行。
-- 配置缺失、初始化未完成或仓库身份不匹配时，doctor 指向 `config init`。初始化后仍回到离线诊断；初始化本身不登录、不修改 Git 作者、不证明权限。
+计划中的初始化幂等且无交互，支持分段输入并报告缺项；明确账号、选择 remote，记录一条规范化 GitHub 仓库身份。草稿写入 `config.toml.temp`，全部校验后原子替换正式配置，保留已有有效信息。doctor 将新增 `severity=info|warning|error`，完整诊断无 `error` 才继续；当前仍按 `local_ready` 判断。
 
 ## 登录授权
 
-用户只要求检查登录时使用 `doctor`。只有用户明确要求登录或授权时，才通过仓库入口执行 `auth`；读取配置中的预期主机和账号，不用命令参数覆盖，不把配置修改视为授权成功。
+检查登录使用 `doctor`；用户明确要求登录时才执行 `auth`，读取配置中的主机和账号。复用匹配身份，不自动切换账号。展示本次 URL 和一次性代码，等待用户授权并验证实际账号；不自动打开浏览器，不在配置中保存凭据。见 [授权协议](references/authorization.md)。
 
-复用匹配的实际身份；发现另一个账号时报告，不自动切换。需要设备授权时，展示本次返回的 URL 和一次性代码，保留等待进程，让用户在任意设备完成授权；不自动打开浏览器。验证实际账号后才报告成功，不在配置中保存 token、密码或验证码。流程和凭据边界见 [授权协议](references/authorization.md)。
+## 工具与文件管理
 
-## 工具、复制与清理
+工具固定共用 `~/.agents/skills.tools/gidd/`，不提供路径覆盖。运行时选择和强制修复见 [准备协议](references/bootstrap.md)，完整性与清理见 [安装协议](references/setup.md)。
 
-工具和绑定永久共用 `~/.agents/skills.tools/gidd/`，不提供目录配置或覆盖参数；更改共享绑定会影响本用户的其他仓库。普通命令直接使用共享启动器和绑定，不通过业务重试自动安装工具。运行时选择、`--force` 及修复事务见 [准备协议](references/bootstrap.md)，安装完整性和清理规则见 [安装协议](references/setup.md)。
-
-复制技能时排除 `config.toml`、`config.toml.*`、`gidd.link.cmd` 及 `gidd.link.cmd.*`，保留目标已有配置。当前模板仍为 `config.example.toml`；完整安装更新和跨平台入口尚未实现。
-
-卸载时确认实际技能目录、目标配置和共享工具目录的范围。仅卸载一个仓库不得自动删除共享工具；完整卸载须明确包含共享工具。不得删除复用的外部工具，也不得把删除文件表述为退出 GitHub 或撤销授权。
+复制技能时排除 `config.toml`、`config.toml.*`、`gidd.link.cmd` 及 `gidd.link.cmd.*`，保留目标配置；当前模板仍是 `config.example.toml`。仅卸载一个仓库不得自动删除共享工具，完整卸载须明确包含它们；不得删除复用的外部工具，也不能把删除文件当作撤销 GitHub 授权。
