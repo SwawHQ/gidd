@@ -3,15 +3,15 @@
 Windows 首次准备一个目标仓库，或修复缺失/失效的仓库入口时，调用实际技能安装目录中的：
 
 ```text
-gidd.tools.ensure.cmd --repo <目标仓库绝对路径>
-gidd.tools.ensure.cmd --repo <目标仓库绝对路径> --jsruntime=node
-gidd.tools.ensure.cmd --repo <目标仓库绝对路径> --force
-gidd.tools.ensure.cmd --repo <目标仓库绝对路径> --check
+gidd.pre.ensure.cmd --repo <目标仓库绝对路径>
+gidd.pre.ensure.cmd --repo <目标仓库绝对路径> --jsruntime=node
+gidd.pre.ensure.cmd --repo <目标仓库绝对路径> --force
+gidd.pre.ensure.cmd --repo <目标仓库绝对路径> --check
 ```
 
-除帮助外，--repo 必须明确提供本地盘上的 Git 工作树根目录，不推断 cwd，也不把传入的子目录自动提升到父仓库。保留 --repository 作为兼容别名；同一参数重复或两种写法混用均报错。默认执行准备，--check 只读检查；不接受 --ensure。--check 不得与 --force 或 --jsruntime 搭配。--force 和运行时选择沿用 [tools 协议](bootstrap.md)，不会覆盖未知文件。旧 gidd.cmd tools --check/--ensure 继续提供共享工具管理。
+除帮助外，--repo 必须明确提供本地盘上的 Git 工作树根目录，不推断 cwd，也不把传入的子目录自动提升到父仓库。保留 --repository 作为兼容别名；同一参数重复或两种写法混用均报错。默认执行准备，--check 只读检查；不接受 --ensure。--check 不得与 --force 或 --jsruntime 搭配。--force 和运行时选择沿用 [tools 协议](bootstrap.md)，不会覆盖未知文件。
 
-查看帮助使用 `gidd.tools.ensure.cmd help zh` 或 `help en`；不带参数、`help`、`--help`、`-h` 均显示帮助，帮助别名也可追加语言。语言选择与 `gidd help` 一致：显式语言、GIDD_LANG、LC_ALL、LC_MESSAGES、LANG、系统界面语言依次取首个非空值；显式语言或 GIDD_LANG 仅接受 zh/en 及其地区变体，其他系统语言回退英文。帮助由原生 Shell 读取 `scripts/help/tools-ensure/` 下的 UTF-8 文本，无需仓库参数或 JS 运行时，不读取配置、准备工具或写入文件；成功输出文本并退出 0。
+查看帮助使用 `gidd.pre.ensure.cmd help zh` 或 `help en`；不带参数、`help`、`--help`、`-h` 均显示帮助，帮助别名也可追加语言。语言选择与 `gidd help` 一致：显式语言、GIDD_LANG、LC_ALL、LC_MESSAGES、LANG、系统界面语言依次取首个非空值；显式语言或 GIDD_LANG 仅接受 zh/en 及其地区变体，其他系统语言回退英文。帮助由原生 Shell 读取 `scripts/help/pre-ensure/` 下的 UTF-8 文本，无需仓库参数或 JS 运行时，不读取配置、准备工具或写入文件；成功输出文本并退出 0。
 
 ## 验证及执行顺序
 
@@ -44,9 +44,9 @@ gidd.tools.ensure.cmd --repo <目标仓库绝对路径> --check
 
 可以从任意工作目录调用。链接根据自身位置固定目标，拒绝 --repository 覆盖；帮助无需目标 Git 检查，仓库命令在 Git 标记丢失时拒绝执行，不转向父目录。工具、凭据仍按原规则共享，不承诺所有命令的副作用只发生在仓库内。
 
-生成逻辑在 scripts/repository-entry.mjs。实际 gidd.cmd 位于目标内时，保存从链接到它的相对位置，支持 .agents、.claude 或项目内其他安装位置；外部技能使用绝对位置。链接为 ASCII 批处理，以编码数据保存位置，使用共享 js_exec.cmd 单次启动 JS，再进入真实技能的同一分发器；普通命令不调用 PowerShell，不切换代码页，不重复通过 CALL 展开参数。tools 子命令仍由原生 Shell 处理。
+生成逻辑在 scripts/repository-entry.mjs。实际 gidd.cmd 位于目标内时，保存从链接到它的相对位置，支持 .agents、.claude 或项目内其他安装位置；外部技能使用绝对位置。链接为 ASCII 批处理，以编码数据保存位置，使用共享 js_exec.cmd 单次启动 JS，再进入真实技能的同一分发器；普通命令不调用 PowerShell，不切换代码页，不重复通过 CALL 展开参数。所有仓库命令直接进入 JS；运行前准备独立调用 gidd.pre.ensure.cmd。
 
-完整项目移动后，相对入口继续有效；外部技能位置不变时，绝对入口也会根据链接的新位置定位目标。实际技能移动、更新或共享启动器丢失时，重新调用实际技能的 gidd.tools.ensure.cmd；不搜索其他副本、不回退重跑。链接缺失表示入口需要准备，不代表配置需要丢弃或重新登录。
+完整项目移动后，相对入口继续有效；外部技能位置不变时，绝对入口也会根据链接的新位置定位目标。实际技能移动、更新或共享启动器丢失时，重新调用实际技能的 gidd.pre.ensure.cmd；不搜索其他副本、不回退重跑。链接缺失表示入口需要准备，不代表配置需要丢弃或重新登录。
 
 只更新内容完整匹配 GIDD 生成格式的链接，未知或编辑过的同名文件保留并报错。临时文件刷盘后替换，失败保留旧入口；相同内容不改写。config.toml 不在此命令中创建或修改，config init、初始化归属记录及 doctor 评级尚未实现。
 

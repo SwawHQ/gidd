@@ -1,19 +1,25 @@
 import { test } from 'node:test';
-import { toolsRoot, assert, code, existsSync, fixture, join, json, ok, ps, repo, run, write, product, mkdirSync, dirname } from './support/helpers.mjs';
+import { toolsRoot, assert, code, existsSync, fixture, join, json, ok, ps, repo, run, write, product, mkdirSync, dirname, findGit } from './support/helpers.mjs';
 import { toolEnvironment } from '../.agents/skills/gidd/scripts/tools.mjs';
 
+function createRepository(root) {
+  const git = findGit();
+  ok(run(git, ['-C',root,'init','--quiet']));
+  ok(run(git, ['-C',root,'remote','add','origin','https://github.com/Team/Repo.git']));
+}
 const live = process.env.GIDD_LIVE_TEST === '1' ? test : test.skip;
 live('official unified bootstrap, local commit clone fetch and gh Git discovery', { timeout: 300000 }, () => {
   const f=fixture();
   try {
+    createRepository(f.root);
     const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
-    const bootstrap=(extra='--ensure')=>json(ok(run(cmd,['/d','/s','/c',`""${join(repo,'.agents/skills/gidd/gidd.cmd')}" tools ${extra} --repository "${f.root}""`],
+    const bootstrap=(extra='')=>json(ok(run(cmd,['/d','/s','/c',`""${join(repo,'.agents/skills/gidd/gidd.pre.ensure.cmd')}" ${extra} --repo "${f.root}""`],
       {windowsVerbatimArguments:true,env:{PATH:dirname(process.execPath)},timeout:180000})));
     const prepared=bootstrap(),git=prepared.tools.find(t=>t.name==='git'),gh=prepared.tools.find(t=>t.name==='gh');
     assert.equal(git.action,'installed');assert.equal(gh.action,'installed');
     assert.equal(bootstrap().tools.find(t=>t.name==='git').action,'reused');
     assert.equal(bootstrap('--check').status,'ready');
-    const forced=bootstrap('--ensure --force');
+    const forced=bootstrap('--force');
     assert.equal(forced.runtime_action,'installed');assert.equal(forced.runtime.details.source,'managed');
     assert.equal(forced.runtime.id,process.versions.bun?'tool.bun':'tool.node');
     assert.deepEqual(forced.tools.map(t=>[t.name,t.action]),[['git','reinstalled'],['gh','reinstalled']]);
@@ -44,12 +50,13 @@ live('official unified bootstrap, local commit clone fetch and gh Git discovery'
 live('official Bun cold bootstrap, post-install doctor and reuse', { timeout: 300000 }, () => {
   const f=fixture();
   try {
+    createRepository(f.root);
     write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n[tools]\n');
     const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
-    const prepared=run(cmd,['/d','/s','/c',`""${join(repo,'.agents/skills/gidd/gidd.cmd')}" tools --ensure --repository "${f.root}""`],
+    const prepared=run(cmd,['/d','/s','/c',`""${join(repo,'.agents/skills/gidd/gidd.pre.ensure.cmd')}" --repo "${f.root}""`],
       {windowsVerbatimArguments:true,env:{PATH:''},timeout:300000});
     assert.equal(json(ok(prepared)).runtime.id,'tool.bun');
-    const invoke=() => run(cmd,['/d','/s','/c',`""${join(repo,'.agents/skills/gidd/gidd.cmd')}" tools --ensure --repository "${f.root}""`],
+    const invoke=() => run(cmd,['/d','/s','/c',`""${join(repo,'.agents/skills/gidd/gidd.pre.ensure.cmd')}" --repo "${f.root}""`],
       {windowsVerbatimArguments:true,env:{PATH:''},timeout:300000});
     const report=json(ok(invoke()));
     assert.deepEqual(report.tools.map(t=>[t.name,t.action]),[['git','reused'],['gh','reused']]);
@@ -65,10 +72,11 @@ live('official Bun cold bootstrap, post-install doctor and reuse', { timeout: 30
 live('official Node download and reuse through bootstrap', { timeout: 300000 }, () => {
   const f=fixture();
   try {
+    createRepository(f.root);
     const root=toolsRoot(f.root);
     write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n[tools]\n');
     const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
-    const bootstrap=()=>run(cmd,['/d','/s','/c',`""${join(repo,'.agents/skills/gidd/gidd.cmd')}" tools --ensure --jsruntime=node --repository "${f.root}""`],
+    const bootstrap=()=>run(cmd,['/d','/s','/c',`""${join(repo,'.agents/skills/gidd/gidd.pre.ensure.cmd')}" --jsruntime=node --repo "${f.root}""`],
       {windowsVerbatimArguments:true,env:{PATH:''},timeout:300000});
     const prepared=json(ok(bootstrap()));
     assert.equal(prepared.runtime.id,'tool.node');

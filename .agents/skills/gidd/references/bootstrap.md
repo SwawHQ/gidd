@@ -1,23 +1,23 @@
 # 工具准备与共享绑定
 
-为目标仓库建立专用入口使用 `gidd.tools.ensure.cmd --repo <目标仓库绝对路径>`，它复用本协议的工具事务，并在 JS 中验证 Git 工作树及 GitHub remote 后发布 gidd.link.cmd。追加 `--check` 则复用完整工具诊断并只读检查仓库及入口，不下载或发布。调用规则和前置检查见 [仓库专用入口](repository-entry.md)。此入口不创建 config.toml；下述 gidd.cmd tools 命令继续管理共享工具。
+为目标仓库建立专用入口使用 `gidd.pre.ensure.cmd --repo <目标仓库绝对路径>`，它复用本协议的工具事务，并在 JS 中验证 Git 工作树及 GitHub remote 后发布 gidd.link.cmd。追加 `--check` 则复用完整工具诊断并只读检查仓库及入口，不下载或发布。调用规则和前置检查见 [仓库专用入口](repository-entry.md)。这是唯一产品准备入口，不创建 config.toml。
 
 Windows x64 / Windows PowerShell 5.1。统一准备由 Issue #39、tools 参数与 force 模式由 Issue #41 跟踪；此前运行时启动器由 #23 跟踪。Linux/macOS 启动器尚未实现或验证。
 
 | 命令 | 行为 |
 | --- | --- |
-| `gidd.cmd tools` | 等同 --check，只读检查 |
-| `gidd.cmd tools --ensure` | 检查并补齐一个 JS 运行时、Git、gh，发布启动器与工具绑定 |
-| `gidd.cmd tools --check` | 只读检查运行时、工具、绑定和待恢复安装；不下载、不写入 |
-| `gidd.cmd tools --ensure --jsruntime=node` | 选择/准备 Node，并完成同样的 Git/gh 准备 |
-| `gidd.cmd tools --ensure --force` | 强制重装选定受管运行时、Git、gh，并重建绑定 |
+| `gidd.pre.ensure` | 显示帮助，不准备工具 |
+| `gidd.pre.ensure --repo <repository-path>` | 检查并补齐一个 JS 运行时、Git、gh，发布启动器与工具绑定 |
+| `gidd.pre.ensure --repo <repository-path> --check` | 只读检查运行时、工具、绑定和待恢复安装；不下载、不写入 |
+| `gidd.pre.ensure --repo <repository-path> --jsruntime=node` | 选择/准备 Node，并完成同样的 Git/gh 准备 |
+| `gidd.pre.ensure --repo <repository-path> --force` | 强制重装选定受管运行时、Git、gh，并重建绑定 |
 
-只有 --ensure 会下载和写入。--check 与 --ensure 互斥；--force、--jsruntime=bun|node 必须搭配 --ensure。旧 bootstrap、setup、--yes、--node、--reinstall 已退役并提示新入口。有效工具继续复用，不检查是否有更新；--force 强制准备受管副本，即使现有工具健康或 PATH 中存在可用工具。
+除帮助外必须传入 --repo，未追加 --check 时执行准备，允许下载和写入。--check 不得与 --force、--jsruntime=bun|node 搭配。不存在 --ensure 开关或旧入口兼容。有效工具继续复用，不检查是否有更新；--force 强制准备受管副本，即使现有工具健康或 PATH 中存在可用工具。
 
 ## 两阶段
 
 ```text
-gidd.cmd tools --ensure
+gidd.pre.ensure --repo <repository-path>
   → 原生 Shell：检查/准备兼容运行时，发布 js_exec.cmd
   → 刚验证的运行时：执行 scripts/bootstrap-tools.mjs
       → 检查/准备 Git 与 gh
@@ -31,7 +31,7 @@ gidd.cmd doctor/auth
 
 原生 Shell 执行 JS 段时直接使用刚验证的运行时路径，避免 Unicode/百分号路径再经过一次批处理展开；普通命令仍通过共享 js_exec.cmd。阶段报告通过 UTF-8 stdin 交接，JS 接受管道开头的 BOM。--check 在启动器尚未发布时也可使用已验证候选完成 JS 检查；没有兼容候选时报告工具段 not_checked，不下载运行时。
 
-两阶段分别持有并释放同一共享安装锁，不嵌套占用。JS 段失败不撤销已成功准备的运行时。Git 与 gh 各自提交绑定，一项失败仍检查/准备另一项；总体结果只有所有阶段成功才为 ready。tools --ensure 不要求目标已执行 git init，不创建仓库、GitHub 配置、作者设置或登录状态。
+两阶段分别持有并释放同一共享安装锁，不嵌套占用。JS 段失败不撤销已成功准备的运行时。准备阶段先完成 Git，再验证工作树及 remote，通过后才准备 gh 和仓库入口；检查阶段尽量独立报告各项。总体只有全部就绪才为 ready。目标必须已经是 Git 工作树；本命令不执行 git init，不创建 GitHub 配置、作者设置或登录状态。
 
 ## 版本与选择
 
@@ -43,13 +43,13 @@ gidd.cmd doctor/auth
 
 ## 普通执行与诊断
 
-固定共享目录为 ~/.agents/skills.tools/gidd/。js_exec.cmd 绑定运行时；tool-bindings.json 使用 gidd.tool-bindings/v1，记录 Git、gh 的绝对路径、来源、上次验证版本，以及受管安装记录的 SHA-256。绑定不含仓库、账号或凭据，由 tools --ensure 原子发布。修改共享绑定会影响本用户的所有仓库。
+固定共享目录为 ~/.agents/skills.tools/gidd/。js_exec.cmd 绑定运行时；tool-bindings.json 使用 gidd.tool-bindings/v1，记录 Git、gh 的绝对路径、来源、上次验证版本，以及受管安装记录的 SHA-256。绑定不含仓库、账号或凭据，由 gidd.pre.ensure --repo <repository-path> 原子发布。修改共享绑定会影响本用户的所有仓库。
 
 普通命令只解析绑定及其最低版本元数据，不搜索 PATH，不执行 --version，不遍历工具树或校验整套 payload。每个进程读取一次绑定，子调用复用绝对路径。Git 所在目录只放入子进程 PATH 最前，清除继承的 GIT_EXEC_PATH，保留用户模板等无关环境设置；系统与父进程 PATH 不变。不生成 gh_exec.cmd/git_exec.cmd 或 gh_exec.js/git_exec.js。
 
-绑定缺失、格式错误、记录版本低于当前代码要求，或程序启动失败时提示重新 tools --ensure。程序原路径被替换但仍可执行时，普通命令未必发现；绑定版本是上次验证记录。网络、认证和普通命令失败保持业务原因，不自动换工具或重跑业务。工具依赖损坏可能表现为普通执行失败，使用 tools --check 或 doctor 进一步诊断。
+绑定缺失、格式错误、记录版本低于当前代码要求，或程序启动失败时提示重新 gidd.pre.ensure --repo <repository-path>。程序原路径被替换但仍可执行时，普通命令未必发现；绑定版本是上次验证记录。网络、认证和普通命令失败保持业务原因，不自动换工具或重跑业务。工具依赖损坏可能表现为普通执行失败，使用 gidd.pre.ensure --repo <repository-path> --check 或 doctor 进一步诊断。
 
-tools --check 做完整工具校验；doctor 只检查当前运行时和绑定 Git/gh 的基本可用性，不发现候选或扫描安装树。doctor 默认还检查目标仓库和 GitHub 身份及 HTTPS remote 读取，--offline 跳过联网项。help/config 不要求 Git/gh 绑定。auth 只强制要求 gh 绑定，存在 Git 绑定时共用它；不会因为绑定缺失而自动安装或登录。
+gidd.pre.ensure --repo <repository-path> --check 做完整工具校验；doctor 只检查当前运行时和绑定 Git/gh 的基本可用性，不发现候选或扫描安装树。doctor 默认还检查目标仓库和 GitHub 身份及 HTTPS remote 读取，--offline 跳过联网项。help/config 不要求 Git/gh 绑定。auth 只强制要求 gh 绑定，存在 Git 绑定时共用它；不会因为绑定缺失而自动安装或登录。
 
 ## 发布与恢复
 
@@ -67,4 +67,4 @@ Git/gh 使用同一下载、校验、锁、暂存流程，详见 [安装事务](
 
 公开 stdout 为 gidd.tools/v1 JSON，包含 runtime、launcher、tools 和 tool_checks；read_only 区分 --check。ready 退出 0，needs_tools 退出 1，参数或原生启动失败退出 2。各阶段错误可从检查项定位；工具段失败仍保留运行时结果。内部 JS 段独立结果为 gidd.bootstrap-tools/v1，不是第二个公开命令。stderr 显示下载与准备进度。
 
-验证覆盖无参数默认检查、参数互斥、只读无写入、显式准备、force 重装、绑定运行时保持、Node 选择、固定绑定、业务失败不回退、完整性校验、跨 Shell/JS 锁、中断恢复、相同版本修复、未知文件保留、Unicode 路径，以及 Node/Bun 双运行时和真实官方下载。没有实际断电测试，不承诺任意文件系统下零丢失。
+验证覆盖无参数帮助、必填目标、参数互斥、只读无写入、显式准备、force 重装、绑定运行时保持、Node 选择、固定绑定、业务失败不回退、完整性校验、跨 Shell/JS 锁、中断恢复、相同版本修复、未知文件保留、Unicode 路径，以及 Node/Bun 双运行时。真实官方下载通过独立 .test-live 验证，不属于普通离线回归。没有实际断电测试，不承诺任意文件系统下零丢失。

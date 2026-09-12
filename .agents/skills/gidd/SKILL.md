@@ -1,34 +1,41 @@
 ---
 name: gidd
-description: Prepare GIDD tools, diagnose prerequisites, configure repository GitHub settings, check identity, and request device authorization when explicitly asked to log in. Currently verified on Windows; repository enablement and Issue/PR workflows are not yet implemented.
+description: Prepare GIDD tools and repository entry, diagnose prerequisites, configure repository GitHub settings, check identity, and request device authorization when explicitly asked to log in. Currently verified on Windows; repository enablement and Issue/PR workflows are not yet implemented.
 license: MIT
 ---
 
 # GIDD
 
-For a repository-specific entry, run the actual skill's `gidd.tools.ensure.cmd --repository <absolute-worktree-root>`. It prepares shared tools and creates `<repository>/.agents/skills/gidd/gidd.link.cmd` only after local Git worktree and GitHub remote checks. It requires an existing Git root with a suitable remote, but no commit or login. Use the generated link for subsequent commands from any cwd; it carries its own target and rejects target overrides. Missing or stale links require rerunning this preparation, preserving existing config. Read [references/repository-entry.md](references/repository-entry.md) for preconditions, relative/external locations, output and recovery. This does not create config, initialize Git, authenticate or enable GIDD; `config init` remains unimplemented.
-
-Use the installed skill's gidd.cmd on Windows. `gidd.cmd tools` defaults to --check. Use `tools --check` for read-only inspection; when preparation is authorized use `tools --ensure` to prepare a runtime, Git, gh and shared bindings. Check and ensure are exclusive. Old bootstrap/setup commands are retired. Read [references/bootstrap.md](references/bootstrap.md) for selection, force and recovery.
-
-Ensure first retains a compatible bound runtime, then tries managed Bun, managed Node, PATH Bun and PATH Node. If no compatible runtime exists it downloads stable Bun. `--jsruntime=bun|node` explicitly selects a kind; Node downloads use LTS. `--force` reinstalls the selected managed runtime, Git and gh even when healthy or available externally. Without a selector force retains the bound runtime kind, or defaults to Bun if unknown. Both options require --ensure. Force preserves external tools, the unselected runtime and unknown files, and verifies new copies before replacement. Tool versions are internal policy; source mirrors remain configurable for Bun/Node/gh, with no tools.git fields.
-
-The tools command invokes native Shell for check/ensure. Ensure prepares and publishes js_exec.cmd, then runs the JS preparation stage with the verified runtime; check validates without writing. JS checks/prepares Git and gh and writes tool-bindings.json. Each stage reports its own result; partial failure preserves completed tools and does not claim overall readiness. Bootstrap does not initialize a repository, configure authors/remotes or log in.
-
-Tools and generated bindings live permanently in ~/.agents/skills.tools/gidd/, shared by all repositories and independent of the skill installation scope. The location is not configurable. Ordinary commands start JS via js_exec.cmd and execute the bound Git/gh absolute paths without searching PATH, version probes or full payload hashing. The selected Git directory is prepended only to child-process PATH so gh uses the same Git. Binding/start errors prompt tools --ensure; business failures keep their own reasons and never cause automatic fallback or retries. Doctor detects bound version changes and basic startup failures; tools --check validates complete installations. Rerun tools --ensure after skill updates or tool changes. Changing shared bindings affects all repositories for this user.
-
-An entry at <repository>/.agents/skills/gidd/ locates its repository using its own path and local .git marker, including worktrees, independently of cwd. Resolve the target from the user request before repository operations. User-level installations do not imply a target; ask only when it is unclear. Without an implicit target doctor reports tools and target_required; tools --ensure can still prepare tools without a Git repository. Installation or successful tools --ensure does not enable GIDD for a repository.
+Resolve the target repository from the user request. The skill can be installed inside or outside it, so the actual skill's preparation entry always requires an absolute Git working-tree root via --repo (--repository is also accepted). A suitable GitHub remote is required, but no commit or login. User-level installation alone does not select or enable a repository.
 
 ```powershell
-& "<repository>\.agents\skills\gidd\gidd.cmd" tools --check
-& "<repository>\.agents\skills\gidd\gidd.cmd" tools --ensure
-& "<repository>\.agents\skills\gidd\gidd.cmd" doctor
-& "<repository>\.agents\skills\gidd\gidd.cmd" doctor --offline
-& "<repository>\.agents\skills\gidd\gidd.cmd" auth
+& "<skill-directory>\gidd.pre.ensure.cmd" help en
+& "<skill-directory>\gidd.pre.ensure.cmd" --repo "<absolute-worktree-root>" --check
+& "<skill-directory>\gidd.pre.ensure.cmd" --repo "<absolute-worktree-root>"
 ```
 
-Use help en / help zh; --help and -h are aliases, and no arguments show help. Help also requires js_exec.cmd. Language follows the argument, GIDD_LANG, then locale; unsupported system languages fall back to English. Tools check/ensure emits gidd.tools/v1; ordinary argument errors use gidd.cli/v1. Commands preserve stdout/stderr and exit codes. Linux/macOS launchers are not implemented or verified.
+--check inspects tools, bindings, Git/GitHub remote and repository entry without downloads, recovery or writes. When preparation is authorized, omit --check to prepare shared tools and create <repository>/.agents/skills/gidd/gidd.link.cmd. Missing or stale entries require rerunning preparation. This does not create config, initialize Git, authenticate or enable GIDD; config init remains unimplemented. Read [references/repository-entry.md](references/repository-entry.md) for preconditions, output and relative/external locations.
 
-Use [references/doctor.md](references/doctor.md) for read-only diagnosis. Doctor defaults to local checks plus GitHub API identity and eligible HTTPS remote reads; doctor --offline makes no network requests. Tools are summarized as js_runtime, git and gh: inspect only the running JS process and published Git/gh bindings with one version probe each. Do not discover candidates or scan installations; failures point to tools --ensure, while tools --check owns full tool diagnosis. Missing bindings, repository/config errors and network failures remain distinct. local_ready applies only to offline mode; checks_passed does not establish enablement or push access.
+Preparation retains a compatible bound runtime, then tries managed Bun, managed Node, PATH Bun and PATH Node. If none is compatible it downloads stable Bun. --jsruntime=bun|node selects a kind; Node downloads use LTS. --force reinstalls the selected managed runtime, Git and gh, preserving external tools, the other runtime and unknown files. Without a selector force retains the bound kind or defaults to Bun. Neither option can accompany --check. Read [references/bootstrap.md](references/bootstrap.md) for selection, bindings and recovery.
+
+The native preparation entry verifies/prepares a runtime and publishes js_exec.cmd; JS then prepares Git, verifies the worktree/remote, prepares gh and publishes the repository entry. Failed stages preserve completed work without claiming overall readiness. Check diagnoses independent items when possible; missing runtime or Git marks dependent checks not_checked. The report remains gidd.tools/v1, with read_only identifying checks.
+
+Tools and bindings live permanently in ~/.agents/skills.tools/gidd/, shared by all repositories and independent of skill installation. This path is not configurable. Ordinary commands start JS through js_exec.cmd and use bound Git/gh paths without searching PATH, version probes or full payload hashing. Only child-process PATH is adjusted so gh uses the same Git. Startup/binding errors direct users to gidd.pre.ensure; business errors do not trigger preparation or fallback retries. Shared binding changes affect all repositories for this user.
+
+Use the generated repository entry from any working directory:
+
+```powershell
+& "<repository>\.agents\skills\gidd\gidd.link.cmd" help en
+& "<repository>\.agents\skills\gidd\gidd.link.cmd" doctor --offline
+& "<repository>\.agents\skills\gidd\gidd.link.cmd" doctor
+& "<repository>\.agents\skills\gidd\gidd.link.cmd" auth
+```
+
+The link fixes its target and rejects overrides. A repository-installed gidd.cmd can also locate its own target from its path and .git marker, including worktrees. An unbound doctor reports target_required if no target is available. Ordinary gidd commands have no tools subcommand; preparation is only through gidd.pre.ensure.cmd.
+
+Use help en / help zh; --help, -h and no arguments also show help. Ordinary help requires js_exec.cmd; preparation help works before a runtime or target is available. Language follows the argument, GIDD_LANG, then locale; unsupported system languages use English. Argument errors use gidd.cli/v1 for ordinary commands. Linux/macOS launchers are not implemented or verified.
+
+Use [references/doctor.md](references/doctor.md) for read-only diagnosis. Doctor defaults to local checks plus GitHub API identity and eligible HTTPS remote reads; doctor --offline makes no network requests. It probes the running runtime and bound Git/gh only; gidd.pre.ensure with --repo and --check performs complete tool checks. Configuration, repository, binding and network errors remain distinct. local_ready is offline-only; checks_passed does not prove enablement or push access.
 
 Use config show / config set with [references/configuration.md](references/configuration.md). Runtime config is only <repository>/.agents/skills/gidd/config.toml; do not inherit user-level settings. Editable fields are github.hostname/account/remote and tools.node/bun/gh.source. Remove retired [bootstrap] and tool version fields while preserving unrelated comments and settings. First set creates the template; edits preserve comments, BOM and line endings. Editing does not install, authenticate or enable a repository.
 
@@ -40,4 +47,4 @@ Read [references/setup.md](references/setup.md) for installation integrity, MinG
 
 When copying the skill, exclude config.toml, config.toml.* edit files, gidd.link.cmd and gidd.link.cmd.* generated files; preserve target config and use config.example.toml for a new instance. For removal identify actual skill location, repository config and shared root. Removing one repository does not authorize deleting shared storage. Full removal must explicitly include it; other repositories may still use it. Never remove reused external tools or call deletion GitHub logout/revocation.
 
-Windows tools --ensure, bindings, diagnosis, configuration and identity/device authorization are implemented. Full skill installation/update, enablement records and Issue/PR business scripts remain unimplemented. Shared JS must use standard APIs supported and tested by Node and Bun.
+Windows gidd.pre.ensure --repo <repository-path>, bindings, diagnosis, configuration and identity/device authorization are implemented. Full skill installation/update, enablement records and Issue/PR business scripts remain unimplemented. Shared JS must use standard APIs supported and tested by Node and Bun.

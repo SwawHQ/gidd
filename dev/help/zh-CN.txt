@@ -19,7 +19,7 @@ GIDD 仓库开发（Windows x64 / Windows PowerShell 5.1）
 每组显示结果和耗时，失败汇总附带 PowerShell 复跑命令。
 开发中按组验证，提交前运行完整 .test。
 无参数显示帮助。帮助语言按参数、GIDD_DEV_LANG、系统语言、英文的顺序选择。
-.setup 和 .test-live 可以下载工具；.auth 需要产品 tools --ensure 已生成启动器。.test 不安装工具。
+.setup 和 .test-live 可以下载工具；.auth 需要产品 gidd.pre.ensure --repo <repository-path> 已生成启动器。.test 不安装工具。
 bun/node 保留调用目录、参数和输入输出；具体命令可以有自己的网络和写入行为。
 便携与 sys 模式互不回退，两者均使用内部兼容检查方法。
 工具固定存放于 ~/.agents/skills.tools/gidd/；下载来源读取仓库 config.toml。

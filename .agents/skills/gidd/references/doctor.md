@@ -11,18 +11,18 @@ doctor 默认执行本地诊断和只读联网检查；--offline 跳过所有联
 
 ## 执行与工具边界
 
-入口通过 tools --ensure 发布的 js_exec.cmd 启动 scripts/gidd.mjs。启动器缺失或运行时无法启动时，JS doctor 尚未执行，应运行 tools --ensure；不通过其他运行时回退重跑。
+入口通过 gidd.pre.ensure --repo <repository-path> 发布的 js_exec.cmd 启动 scripts/gidd.mjs。启动器缺失或运行时无法启动时，JS doctor 尚未执行，应运行 gidd.pre.ensure --repo <repository-path>；不通过其他运行时回退重跑。
 
 doctor 只验证当前执行链：
 
 - js_runtime 来自当前进程的运行时种类、路径和版本。成功进入 doctor 证明本次启动链可运行；不再次调用兼容脚本，也不探测另一个运行时。
 - scripts/bindings.mjs 读取一次固定共享目录中的 tool-bindings.json，检查 schema、平台、字段和路径格式。
-- 对已绑定 Git、gh 各执行一次 --version，最多等待 5 秒；要求版本可解析、达到现有最低要求且与绑定记录一致。失败返回具体 reason 和 tools --ensure 提示，不搜索 PATH 或选用替代工具。
+- 对已绑定 Git、gh 各执行一次 --version，最多等待 5 秒；要求版本可解析、达到现有最低要求且与绑定记录一致。失败返回具体 reason 和 gidd.pre.ensure --repo <repository-path> 提示，不搜索 PATH 或选用替代工具。
 - 工具根直接按固定用户路径解析，不依赖仓库工具下载配置。配置损坏仍可报告已绑定工具的状态。
 
 三个工具的成功 details 统一提供 gidd_managed 布尔值，不再输出 source：true 表示 GIDD 管理的工具，false 表示复用的外部工具。Git/gh 根据已发布绑定的管理归属报告；js_runtime 将当前进程的真实可执行路径与固定工具根下 bun/bun.exe 或 node/node.exe 比较。工具根和当前执行路径解析目录联接，指向外部运行时的联接不会仅因入口位于工具根下就被视为受管。这是管理归属说明，不代表完整安装校验。
 
-不检查安装清单、完整文件哈希、其他运行时、候选工具、安装缓存或恢复事务。tools --check 保留完整工具诊断；tools --ensure 负责准备、校验和修复，并报告其自身错误。基本版本调用成功不证明所有工具组件或业务调用均可用。
+不检查安装清单、完整文件哈希、其他运行时、候选工具、安装缓存或恢复事务。gidd.pre.ensure --repo <repository-path> --check 保留完整工具诊断；gidd.pre.ensure --repo <repository-path> 负责准备、校验和修复，并报告其自身错误。基本版本调用成功不证明所有工具组件或业务调用均可用。
 
 ## 本地检查
 
@@ -59,7 +59,7 @@ stdout 为单个 JSON 对象。字段为 schema=gidd.doctor/v1、mode=online|off
 
 正常平台下有九项：js_runtime、git、gh、config、repository、git.author、repository.remote、github.identity、git.remote_read。不支持的平台通过公共入口报错；内部诊断额外给出 platform=unsupported。
 
-成功项仅包含 id、status=ready 和有用的 details，不输出重复 reason 或空 details。异常项包含稳定 reason，工具异常另含 hint=Run gidd tools --ensure。不能依赖 checks 的顺序。
+成功项仅包含 id、status=ready 和有用的 details，不输出重复 reason 或空 details。异常项包含稳定 reason，工具异常另含 hint=Run gidd.pre.ensure --repo <repository-path>。不能依赖 checks 的顺序。
 
 | 退出码 / 总体状态 | 含义 |
 | --- | --- |

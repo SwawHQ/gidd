@@ -121,7 +121,7 @@ test('development setup keeps runtime selectors and retires the gh shortcut',()=
     for(const path of ['dev.cmd','dev','.agents/skills/gidd'])cpSync(join(repo,path),join(checkout,path),{recursive:true});
     const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
     const invoke=tool=>run(cmd,['/d','/s','/c',`""${join(checkout,'dev.cmd')}" .setup ${tool}"`],{windowsVerbatimArguments:true,env:{PATH:''}});
-    const rejected=invoke('gh');assert.notEqual(rejected.status,0);assert.match(rejected.stderr,/tools --ensure/);
+    const rejected=invoke('gh');assert.notEqual(rejected.status,0);assert.match(rejected.stderr,/gidd\.pre\.ensure/);
     assert.equal(existsSync(toolsRoot(f.root)),false);
     for(const tool of ['unknown','bun extra','node extra'])assert.notEqual(invoke(tool).status,0);
   } finally {f.dispose();}

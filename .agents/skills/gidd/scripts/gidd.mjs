@@ -19,7 +19,6 @@ export async function main(args, { boundRepository } = {}) {
       const language = /^zh(?:$|[-_])/.test(choice) ? 'zh-CN' : 'en';
       console.log(readFileSync(new URL(`./help/${language}.txt`,import.meta.url),'utf8')); return 0;
     }
-    if (['setup','bootstrap'].includes(command)) throw new Error(command + '_removed_use_tools');
     if (!Object.hasOwn(schemas,command)) throw new Error('unknown_command');
     if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');
     let action, key, value;
@@ -72,7 +71,7 @@ export async function main(args, { boundRepository } = {}) {
     return ['ready','local_ready','checks_passed'].includes(report.status) ? 0 : 1;
   } catch (error) {
     const reason = /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : 'operation_failed';
-    if (reason.startsWith('tool_binding') || reason.endsWith('_removed_use_tools')) console.error('Run gidd.cmd tools --ensure to prepare tools and rebuild bindings.');
+    if (reason.startsWith('tool_binding')) console.error('Run gidd.pre.ensure.cmd --repo with the target directory to prepare tools and rebuild bindings.');
     const hint = configurationHint(reason); if (hint) console.error(hint);
     console.log(JSON.stringify({ schema, status: 'error', reason }));
     return 2;

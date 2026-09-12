@@ -162,7 +162,7 @@ test('configured setup reuses gh without knowing a skill installation directory'
     write(path,configText()); const before=hash(path), exe=compile(f.root);
     stub(exe,join(tools,'node/node.exe'),undefined,true); stub(exe,join(tools,'gh/gh.exe'),undefined,true);
     const invoke=() => prepare(f.root,'gh',{env:{PATH:''}});
-    assert.notEqual(ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root,'-ArchiveDirectory',f.root],{env:{PATH:''}}).status,0);
+    assert.equal(existsSync(join(code,'setup-tools.ps1')),false);
     const report=json(ok(invoke())); samePath(report.tools_root,tools);
     assert.deepEqual(report.tools.map(x=>x.name),['gh']); assert.ok(report.tools.every(x=>x.action==='reused'));
     assert.equal(existsSync(join(tools,'bun')),false); assert.equal(hash(path),before);

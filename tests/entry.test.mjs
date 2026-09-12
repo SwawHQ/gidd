@@ -12,15 +12,19 @@ function installation(f, prepare = true) {
   assert.equal(existsSync(join(skill, 'config.toml')), false, 'Installation must not inherit development configuration');
   assert.equal(existsSync(join(skill, 'config.example.toml')), true, 'Installation must include the configuration template');
   mkdirSync(target);
+  const git = findGit();
+  ok(run(git, ['-C',target,'init','--quiet']));
+  ok(run(git, ['-C',target,'remote','add','origin','https://github.com/Team/Repo.git']));
   write(join(target, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\n');
   const entryBin=join(f.root,'entry-tools'), entryExe=compile(f.root);
-  stub(entryExe,join(entryBin,'git.exe')); stub(entryExe,join(entryBin,'gh.exe'));
+  stub(entryExe,join(entryBin,'gh.exe'));
   const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
-  const invoke = (args, env = {}, options = {}) => run(cmd, ['/d','/s','/c', `""${join(skill, 'gidd.cmd')}" ${args.map(quote).join(' ')}"`], {
-    cwd: skill, windowsVerbatimArguments: true, ...options, env: { PATH: [dirname(process.execPath),entryBin].join(';'), GIDD_LANG: '', LC_ALL: 'en_US.UTF-8', ...env },
+  const invoke = (args, env = {}, options = {}, entry = 'gidd.cmd') => run(cmd, ['/d','/s','/c', `""${join(skill, entry)}" ${args.map(quote).join(' ')}"`], {
+    cwd: skill, windowsVerbatimArguments: true, ...options, env: { PATH: [dirname(process.execPath),dirname(git),entryBin].join(';'), GIDD_LANG: '', LC_ALL: 'en_US.UTF-8', ...env },
   });
-  if (prepare) ok(invoke(['tools','--ensure','--repository',target]));
-  return { skill, target, invoke, args: ['--repository', target] };
+  const ensure = (args = [], env = {}) => invoke(['--repo',target,...args],env,{},'gidd.pre.ensure.cmd');
+  if (prepare) ok(ensure());
+  return { skill, target, invoke, ensure, args: ['--repository', target] };
 }
 
 function sameDirectory(actual, expected) {
@@ -35,31 +39,34 @@ test('compatibility is a standalone bootstrap method with internal version polic
   assert.equal(json(ok(run(process.execPath,[join(code,'../runtime-compat.mjs')]))).status,'compatible');
 });
 
-test('tools defaults to read-only check and requires explicit ensure for changes', () => {
+test('preparation owns tool checks and gidd no longer routes tool commands', () => {
   const f=fixture();
   try {
     const s=installation(f,false),before=snapshot(f.root);
-    const bare=s.invoke(['tools'],{PATH:''}), explicit=s.invoke(['tools','--check'],{PATH:''});
-    assert.equal(bare.status,explicit.status);assert.deepEqual(json(bare),json(explicit));
-    assert.equal(json(bare).read_only,true);
-    assert.equal(json(s.invoke(['bootstrap'])).reason,'bootstrap_removed_use_tools');
+    assert.equal(existsSync(join(s.skill,'gidd.tools.ensure.cmd')),false);
+    const bare=s.invoke(['tools'],{PATH:''});
+    assert.equal(bare.status,2); assert.equal(json(bare).reason,'bootstrap_required');
+    assert.match(bare.stderr,/gidd\.pre\.ensure\.cmd --repo/);
     assert.deepEqual(snapshot(f.root),before);
-    const missing=json(s.invoke(['tools','--check',...s.args],{PATH:''}));
+    const missing=json(s.ensure(['--check'],{PATH:''}));
     assert.equal(missing.status,'needs_tools'); assert.equal(missing.runtime,null);
     assert.equal(missing.read_only,true); assert.deepEqual(snapshot(f.root),before);
-    const checked=json(s.invoke(['tools','--check',...s.args]));
-    assert.deepEqual(json(s.invoke(['tools',...s.args])),checked);
+    const checked=json(s.ensure(['--check']));
     assert.equal(checked.status,'needs_tools'); assert.deepEqual(snapshot(f.root),before);
-    for(const args of [['--yes'],['--check','--check'],['--check','--ensure'],['--force'],['--check','--force'],['--jsruntime=node'],['--ensure','--jsruntime=bad'],['--ensure','--jsruntime=bun','--jsruntime=node'],['--node'],['--reinstall'],['--unknown'],['--repository']])
-      assert.equal(s.invoke(['tools',...args]).status,2);
-    const prepared=json(ok(s.invoke(['tools','--ensure',...s.args])));
+    for(const args of [['--yes'],['--check','--check'],['--check','--ensure'],['--check','--force'],['--check','--jsruntime=node'],['--jsruntime=bad'],['--jsruntime=bun','--jsruntime=node'],['--node'],['--reinstall'],['--unknown'],['--repository']])
+      assert.equal(s.ensure(args).status,2);
+    const prepared=json(ok(s.ensure()));
     assert.equal(prepared.launcher_action,'published'); assert.equal(prepared.tools.length,2);
-    assert.equal(json(ok(s.invoke(['tools','--ensure','--jsruntime='+(process.versions.bun?'bun':'node'),...s.args]))).runtime.id,process.versions.bun?'tool.bun':'tool.node');
+    assert.equal(json(ok(s.ensure(['--jsruntime='+(process.versions.bun?'bun':'node')]))).runtime.id,process.versions.bun?'tool.bun':'tool.node');
     const installed=snapshot(toolsRoot(f.root));
-    const ready=json(ok(s.invoke(['tools','--check',...s.args])));assert.equal(ready.status,'ready');
-    assert.deepEqual(json(ok(s.invoke(['tools',...s.args]))),ready);
+    const ready=json(ok(s.ensure(['--check'])));assert.equal(ready.status,'ready');
+    for (const args of [['tools'],['tools','--check'],['tools','--ensure'],['bootstrap'],['setup']]) {
+      assert.equal(json(s.invoke(args)).reason,'unknown_command');
+    }
+    assert.doesNotMatch(ok(s.invoke(['help','en'])).stdout,/External tools|gidd\.pre\.ensure|gidd tools/);
+    assert.doesNotMatch(ok(s.invoke(['help','zh'])).stdout,/外部工具|gidd\.pre\.ensure|gidd tools/);
     assert.deepEqual(snapshot(toolsRoot(f.root)),installed);
-    assert.equal(json(ok(s.invoke(['tools','--ensure',...s.args]))).launcher_action,'reused');
+    assert.equal(json(ok(s.ensure())).launcher_action,'reused');
     assert.deepEqual(snapshot(toolsRoot(f.root)),installed);
   } finally {f.dispose();}
 });
@@ -201,7 +208,7 @@ test('bootstrap installs, repairs and rolls back managed runtimes before publish
       const interruptedTree=snapshot(root);
       assert.equal(json(ok(invoke({yes:false}))).status,'needs_bootstrap');
       assert.deepEqual(snapshot(root),interruptedTree,'Read-only bootstrap must not recover or discard a backup');
-      assert.equal(json(product(['setup',name,'--repository',f.root],{env})).reason,'setup_removed_use_tools');
+      assert.equal(json(product(['setup',name,'--repository',f.root],{env})).reason,'unknown_command');
       assert.deepEqual(snapshot(root),interruptedTree,'Removed setup must preserve the pending runtime backup');
       ok(invoke({responses:{},downloads:{}}));
       assert.deepEqual(snapshot(target),old); assert.equal(hash(launcher),launcherHash);
@@ -219,27 +226,27 @@ test('generated launcher pins an external Unicode/percent path and does not sear
     const s=installation(f,false), name=process.versions.bun?'bun':'node';
     const home=join(f.root,'用户 %GIDD_PATH_SENTINEL% ! profile'), bin=join(f.root,'运行时 %GIDD_PATH_SENTINEL% ! bin');
     mkdirSync(home); stub(process.execPath,join(bin,`${name}.exe`));
-    for(const tool of ['git','gh'])stub(join(f.root,'tool.exe'),join(bin,tool+'.exe'));
-    const env={USERPROFILE:home,PATH:bin,GIDD_PATH_SENTINEL:'unexpected-expansion'};
-    const report=json(ok(s.invoke(['tools','--ensure',...s.args],env)));
+    for(const tool of ['gh'])stub(join(f.root,'tool.exe'),join(bin,tool+'.exe'));
+    const env={USERPROFILE:home,PATH:[bin,dirname(findGit())].join(';'),GIDD_PATH_SENTINEL:'unexpected-expansion'};
+    const report=json(ok(s.ensure([],env)));
     assert.equal(report.runtime.details.source,'path');
     const launcher=join(toolsRoot(home),'js_exec.cmd'), previous=hash(launcher);
     assert.doesNotMatch(readFileSync(launcher,'utf8'), /chcp|[^\x00-\x7f]/i);
     const root=toolsRoot(home), binding=join(root,readdirSync(root).find(n=>n.startsWith('.runtime-path-')));
     assert.equal(lstatSync(binding).isSymbolicLink(),true); sameDirectory(binding,bin);
-    assert.equal(json(ok(s.invoke(['tools','--check',...s.args],env))).launcher_matches,true);
+    assert.equal(json(ok(s.ensure(['--check'],env))).launcher_matches,true);
     rmSync(binding); // Remove the junction itself, never its external contents.
     assert.equal(existsSync(join(bin,`${name}.exe`)),true);
-    assert.equal(json(s.invoke(['tools','--check',...s.args],env)).launcher_matches,false);
+    assert.equal(json(s.ensure(['--check'],env)).launcher_matches,false);
     assert.equal(existsSync(binding),false,'Read-only checks must not repair a missing link');
     write(binding,'unknown file');
-    assert.equal(json(s.invoke(['tools','--ensure',...s.args],env)).reason,'occupied_runtime_binding');
+    assert.equal(json(s.ensure([],env)).reason,'occupied_runtime_binding');
     assert.equal(readFileSync(binding,'utf8'),'unknown file'); assert.equal(hash(launcher),previous);
     rmSync(binding);
     const wrong=join(f.root,'wrong target'); mkdirSync(wrong); symlinkSync(wrong,binding,'junction');
-    assert.equal(json(s.invoke(['tools','--ensure',...s.args],env)).reason,'occupied_runtime_binding');
+    assert.equal(json(s.ensure([],env)).reason,'occupied_runtime_binding');
     sameDirectory(binding,wrong); assert.equal(hash(launcher),previous); rmSync(binding);
-    assert.equal(json(ok(s.invoke(['tools','--ensure',...s.args],env))).launcher_action,'reused');
+    assert.equal(json(ok(s.ensure([],env))).launcher_action,'reused');
     sameDirectory(binding,bin);
     write(join(bin,'SKILL.md'),'external content, not GIDD storage');
     assert.equal(json(s.invoke(['doctor',...s.args],{...env,PATH:''})).schema,'gidd.doctor/v1');
@@ -258,7 +265,7 @@ test('generated launcher pins an external Unicode/percent path and does not sear
     assert.equal(existsSync(log),false,'A missing bound runtime must not fall back to managed Bun');
     rmSync(join(root,'bun'),{recursive:true});
     stub(process.execPath,join(root,name,`${name}.exe`),undefined,true);
-    assert.equal(json(ok(s.invoke(['tools','--ensure',...s.args],{...env,PATH:''}))).runtime.details.source,'managed');
+    assert.equal(json(ok(s.ensure([],{...env,PATH:''}))).runtime.details.source,'managed');
     assert.doesNotMatch(readFileSync(launcher,'utf8'),/chcp|[^\x00-\x7f]/i);
     assert.match(ok(s.invoke(['--help','en'],{...env,PATH:''})).stdout,/Help and diagnosis:/);
 
@@ -315,10 +322,9 @@ test('removed runtime setup commands fail without changing configuration or tool
       for (const invoke of [args => s.invoke(args,{PATH:''}), args => product(args,{env:{PATH:''}})]) {
         const result = invoke(['setup',name,...s.args]);
         assert.equal(result.status,2);
-        assert.equal(json(result).reason,'setup_removed_use_tools');
-        assert.match(result.stderr,/tools --ensure/);
-        }
-      assert.notEqual(ps(join(s.skill,'scripts/windows/setup-tools.ps1'),['-RepositoryPath',s.target,'-Tool',name],{env:{PATH:''}}).status,0);
+        assert.equal(json(result).reason,'unknown_command');
+      }
+      assert.equal(existsSync(join(s.skill,'scripts/windows/setup-tools.ps1')),false);
     }
     assert.deepEqual(snapshot(f.root),before,'Rejected commands must not read invalid config, install, or switch the launcher');
   } finally { f.dispose(); }

@@ -40,7 +40,7 @@ try {
         $Argument = ''; $Extra = @()
     }
     if ($Command -eq '.setup') {
-        if ($Argument -and $Argument -notin @('bun','node')) { throw 'Use dev.cmd .setup bun/node for development runtimes; use gidd.cmd tools --ensure for Git/gh.' }
+        if ($Argument -and $Argument -notin @('bun','node')) { throw 'Use dev.cmd .setup bun/node for development runtimes; use gidd.pre.ensure.cmd --repo <repository-path> for Git/gh.' }
     }
     if ($Extra.Count -and $Command -notin @('bun','node')) { throw 'Unexpected arguments. Use dev.cmd .help.' }
     if ($Command -in @('.help','--help','-h','/?')) {
