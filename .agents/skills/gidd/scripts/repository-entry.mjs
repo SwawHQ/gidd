@@ -1,6 +1,6 @@
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { durableFile } from './install.mjs';
 import { plainPath } from './storage.mjs';
@@ -8,7 +8,7 @@ import { remoteAddress } from './doctor.mjs';
 import { validateGitHubField } from './config.mjs';
 import { runCommand } from './github.mjs';
 
-const sourceEntry = fileURLToPath(new URL('../gidd.cmd', import.meta.url));
+const sourceEntry = fileURLToPath(new URL('./gidd.mjs', import.meta.url));
 const schema = 'gidd.repository-entry/v1';
 const reasonOf = error => /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : 'repository_entry_failed';
 const samePath = (a, b) => realpathSync.native(a).toLowerCase() === realpathSync.native(b).toLowerCase();
@@ -28,7 +28,7 @@ export function assertInstallationRepository(repository, entry = sourceEntry) {
   requireRoot(repository);
   plainPath(entry);
   if (!lstatSync(entry).isFile()) throw new Error('linked_skill_unavailable');
-  const skill = dirname(realpathSync.native(entry));
+  const skill = dirname(dirname(realpathSync.native(entry)));
   for (let root = skill; ; root = dirname(root)) {
     if (existsSync(join(root, '.git'))) {
       const layout = relative(root, skill).replaceAll('\\', '/');
@@ -78,7 +78,7 @@ export async function inspectRepositoryEntry(repository, git, github = {}, execu
 
 function validateSpec(spec) {
   if (spec?.schema !== schema || typeof spec.entry !== 'string' || !spec.entry ||
-      /[\x00-\x1f"<>|]/.test(spec.entry) || !spec.entry.replaceAll('\\', '/').endsWith('gidd.cmd') ||
+      /[\x00-\x1f"<>|]/.test(spec.entry) || !spec.entry.replaceAll('\\', '/').endsWith('/gidd.mjs') ||
       Object.keys(spec).some(key => !['schema', 'entry'].includes(key))) throw new Error('repository_entry_invalid');
   return spec;
 }
@@ -86,13 +86,19 @@ function validateSpec(spec) {
 export function renderRepositoryEntry(spec) {
   validateSpec(spec);
   const encoded = Buffer.from(JSON.stringify(spec), 'utf8').toString('base64');
-  // A single JS process decodes the location and enters the installed dispatcher.
-  // Keeping batch source ASCII avoids CHCP, extra CMD expansion, and an extra shell.
-  const loader = "const p=require('node:path'),u=require('node:url'),d=process.env.GIDD_LINK_DIRECTORY,s=JSON.parse(Buffer.from(process.env.GIDD_LINK_SPEC,'base64').toString('utf8'));import(u.pathToFileURL(p.join(p.dirname(p.resolve(d,s.entry)),'scripts','repository-entry.mjs')).href).then(m=>m.runLink(d,s,process.argv.slice(1))).then(c=>process.exitCode=c).catch(()=>{console.error('GIDD linked skill is unavailable. Rerun gidd.pre.ensure.cmd --repo with the target directory.');console.log(JSON.stringify({schema:'gidd.repository-entry/v1',status:'error',reason:'linked_skill_unavailable'}));process.exitCode=2})";
+  // Encode the import location at generation time, not in the batch launcher.
+  // File URLs keep Unicode and shell metacharacters out of executable CMD text.
+  const dispatcher = join(dirname(spec.entry), 'repository-entry.mjs');
+  const moduleURL = isAbsolute(dispatcher) ? pathToFileURL(dispatcher).href :
+    dispatcher.replaceAll('\\', '/').split('/').map(encodeURIComponent).join('/');
+  const literalURL = moduleURL.replaceAll("'", '%27').replaceAll('%', '%%');
+  const loader = "import(new URL('" + literalURL + "',require('node:url').pathToFileURL(process.env.GIDD_LINK_DIRECTORY)))" +
+    ".then(m=>m.startLink())";
   return ['@echo off', 'setlocal DisableDelayedExpansion', 'rem GIDD_LINK ' + encoded,
     'set "GIDD_LINK_DIRECTORY=%~dp0"', 'set "GIDD_LINK_SPEC=' + encoded + '"',
     'if not exist "%USERPROFILE%\\.agents\\skills.tools\\gidd\\js_exec.cmd" goto :missing',
-    '"%USERPROFILE%\\.agents\\skills.tools\\gidd\\js_exec.cmd" -e "' + loader + '" -- %*',
+    'set "GIDD_LINK_LOADER=' + loader + '"',
+    '"%USERPROFILE%\\.agents\\skills.tools\\gidd\\js_exec.cmd" -e "%GIDD_LINK_LOADER%" -- %*',
     ':missing', '>&2 echo GIDD runtime launcher missing. Rerun gidd.pre.ensure.cmd --repo with the target directory.',
     'echo {"schema":"gidd.repository-entry/v1","status":"error","reason":"bootstrap_required"}',
     'exit /b 2', ''].join('\r\n');
@@ -163,11 +169,9 @@ export async function runLink(directory, spec, args) {
     const repository = resolve(directory, '../../..');
     if (resolve(repository, '.agents/skills/gidd').toLowerCase() !== resolve(directory).toLowerCase()) throw new Error('repository_entry_location_invalid');
     const entry = resolve(directory, spec.entry);
-    if (samePath(entry, entryPath(repository))) throw new Error('repository_entry_recursive');
     // Verify we entered the very skill named by the link, not another copied helper.
     if (!samePath(entry, sourceEntry)) throw new Error('repository_entry_target_mismatch');
     if (args.some(arg => arg === '--repository' || arg.startsWith('--repository='))) throw new Error('repository_override_forbidden');
-    delete process.env.GIDD_LINK_DIRECTORY; delete process.env.GIDD_LINK_SPEC;
     const { main } = await import('./gidd.mjs');
     return await main([...args], { boundRepository: repository });
   } catch (error) {
@@ -175,4 +179,24 @@ export async function runLink(directory, spec, args) {
     console.log(JSON.stringify({ schema, status: 'error', reason: reasonOf(error) }));
     return 2;
   }
+}
+
+// The generated CMD only imports this function. Decode metadata, bind the
+// repository and report failures here, in the installed JavaScript module.
+export async function startLink(args = process.argv.slice(1)) {
+  const directory = process.env.GIDD_LINK_DIRECTORY;
+  const encoded = process.env.GIDD_LINK_SPEC;
+  delete process.env.GIDD_LINK_DIRECTORY;
+  delete process.env.GIDD_LINK_SPEC;
+  delete process.env.GIDD_LINK_LOADER;
+  let spec;
+  try {
+    spec = JSON.parse(Buffer.from(encoded || '', 'base64').toString('utf8'));
+  } catch {
+    console.error('GIDD repository entry is invalid. Rerun gidd.pre.ensure.cmd --repo with the target directory.');
+    console.log(JSON.stringify({ schema, status: 'error', reason: 'repository_entry_invalid' }));
+    process.exitCode = 2;
+    return;
+  }
+  process.exitCode = await runLink(directory, spec, args);
 }

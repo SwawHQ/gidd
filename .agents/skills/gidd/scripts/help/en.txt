@@ -6,10 +6,20 @@ Help and diagnosis:
   gidd doctor                            Check tools, repository and GitHub identity (includes network checks)
   gidd doctor --offline                  Check local tools, config and repository without network requests
 
+Repository development spec:
+  gidd spec                             Print the effective spec and available helpers (offline, read-only)
+  gidd spec current                     Explicit form; same as gidd spec
+  gidd spec --lang en                    Select English output; zh is also supported
+  gidd spec template issue               Print the current spec's Issue template
+  spec, spec current and spec template issue support --json and --lang zh|en.
+  Available mode: issue-direct (Issue + direct delivery; no PR or independent approval required).
+  Guidance does not verify remote permissions; native Git/gh commands do not enforce the spec.
+
 Skill settings:
   gidd config show                       Show current config.toml contents
   gidd config set <key> <value>           Set a field in config.toml
   gidd config set github.account SwawHQ  (Example) Set github.account to SwawHQ
+  gidd config set spec.mode issue-direct  Select the lightweight spec
   If config.toml is missing, config set creates minimal configuration; tool download sources use built-in defaults.
 
 GitHub authorization:
@@ -19,8 +29,9 @@ Diagnostic results:
   Each check includes severity (info / warning / error); follow hint and commands, then rerun doctor.
   Exit 0: no errors; 1: blocking errors; 2: argument or execution failure. Offline success does not prove GitHub login or push access.
   Supply actual values for commands.required_inputs; auth requires explicit user authorization.
-  Configuration fields: github.hostname/account/remote/repository, tools.node/bun/gh.source (HTTPS download roots).
+  Configuration fields: github.hostname/account/remote/repository, tools.node/bun/gh.source (HTTPS download roots), spec.mode.
   git.worktree checks the local Git worktree and HEAD; config_file checks the configuration file and schema.
   config.github.remote/hostname/repository/account check individual fields; the first three also check the local fetch target.
   The config. prefix is only part of check IDs; config set still uses field names such as github.remote.
   Review configuration before setting github.repository when missing or changed; it records neither commits nor a separate push target.
+  config.spec.mode checks mode selection; spec.resources checks its definition and required resources.

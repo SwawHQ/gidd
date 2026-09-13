@@ -1,0 +1,13 @@
+{
+  "schema": "gidd.spec-definition/v1",
+  "id": "issue-direct",
+  "version": 1,
+  "title": { "zh-CN": "Issue + 直接交付", "en": "Issue + direct delivery" },
+  "prompts": { "zh-CN": "prompts/zh-CN.md", "en": "prompts/en.md" },
+  "templates": { "issue": { "zh-CN": "templates/issue.zh-CN.md", "en": "templates/issue.en.md" } },
+  "helpers": [
+    "spec.template.issue", "doctor.offline", "doctor.online", "git.status",
+    "github.default-branch", "github.issue.view", "github.issue.create",
+    "github.issue.comment", "github.issue.close"
+  ]
+}

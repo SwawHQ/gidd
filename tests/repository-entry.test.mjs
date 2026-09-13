@@ -5,7 +5,7 @@ import { assert, compile, copySkill, dirname, existsSync, fixture, findGit, join
 
 const quote = value => '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';
 function setup(f) {
-  const git = findGit(), skill = join(f.root, '外部 skill %literal% ! & spaces');
+  const git = findGit(), skill = join(f.root, "外部 skill %literal% ! & # ' spaces");
   copySkill(skill);
   const bin = join(f.root, 'bin'); stub(compile(f.root), join(bin, 'gh.exe'));
   const env = { PATH: [dirname(process.execPath), dirname(git), bin].join(';'), GIDD_LANG: 'en', literal: undefined };
@@ -72,11 +72,11 @@ test('repository installations reject other targets before preparation or JS pub
   const f = fixture();
   try {
     const s = setup(f), target = s.create('owner-other');
-    publishRepositoryEntry(target, join(s.skill, 'gidd.cmd'));
+    publishRepositoryEntry(target, join(s.skill, 'scripts/gidd.mjs'));
     // All fixtures share the same remote: ownership belongs to the local worktree.
     for (const layout of ['.agents', '.claude']) {
       const owner = s.create('owner-' + layout), skill = join(owner, layout, 'skills/gidd'); copySkill(skill);
-      const entry = join(skill, 'gidd.pre.ensure.cmd'), source = join(skill, 'gidd.cmd');
+      const entry = join(skill, 'gidd.pre.ensure.cmd'), source = join(skill, 'scripts/gidd.mjs');
       const before = snapshot(f.root);
       for (const args of [[], ['--check'], ['--force']]) {
         const result = s.ensure(target, args, entry);
@@ -108,7 +108,7 @@ test('ambiguous Git-contained installations fail closed while help remains avail
       const skill = join(owner, location); copySkill(skill);
       // A Git-managed skill collection must not be mistaken for its parent repository.
       if (location === '.agents/skills/gidd') ok(run(s.git, ['-C', join(owner, '.agents'), 'init', '--quiet']));
-      const entry = join(skill, 'gidd.pre.ensure.cmd'), source = join(skill, 'gidd.cmd');
+      const entry = join(skill, 'gidd.pre.ensure.cmd'), source = join(skill, 'scripts/gidd.mjs');
       const before = snapshot(f.root);
       for (const repo of [owner, target]) {
         for (const extra of [[], ['--check']]) {
@@ -122,8 +122,8 @@ test('ambiguous Git-contained installations fail closed while help remains avail
       assert.match(ok(s.invoke(entry, ['help', 'en'], { env: { PATH: '' } })).stdout, /GIDD prerequisites preparation/);
       assert.deepEqual(snapshot(f.root), before);
     }
-    assert.equal(assertInstallationRepository(target, join(s.skill, 'gidd.cmd')), null);
-    assert.equal(publishRepositoryEntry(target, join(s.skill, 'gidd.cmd')).location, 'absolute');
+    assert.equal(assertInstallationRepository(target, join(s.skill, 'scripts/gidd.mjs')), null);
+    assert.equal(publishRepositoryEntry(target, join(s.skill, 'scripts/gidd.mjs')).location, 'absolute');
   } finally { f.dispose(); }
 });
 
@@ -171,7 +171,7 @@ test('repository check reports missing, healthy and damaged state without writes
     assert.equal(inspect().entry.reason, 'repository_entry_locked');
     rmSync(link + '.lock');
     const replacement = join(f.root, 'other skill'); copySkill(replacement);
-    publishRepositoryEntry(target, join(replacement, 'gidd.cmd'));
+    publishRepositoryEntry(target, join(replacement, 'scripts/gidd.mjs'));
     assert.equal(inspect().entry.reason, 'repository_entry_outdated');
     write(link, saved);
     write(join(toolsRoot(f.root), '.cache/previous-gh/pending.txt'), 'do not recover');
@@ -236,9 +236,9 @@ test('repository links preserve target, arguments, idempotence and unknown files
     assert.ok(second.tools.every(tool => tool.action === 'reused' && tool.binding_action === 'reused'));
     assert.deepEqual(snapshot(f.root), tree); assert.equal(statSync(link).mtimeMs, modified);
     const replacement = join(f.root, 'replacement skill'); copySkill(replacement);
-    assert.equal(publishRepositoryEntry(target, join(replacement, 'gidd.cmd')).action, 'updated');
+    assert.equal(publishRepositoryEntry(target, join(replacement, 'scripts/gidd.mjs')).action, 'updated');
     assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /Help and diagnosis/);
-    assert.equal(publishRepositoryEntry(target, join(s.skill, 'gidd.cmd')).action, 'updated');
+    assert.equal(publishRepositoryEntry(target, join(s.skill, 'scripts/gidd.mjs')).action, 'updated');
     assert.match(ok(s.invoke(link, ['help', 'zh'], { env: { PATH: '' } })).stdout, /帮助与诊断/);
     assert.match(ok(s.invoke(link, [])).stdout, /Help and diagnosis/);
     const other = s.create('other');
@@ -279,18 +279,25 @@ test('repository links preserve target, arguments, idempotence and unknown files
     assert.ok(json(occupied).tool_checks.some(c => c.reason === 'repository_entry_occupied'));
     assert.equal(readFileSync(link, 'utf8'), '@echo off\r\necho user owned\r\n');
     write(link, saved); write(link + '.lock', 'another writer');
-    assert.throws(() => publishRepositoryEntry(target, join(s.skill, 'gidd.cmd')), /repository_entry_locked/);
+    assert.throws(() => publishRepositoryEntry(target, join(s.skill, 'scripts/gidd.mjs')), /repository_entry_locked/);
     assert.equal(readFileSync(link, 'utf8'), saved); rmSync(link + '.lock');
     ok(run(s.git, ['-C', target, 'remote', 'set-url', 'origin', 'https://gitlab.com/Other/Repo']));
     assert.equal(s.ensure(target).status, 1); assert.equal(readFileSync(link, 'utf8'), saved);
     const dispatcher = join(s.skill, 'scripts/gidd.mjs');
-    write(dispatcher, `import {readFileSync} from 'node:fs'; export async function main(args, options) { console.log(JSON.stringify({args, options, input:readFileSync(0,'utf8')})); console.error('linked stderr'); return 23; }`);
+    write(dispatcher, `import {readFileSync} from 'node:fs'; export async function main(args, options) { console.log(JSON.stringify({args, options, linkEnvironment:Object.keys(process.env).filter(key=>key.startsWith('GIDD_LINK_')), input:readFileSync(0,'utf8')})); console.error('linked stderr'); return 23; }`);
     const args = ['two words', '', 'a & b', 'a^b', '!literal!', 'two "quotes"', 'tail\\', '--help'];
     const forwarded = s.invoke(link, args, { input: 'linked stdin', cwd: other });
     assert.equal(forwarded.status, 23, forwarded.stderr); assert.deepEqual(json(forwarded).args, args);
     assert.equal(json(forwarded).input, 'linked stdin'); assert.equal(json(forwarded).options.boundRepository, target);
+    assert.deepEqual(json(forwarded).linkEnvironment, [], 'Launcher metadata must not leak into the command or its children');
     assert.match(forwarded.stderr, /linked stderr/);
-    rmSync(join(s.skill, 'gidd.cmd'));
+    const generated = readFileSync(link, 'utf8');
+    write(link, generated.replace(/set "GIDD_LINK_SPEC=[^"]*"/, 'set "GIDD_LINK_SPEC=invalid"'));
+    const invalid = s.invoke(link, ['help']);
+    assert.equal(invalid.status, 2);
+    assert.equal(json(invalid).reason, 'repository_entry_invalid');
+    write(link, generated);
+    rmSync(join(s.skill, 'scripts/gidd.mjs'));
     assert.equal(json(s.invoke(link, ['help'])).status, 'error');
   } finally { f.dispose(); }
 });
@@ -316,7 +323,7 @@ test('repository-relative links survive moves and accept Git worktrees', { timeo
     const worktreeSkill = join(worktree, '.agents/skills/gidd'); copySkill(worktreeSkill);
     const worktreeEntry = join(worktreeSkill, 'gidd.pre.ensure.cmd');
     assert.equal(json(s.ensure(parent, ['--check'], worktreeEntry)).reason, 'installation_repository_mismatch');
-    assert.throws(() => publishRepositoryEntry(parent, join(worktreeSkill, 'gidd.cmd')), /installation_repository_mismatch/);
+    assert.throws(() => publishRepositoryEntry(parent, join(worktreeSkill, 'scripts/gidd.mjs')), /installation_repository_mismatch/);
     assert.equal(realpathSync.native(json(ok(s.ensure(worktree, [], worktreeEntry))).entry.target), realpathSync.native(worktree));
     const report = json(s.invoke(s.link(worktree), ['doctor', '--offline'])); assert.equal(report.repository, worktree);
     const nested = join(parent, 'nested'); mkdirSync(nested);

@@ -57,10 +57,15 @@ function Read-GiddToolConfiguration {
         if ($line -match '[\x00-\x08\x0b-\x1f\x7f]') { throw "config_control_character:$lineNumber" }
         if ($line -cmatch '^[ \t]*(?:#.*)?$') { continue }
         if ($line -cmatch '^[ \t]*\[bootstrap\]') { throw 'config_retired_field:bootstrap' }
-        if ($line -cmatch '^[ \t]*\[(tools|github)\][ \t]*(?:#.*)?$') {
+        if ($line -cmatch '^[ \t]*\[(tools|github|spec)\][ \t]*(?:#.*)?$') {
             $section = $Matches[1]
             if (-not $tables.Add($section)) { throw "config_duplicate_${section}_table" }
             $inTools = $section -eq 'tools'; continue
+        }
+        # Mode availability belongs to JS diagnosis, never prerequisite repair.
+        if ($section -eq 'spec' -and $line -cmatch ('^[ \t]*mode[ \t]*=[ \t]*(' + $stringPattern + ')[ \t]*(?:#.*)?$')) {
+            if ($values.ContainsKey('spec.mode')) { throw 'config_duplicate_key:spec.mode' }
+            $values.Add('spec.mode', (ConvertFrom-GiddConfigString $Matches[1])); continue
         }
         if ($section -eq 'github' -and $line -cmatch ('^[ \t]*(hostname|account|remote|repository)[ \t]*=[ \t]*(' + $stringPattern + ')[ \t]*(?:#.*)?$')) {
             $key = 'github.' + $Matches[1]

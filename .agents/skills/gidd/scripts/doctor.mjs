@@ -6,6 +6,7 @@ import { normalizeRepositoryIdentity, validateGitHubField } from './config.mjs';
 import { minimums, patterns, toolEnvironment } from './tools.mjs';
 import { readBindings } from './bindings.mjs';
 import { runCommand, checkGitHubIdentity } from './github.mjs';
+import { inspectSpec } from './specs.mjs';
 
 const safeReason = (error, fallback) => /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : fallback;
 // Success describes the useful result; failure adds a stable reason, not raw output.
@@ -99,7 +100,7 @@ function inspectConfiguration(root) {
   } catch (error) {
     return { result: check('config_file', 'invalid', safeReason(error, 'config_unreadable'), { path }), github: {} };
   }
-  return { github: settings.github, result: check('config_file', 'ready', undefined, { path }) };
+  return { github: settings.github, spec: settings.spec, result: check('config_file', 'ready', undefined, { path }) };
 }
 
 function inspectField(key, configuration) {
@@ -201,6 +202,7 @@ export async function doctor(target, { offline = false, fixedRepository = false,
   const checks = [check('js_runtime', 'ready', undefined, { name: runtimeName,
     path: process.execPath, version: process.versions.bun || process.versions.node,
     gidd_managed: managedRuntime(runtimeName) }), ...toolChecks, configuration.result];
+  checks.push(...inspectSpec(configuration.spec?.mode, configRoot || target, configuration.result.status === 'ready').checks);
   if (process.platform !== 'win32' || process.arch !== 'x64') checks.push(check('platform', 'unsupported', 'unsupported_platform'));
   const usable = name => checks.find(item => item.id === name)?.status === 'ready';
   const env = toolEnvironment(usable('git') ? bindings.git.path : undefined);

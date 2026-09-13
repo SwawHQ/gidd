@@ -6,10 +6,11 @@ import { doctor } from './doctor.mjs';
 import { authorize } from './auth.mjs';
 import { resolveStorage, repositoryRoot } from './storage.mjs';
 import { boundTools, boundExecutor } from './bindings.mjs';
+import { parseSpecArguments, specCommand } from './spec.mjs';
 
 export async function main(args, { boundRepository } = {}) {
   let command = (args.shift() || 'help').toLowerCase();
-  const schemas = { config: 'gidd.config/v1', doctor: 'gidd.doctor/v1', auth: 'gidd.auth/v1' };
+  const schemas = { config: 'gidd.config/v1', doctor: 'gidd.doctor/v1', auth: 'gidd.auth/v1', spec: 'gidd.spec/v1' };
   let schema = 'gidd.cli/v1';
   try {
     if (['help','--help','-h'].includes(command)) {
@@ -21,7 +22,13 @@ export async function main(args, { boundRepository } = {}) {
     }
     if (!Object.hasOwn(schemas,command)) throw new Error('unknown_command');
     if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');
-    let action, key, value;
+    let action, key, value, specOptions;
+    if (command === 'spec') {
+      schema = schemas.spec;
+      const repositoryFlag = args.indexOf('--repository');
+      specOptions = parseSpecArguments(repositoryFlag < 0 ? args : args.slice(0, repositoryFlag));
+      args = repositoryFlag < 0 ? [] : args.slice(repositoryFlag);
+    }
     if (command === 'config') {
       action = args.shift(); if (!['show','set'].includes(action)) throw new Error('invalid_arguments');
       if (action === 'set') { key = args.shift(); value = args.shift(); if (value === undefined) throw new Error('invalid_arguments'); }
@@ -53,6 +60,11 @@ export async function main(args, { boundRepository } = {}) {
     if (repository !== undefined && !isAbsolute(repository)) throw new Error('repository_must_be_absolute');
     if (command !== 'doctor' && !boundRepository) repository = repositoryRoot(repository);
     schema = schemas[command];
+    if (command === 'spec') {
+      const result = await specCommand(repository, specOptions);
+      console.log(specOptions.json ? JSON.stringify(result.report) : result.text);
+      return result.report.status === 'ready' ? 0 : 1;
+    }
     let report;
     if (command === 'doctor') report = await doctor(repository, { offline, fixedRepository: !!boundRepository });
     else if (command === 'config') report = configure(repository,action,key,value);

@@ -4,7 +4,7 @@ import { doctor } from '../.agents/skills/gidd/scripts/doctor.mjs';
 import { configure } from '../.agents/skills/gidd/scripts/config.mjs';
 import { bindFixture, diagnosis, toolsRoot, assert, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, readFileSync, repo, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
 
-const configText = 'schema_version = 1\n[tools]\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "origin"\nrepository = "https://github.com/owner/repo"\n';
+const configText = 'schema_version = 1\n[spec]\nmode = "issue-direct"\n[tools]\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "origin"\nrepository = "https://github.com/owner/repo"\n';
 const byId = (report, id) => {
   const matches = report.checks.filter(item => item.id === id);
   assert.equal(matches.length, 1, id);
@@ -42,7 +42,7 @@ test('doctor combines independent checks once; offline never invokes network or 
     const before = snapshot(f.root);
     const online = scenario(), report = await doctor(f.root,online);
     assert.equal(report.schema,'gidd.doctor/v1'); assert.equal(report.mode,'online'); assert.equal(report.status,'checks_passed');
-    assert.equal(report.checks.length,12);
+    assert.equal(report.checks.length,14);
     assert.equal(byId(report,'config.github.repository').details.actual,'https://github.com/owner/repo');
     assert.equal(byId(report,'github.identity').details.login,'Octocat');
     assert.equal(byId(report,'git.author').details.email,'author@example.test');
@@ -158,6 +158,10 @@ test('doctor combines independent checks once; offline never invokes network or 
     assert.equal(unrecorded.severity,'error');
     const [, recordAction, recordKey, recordValue] = unrecorded.commands[0].args;
     configure(f.root,recordAction,recordKey,recordValue);
+    const missingMode = byId(await doctor(f.root,scenario()), 'config.spec.mode');
+    assert.equal(missingMode.reason, 'spec_mode_missing');
+    const [, modeAction, modeKey, modeValue] = missingMode.commands[0].args;
+    configure(f.root, modeAction, modeKey, modeValue);
     assert.equal((await doctor(f.root,scenario())).status,'checks_passed','Suggested commands resolve configuration and identity');
     write(config,'invalid TOML');
     const malformedReport=await doctor(f.root,scenario());

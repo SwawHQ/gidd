@@ -54,7 +54,7 @@ export function validateToolSettings(name, settings) {
 // parsing never rewrites comments or invents GitHub identity fields.
 export function parseConfiguration(text) {
   if (Buffer.byteLength(text) > 16384) throw new Error('config_too_large');
-  const result = { tools: structuredClone(defaults), github: {} };
+  const result = { tools: structuredClone(defaults), github: {}, spec: {} };
   const tables = new Set(), seen = new Set();
   let section = '', schema = false;
   for (const [index, input] of text.replace(/^\uFEFF/, '').split('\n').entries()) {
@@ -62,7 +62,7 @@ export function parseConfiguration(text) {
     if (/[\x00-\x08\x0b-\x1f\x7f]/.test(line)) throw new Error(`config_control_character:${index + 1}`);
     if (/^[ \t]*(?:#.*)?$/.test(line)) continue;
     if (/^[ \t]*\[bootstrap\]/.test(line)) throw new Error('config_retired_field:bootstrap');
-    const table = /^[ \t]*\[(tools|github)\][ \t]*(?:#.*)?$/.exec(line);
+    const table = /^[ \t]*\[(tools|github|spec)\][ \t]*(?:#.*)?$/.exec(line);
     if (table) {
       section = table[1];
       if (tables.has(section)) throw new Error(`config_duplicate_${section}_table`);
@@ -72,8 +72,10 @@ export function parseConfiguration(text) {
       if (schema) throw new Error('config_duplicate_schema_version');
       schema = true; continue;
     }
-    if (section === 'github') {
-      const names = 'hostname|account|remote|repository';
+    if (section === 'github' || section === 'spec') {
+      // Stage0 and this parser accept the field structurally. Spec selection
+      // is checked separately so an unknown mode cannot block tool repair.
+      const names = section === 'spec' ? 'mode' : 'hostname|account|remote|repository';
       const field = new RegExp(`^[ \\t]*(${names})[ \\t]*=[ \\t]*(${stringPattern})[ \\t]*(?:#.*)?$`).exec(line);
       if (!field) throw new Error(`config_unsupported_syntax_or_field:${index + 1}`);
       const key = `${section}.${field[1]}`;

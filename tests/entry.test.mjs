@@ -18,9 +18,15 @@ function installation(f, prepare = true) {
   const entryBin=join(f.root,'entry-tools'), entryExe=compile(f.root);
   stub(entryExe,join(entryBin,'gh.exe'));
   const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
-  const invoke = (args, env = {}, options = {}, entry = 'gidd.cmd') => run(cmd, ['/d','/s','/c', `""${join(skill, entry)}" ${args.map(quote).join(' ')}"`], {
-    cwd: skill, windowsVerbatimArguments: true, ...options, env: { PATH: [dirname(process.execPath),dirname(git),entryBin].join(';'), GIDD_LANG: '', LC_ALL: 'en_US.UTF-8', ...env },
-  });
+  const invoke = (args, env = {}, options = {}, entry) => {
+    // Expand USERPROFILE inside CMD once, preserving percent signs in its value.
+    const executable = entry ? join(skill, entry) : '%USERPROFILE%\\.agents\\skills.tools\\gidd\\js_exec.cmd';
+    const forwarded = entry ? args : [join(skill, 'scripts/gidd.mjs'), ...args];
+    return run(cmd, ['/d','/s','/c', `""${executable}" ${forwarded.map(quote).join(' ')}"`], {
+      cwd: skill, windowsVerbatimArguments: true, ...options,
+      env: { PATH: [dirname(process.execPath),dirname(git),entryBin].join(';'), GIDD_LANG: '', LC_ALL: 'en_US.UTF-8', ...env },
+    });
+  };
   const ensure = (args = [], env = {}) => invoke(['--repo',target,...args],env,{},'gidd.pre.ensure.cmd');
   if (prepare) ok(ensure());
   return { skill, target, invoke, ensure, args: ['--repository', target] };
@@ -43,7 +49,7 @@ test('preparation owns tool checks and gidd no longer routes tool commands', () 
   try {
     const s=installation(f,false),before=snapshot(f.root);
     assert.equal(existsSync(join(s.skill,'gidd.tools.ensure.cmd')),false);
-    const bare=s.invoke(['tools'],{PATH:''});
+    const bare=ps(join(s.skill,'scripts/windows/entry.ps1'),['tools'],{env:{PATH:''}});
     assert.equal(bare.status,2); assert.equal(json(bare).reason,'bootstrap_required');
     assert.match(bare.stderr,/gidd\.pre\.ensure\.cmd --repo/);
     assert.deepEqual(snapshot(f.root),before);
@@ -88,7 +94,7 @@ test('shared launcher forwards raw argv, stdin, cwd, stderr and exit without Pow
     // The shared launcher runs a different repository's script, without rebinding.
     const other=join(f.root,'other repo/.agents/skills/gidd'); copySkill(other);
     const otherCmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
-    assert.match(ok(run(otherCmd,['/d','/s','/c',`""${join(other,'gidd.cmd')}" help en"`],{windowsVerbatimArguments:true,env:{PATH:''}})).stdout,/Help and diagnosis:/);
+    assert.match(ok(run(otherCmd,['/d','/s','/c',`""${join(toolsRoot(f.root),'js_exec.cmd')}" "${join(other,'scripts/gidd.mjs')}" help en"`],{windowsVerbatimArguments:true,env:{PATH:''}})).stdout,/Help and diagnosis:/);
   } finally {f.dispose();}
 });
 
@@ -342,7 +348,7 @@ test('repository installation locates its own Git worktree independently of cwd'
     ok(adapter(f.root,{action:'bootstrap',repositoryRoot:f.root,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
     const unbound = join(f.root,'user profile/.agents/skills/gidd');
     copySkill(unbound);
-    const unboundReport = run(cmd, ['/d','/s','/c', `""${join(unbound,'gidd.cmd')}" doctor"`], {
+    const unboundReport = run(cmd, ['/d','/s','/c', `""${join(toolsRoot(f.root),'js_exec.cmd')}" "${join(unbound,'scripts/gidd.mjs')}" doctor"`], {
       cwd: target, windowsVerbatimArguments: true, env: { PATH: [dirname(process.execPath),dirname(git)].join(';') },
     });
     assert.equal(unboundReport.status,1);
@@ -353,12 +359,12 @@ test('repository installation locates its own Git worktree independently of cwd'
       copySkill(skill);
       write(join(skill,'config.toml'),'schema_version = 1\n[tools]\n');
       const before = snapshot(root);
-      const result = run(cmd, ['/d','/s','/c', `""${join(skill,'gidd.cmd')}" doctor"`], {
+      const result = run(cmd, ['/d','/s','/c', `""${join(toolsRoot(f.root),'js_exec.cmd')}" "${join(skill,'scripts/gidd.mjs')}" doctor"`], {
         cwd: f.root, windowsVerbatimArguments: true, env: { PATH: [dirname(process.execPath),dirname(git)].join(';') },
       });
       assert.equal(result.status,1);
       sameDirectory(json(result).repository,root);
-      const override = run(cmd, ['/d','/s','/c', `""${join(skill,'gidd.cmd')}" doctor --repository "${f.root}""`], {
+      const override = run(cmd, ['/d','/s','/c', `""${join(toolsRoot(f.root),'js_exec.cmd')}" "${join(skill,'scripts/gidd.mjs')}" doctor --repository "${f.root}""`], {
         cwd: root, windowsVerbatimArguments: true, env: { PATH: dirname(process.execPath) },
       });
       assert.equal(override.status,1);
@@ -373,7 +379,7 @@ test('shell doctor and auth preserve JavaScript results, events and exit codes',
   try {
     const s = installation(f), git = findGit();
     const config = join(s.target,'.agents/skills/gidd/config.toml');
-    const configured = 'schema_version = 1\n[tools]\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "fixture"\nrepository = "https://github.com/owner/repo"\n';
+    const configured = 'schema_version = 1\n[spec]\nmode = "issue-direct"\n[tools]\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "fixture"\nrepository = "https://github.com/owner/repo"\n';
     write(config,configured);
     for (const args of [['init'], ['config','user.name','Fixture Author'], ['config','user.email','author@example.test'],
       ['remote','add','fixture','git@github.com:owner/repo.git']]) ok(run(git, ['-C',s.target,...args]));

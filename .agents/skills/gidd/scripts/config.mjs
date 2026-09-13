@@ -3,16 +3,18 @@ import { randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseConfiguration } from './storage.mjs';
+import { validateSpecMode, specModes } from './specs.mjs';
 
 const fields = new Set(['hostname', 'account', 'remote', 'repository']);
 const stringLiteral = String.raw`(?:"(?:[^"\\]|\\["\\])*"|'[^']*')`;
 const assignment = new RegExp(`^([ \\t]*)(hostname|account|remote|repository)([ \\t]*=[ \\t]*)(${stringLiteral})([ \\t]*(?:#.*)?)$`);
 const decode = literal => literal[0] === "'" ? literal.slice(1, -1) : JSON.parse(literal);
-const editableKey = /^(?:github\.(?:hostname|account|remote|repository)|tools\.(?:node|bun|gh)\.source)$/;
+const editableKey = /^(?:github\.(?:hostname|account|remote|repository)|tools\.(?:node|bun|gh)\.source|spec\.mode)$/;
 const initialConfiguration = 'schema_version = 1\n\n[github]\nhostname = "github.com"\nremote = "origin"\n';
 
 function validateSetting(key, value) {
   if (!editableKey.test(key || '')) throw new Error('config_unknown_key');
+  if (key === 'spec.mode') return validateSpecMode(value);
   if (key.startsWith('github.')) return validateGitHubField(key.slice(7), value);
   if (typeof value !== 'string' || !value || /[\x00-\x1f\x7f]/.test(value)) throw new Error('config_invalid_tool_value');
   if (key.endsWith('.source')) {
@@ -69,6 +71,7 @@ function insertSetting(text, doc, section, setting) {
 export function editConfiguration(text, key, value) {
   validateSetting(key, value);
   if (key.startsWith('github.')) return editGitHub(text, key.slice(7), value);
+  if (key === 'spec.mode') return editSpec(text, value);
   const doc = parseTools(text), [, name, field] = key.split('.'), entry = doc.entries[name];
   const literal = JSON.stringify(value);
   if (entry) {
@@ -170,13 +173,33 @@ export function readGitHubConfiguration(repository, required) {
 }
 
 export function configurationHint(reason) {
+  if (reason === 'spec_mode_unsupported') return 'Available spec modes: ' + specModes.join(', ') + '. Use config set spec.mode <mode>.';
   if (reason === 'config_invalid_github_repository' || reason === 'config_missing_github_repository') return 'Run gidd.link.cmd doctor --offline, review the repository configuration, then record the canonical HTTPS identity reported by doctor with config set github.repository.';
   const missing = /^config_missing_github_(hostname|account|remote)$/.exec(reason);
-  if (missing) return `Set github.${missing[1]} with: gidd.cmd config set github.${missing[1]} <value>`;
-  if (reason === 'config_missing') return 'Create repository config with: gidd.cmd config set github.account <login>';
+  if (missing) return `Set github.${missing[1]} with: gidd.link.cmd config set github.${missing[1]} <value>`;
+  if (reason === 'config_missing') return 'Create repository config with: gidd.link.cmd config set github.account <login>';
   if (reason.startsWith('config_retired_field:')) return 'Remove [bootstrap] and all tool version fields from config.toml; bootstrap owns tool version policy.';
-  if (reason.startsWith('config_')) return 'Check repository config.toml and use gidd.cmd config show/set. No login or configuration fallback was performed.';
+  if (reason.startsWith('config_')) return 'Check repository config.toml and use gidd.link.cmd config show/set. No login or configuration fallback was performed.';
   return '';
+}
+
+function editSpec(text, value) {
+  // Parse first, but allow unsupported mode values to be repaired in place.
+  parseConfiguration(text);
+  const lines = text.split('\n');
+  let start = -1, end = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].replace(/^\uFEFF/, '').replace(/\r$/, '');
+    if (/^[ \t]*\[spec\][ \t]*(?:#.*)?$/.test(line)) { start = i; continue; }
+    if (start < 0) continue;
+    if (/^[ \t]*\[/.test(line)) { end = i; break; }
+    const match = new RegExp(`^([ \\t]*mode[ \\t]*=[ \\t]*)(${stringLiteral})([ \\t]*(?:#.*)?)$`).exec(line);
+    if (match) {
+      lines[i] = match[1] + JSON.stringify(value) + match[3] + (lines[i].endsWith('\r') ? '\r' : '');
+      return lines.join('\n');
+    }
+  }
+  return insertSetting(text, { lines, start, end }, 'spec', 'mode = ' + JSON.stringify(value));
 }
 
 export function editGitHub(text, key, value) {
@@ -248,7 +271,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     }
     console.log(JSON.stringify(configure(options.repository, options.action, options.key, options.value)));
   } catch (error) {
-    const reason = /^(config_[a-z_]+|repository_must_be_absolute)$/.test(error.message) ? error.message : 'config_operation_failed';
+    const reason = /^(config_[a-z_]+|spec_mode_unsupported|repository_must_be_absolute)$/.test(error.message) ? error.message : 'config_operation_failed';
     const hint = configurationHint(reason); if (hint) console.error(hint);
     console.log(JSON.stringify({ schema: 'gidd.config/v1', status: 'error', reason }));
     process.exitCode = 2;

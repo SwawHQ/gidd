@@ -23,18 +23,19 @@ test('test command executes every suite and rejects failures or premature zero e
   try {
     const runner=join(f.root,'dev/dev.mjs');
     write(runner,readFileSync(join(repo,'dev/dev.mjs'),'utf8'));
-    for (const suite of ['doctor','setup','process','dev','config','github','entry','repository-entry']) {
+    write(join(f.root,'dev/node-test.cjs'),readFileSync(join(repo,'dev/node-test.cjs'),'utf8'));
+    for (const suite of ['doctor','setup','process','dev','config','github','entry','repository-entry','spec']) {
       const marker=join(f.root,`${suite}.ran`);
       write(join(f.root,`tests/${suite}.test.mjs`),
         `import {test,after} from 'node:test'; import {writeFileSync} from 'node:fs';\nafter(() => writeFileSync(process.env.GIDD_TEST_COMPLETION, 'completed'));\ntest('${suite}', () => { writeFileSync(${JSON.stringify(marker)}, 'ran'); ${suite === 'setup' ? "throw new Error('expected fixture failure');" : suite === 'entry' ? 'process.exit(0);' : ''} });\n`);
     }
     const result=run(process.execPath,[runner,'.test']);
     assert.equal(result.status,1,'A failing suite must fail the command');
-    assert.match(result.stdout,/Suite summary: 6 passed, 2 failed/);
+    assert.match(result.stdout,/Suite summary: 7 passed, 2 failed/);
     assert.match(result.stderr,/Test worker did not complete: tests\/entry.test.mjs/);
     assert.match(result.stdout,/FAIL tests\/setup.test.mjs \(\d+\.\d+s\)/);
     assert.match(result.stdout,/Rerun \(PowerShell\): .*\.test-(bun|node) setup/);
-    for (const suite of ['doctor','setup','process','dev','config','github','entry','repository-entry']) {
+    for (const suite of ['doctor','setup','process','dev','config','github','entry','repository-entry','spec']) {
       assert.equal(existsSync(join(f.root,`${suite}.ran`)),true,`${suite} must actually execute, including after a failure`);
     }
     const selected=ok(run(process.execPath,[runner,'.test','doctor']));
@@ -49,7 +50,7 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
   const f=fixture();
   try {
     const checkout=join(f.root,'开发 repo & spaces'); mkdirSync(checkout);
-    for (const path of ['dev.cmd','dev','.agents/skills/gidd/gidd.cmd','.agents/skills/gidd/scripts']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    for (const path of ['dev.cmd','dev','.agents/skills/gidd/scripts']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
     const entry=join(checkout,'dev.cmd'), cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
     const invoke=(args, env={}) => run(cmd,['/d','/s','/c',`""${entry}" ${args.join(' ')}"`],{
       cwd:f.root,windowsVerbatimArguments:true,env:{PATH:'',GIDD_DEV_LANG:'',LC_ALL:'en_US.UTF-8',...env},

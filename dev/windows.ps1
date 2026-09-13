@@ -61,10 +61,10 @@ try {
         exit 0
     }
     if ($Command -notin @('.info','.setup','.test','.test-bun','.test-node','.test-live','.auth','bun','node')) { throw 'Unknown command. Use dev.cmd .help.' }
-    if ($Command -eq '.auth' -and $Argument) { throw '.auth reads github.account from config.toml; use gidd.cmd config set github.account <login>.' }
+    if ($Command -eq '.auth' -and $Argument) { throw '.auth reads github.account from config.toml; use gidd.link.cmd config set github.account <login>.' }
     if ($Command -eq '.info' -and $Argument) { throw '.info takes no arguments.' }
     if ($Command -eq '.test-live' -and $Argument) { throw '.test-live takes no arguments.' }
-    if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev','config','github','entry')) { throw 'Unknown test suite.' }
+    if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev','config','github','entry','spec')) { throw 'Unknown test suite.' }
     if ($Command -eq '.auth') {
         . (Join-Path $codeRoot 'lib/_entry.ps1')
         Invoke-GiddEntry -CommandArguments @('auth','--repository',$repoRoot)

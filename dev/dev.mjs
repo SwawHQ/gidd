@@ -7,7 +7,7 @@ import { join } from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const [command, argument = '', ...extra] = process.argv.slice(2);
-const suites = ['doctor', 'setup', 'process', 'dev', 'config', 'github', 'entry'];
+const suites = ['doctor', 'setup', 'process', 'dev', 'config', 'github', 'entry', 'spec'];
 if (process.platform !== 'win32') {
   console.error('Development tests currently require Windows. Other platforms are not yet verified.');
   process.exit(1);
@@ -15,7 +15,7 @@ if (process.platform !== 'win32') {
 if (extra.length || !['.test', '.test-live'].includes(command) ||
     (command === '.test-live' && argument) ||
     (command === '.test' && argument && argument !== 'all' && !suites.includes(argument))) {
-  console.error('Use dev.cmd .test [all|doctor|setup|process|dev|config|github|entry] or .test-live.');
+  console.error('Use dev.cmd .test [all|doctor|setup|process|dev|config|github|entry|spec] or .test-live.');
   process.exit(1);
 }
 const files = command === '.test-live' ? ['tests/live.test.mjs'] :
@@ -29,7 +29,11 @@ const results = [];
 for (const file of files) {
   console.log(`\nRunning ${file}`);
   const suiteStarted = performance.now();
-  const runnerArgs = process.versions.bun ? ['test', file, '--timeout', '60000'] : ['--test', file];
+  // A file-based CommonJS preload avoids Node 24's premature exit with these
+  // synchronous Windows fixtures; preloading only the builtin does not suffice.
+  // Keep the completion check below so an early exit can never count as a pass.
+  const runnerArgs = process.versions.bun ? ['test', file, '--timeout', '60000'] :
+    ['--require', fileURLToPath(new URL('./node-test.cjs', import.meta.url)), '--test', file];
   const env = { ...process.env };
   // A parent node:test worker's context suppresses a nested --test runner.
   delete env.NODE_TEST_CONTEXT;
