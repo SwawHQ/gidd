@@ -1,10 +1,9 @@
 import { readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { toolsRoot } from './storage.mjs';
-import { normalizeRepositoryIdentity, readGitHubConfiguration } from './config.mjs';
 import { boundTools, boundExecutor } from './bindings.mjs';
 import { checkGitHubIdentity, runCommand } from './github.mjs';
-import { inspectRepositoryEntry } from './repository-check.mjs';
+import { requireRemoteTarget } from './repository-check.mjs';
 
 const limit = 1024 * 1024;
 export async function readIssueSource(repository, input, { execute = runCommand } = {}) {
@@ -30,14 +29,10 @@ export async function readIssueSource(repository, input, { execute = runCommand 
   }
   const number = Number(input.replace(/^#/, ''));
   if (!Number.isSafeInteger(number) || number < 1) throw new Error('invalid_issue_number');
-  const github = readGitHubConfiguration(repository, ['hostname', 'account', 'remote', 'repository']);
   const bindings = boundTools(toolsRoot());
   const invoke = boundExecutor(bindings, execute);
-  const canonical = normalizeRepositoryIdentity(github.repository);
-  const inspected = await inspectRepositoryEntry(repository, bindings.git.path, github, invoke);
-  if (inspected.remotes.length !== 1 || normalizeRepositoryIdentity('https://' + inspected.remotes[0].hostname + '/' + inspected.remotes[0].repository).toLowerCase() !== canonical.toLowerCase()) {
-    throw new Error('issue_repository_mismatch');
-  }
+  const github = await requireRemoteTarget(repository, bindings.git.path, invoke);
+  const canonical = github.repository;
   const identity = await checkGitHubIdentity({ gh: bindings.gh.path, hostname: github.hostname, account: github.account }, invoke);
   if (identity.status !== 'ready') throw new Error(identity.reason === 'unexpected_account' ? 'unexpected_account' : 'issue_identity_unverified');
   const result = await invoke(bindings.gh.path, ['issue', 'view', String(number), '--repo', canonical.slice('https://'.length), '--json', 'body,number,url']);

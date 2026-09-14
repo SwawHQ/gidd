@@ -102,15 +102,15 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     const configuredRoot = toolsRoot(f.root);
     write(config,'# retain this comment\nschema_version = 1\n[tools]\n');
     const configuredInfo=json(ok(invoke(['.info'])));
-    assert.equal(configuredInfo.storage.configured,true);
+    assert.equal(Object.hasOwn(configuredInfo.storage,'configured'),false);
     assert.equal(statSync(configuredInfo.tools_root,{bigint:true}).ino,statSync(configuredRoot,{bigint:true}).ino);
     assert.match(readFileSync(config,'utf8'),/^# retain this comment/);
     const configuredText=readFileSync(config,'utf8');
     write(config,configuredText+'node = { version = "24.0.1", source = "https://nodejs.org/dist" }\n');
-    assert.match(invoke(['.info']).stderr,/config_retired_field:tools.node.version/);
-    assert.match(invoke(['.setup']).stderr,/config_retired_field/);
+    ok(invoke(['.info']));
+    ok(invoke(['.setup']));
     write(config,'invalid = true');
-    assert.notEqual(invoke(['.setup']).status,0); assert.notEqual(invoke(['.info']).status,0);
+    ok(invoke(['.setup'])); ok(invoke(['.info']));
     assert.match(ok(invoke(['.help','en'])).stdout,/repository development/);
   } finally { f.dispose(); }
 });

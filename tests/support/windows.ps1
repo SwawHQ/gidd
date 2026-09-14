@@ -18,9 +18,7 @@ try {
                     if ($null -eq $owner) { 'null' } else { ConvertTo-Json -InputObject $owner -Compress }
                 }
                 'inspect' {
-                    $github = @{}
-                    foreach ($property in $request.github.PSObject.Properties) { $github[$property.Name] = $property.Value }
-                    Test-GiddRepository $request.repositoryRoot $request.git $github | ConvertTo-Json -Depth 8 -Compress
+                    Test-GiddRepository $request.repositoryRoot $request.git | ConvertTo-Json -Depth 8 -Compress
                 }
                 default {
                     Get-GiddRepositoryLink $request.repositoryRoot $request.entry $request.runtime -CheckOnly:($request.operation -eq 'check') -BeforePublish {
@@ -44,7 +42,7 @@ try {
                 if (-not $property) { throw "unexpected_download:$Url" }
                 return @{response=$null;stream=[IO.File]::OpenRead([string]$property.Value)}
             }
-            $storage = Resolve-GiddToolStorage $request.repositoryRoot
+            $storage = Resolve-GiddToolStorage
             if ($request.PSObject.Properties['root']) { $storage.tools_root = $request.root }
             $checkOnly = $request.PSObject.Properties['checkOnly'] -and $request.checkOnly
             $force = $request.PSObject.Properties['force'] -and $request.force
@@ -88,7 +86,7 @@ try {
             }
         }
         'find' { Find-Tool $request.name ([version]$request.minimum) $request.pattern $request.managedPath | ConvertTo-Json -Depth 8 -Compress }
-        'configuration' { Resolve-GiddToolStorage $request.repositoryRoot | ConvertTo-Json -Depth 8 -Compress }
+        'configuration' { Resolve-GiddToolStorage | ConvertTo-Json -Depth 8 -Compress }
         'bootstrap' {
             . (Join-Path $request.codeRoot 'lib/_bootstrap.ps1')
             function Read-GiddReleaseText {
@@ -113,7 +111,7 @@ try {
             if ($request.PSObject.Properties['failCleanup'] -and $request.failCleanup) {
                 function Remove-GiddRuntimeBackup { throw 'fixture_cleanup_failed' }
             }
-            Invoke-GiddBootstrap (Resolve-GiddToolStorage $request.repositoryRoot) -Yes:$yes -Node:$node -Reinstall:$reinstall -Runtime $runtime | ConvertTo-Json -Depth 12 -Compress
+            Invoke-GiddBootstrap (Resolve-GiddToolStorage) -Yes:$yes -Node:$node -Reinstall:$reinstall -Runtime $runtime | ConvertTo-Json -Depth 12 -Compress
         }
         'release' {
             $settings = @{ version=$request.version;source=$request.source }

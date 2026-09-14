@@ -75,7 +75,7 @@ try {
             }
         } catch { }
     }
-    $storage = Resolve-GiddToolStorage $root
+    $storage = Resolve-GiddToolStorage
     $report = Invoke-GiddBootstrap $storage -Yes:(-not $checkOnly) -Runtime $runtime -Reinstall:($options.ContainsKey('--force'))
     $report.schema = 'gidd.tools/v1'
     if ($report.status -eq 'needs_bootstrap') { $report.status = 'needs_tools' }
@@ -90,7 +90,7 @@ try {
     $prepared = Invoke-GiddPrepareTools $storage -CheckOnly:$checkOnly -Force:($options.ContainsKey('--force'))
     $report.tools = $prepared.tools; $report.tool_checks = $prepared.checks; $report.binding_path = $prepared.binding_path
     if ($prepared.status -ne 'ready') { $report.status = 'needs_tools' }
-    $report = Complete-GiddRepositoryPreparation $report $root $sourceEntry $storage.github -CheckOnly:$checkOnly
+    $report = Complete-GiddRepositoryPreparation $report $root $sourceEntry -CheckOnly:$checkOnly
     $report | ConvertTo-Json -Depth 12 -Compress
     if ($report.status -eq 'ready') { exit 0 }; exit 1
 } catch {

@@ -8,7 +8,7 @@ import { toolsRoot, adapter, assert, compile, copySkill, dirname, existsSync, fi
 
 const options = { repository: repo, gh: join(repo, 'fixture-gh.exe'), git: findGit(), account: 'octocat' };
 const success = text => ({ ok: true, reason: 'process_exit', text });
-const githubConfig = '\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "origin"\nrepository = "https://github.com/owner/repo"\n';
+const githubConfig = '\n[repo]\nremote.account = "Octocat"\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\n';
 
 test('JS execution requires binary paths and preserves literal arguments without a shell', async () => {
   const f=fixture();
@@ -129,7 +129,7 @@ test('authorization uses bindings, rejects retired gh versions and never discove
     const oldGh = join(oldBin, 'gh.exe'), managedGh = join(toolsRoot(f.root),'gh/gh.exe');
     stub(executable, oldGh, 'old');
     const config = join(f.root, '.agents/skills/gidd/config.toml');
-    const configText = 'schema_version = 1\n[tools]\n';
+    const configText = 'schema_version = 1\n';
     write(config, configText + githubConfig);
     ok(adapter(f.root,{action:'bootstrap',repositoryRoot:f.root,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
     const env = { PATH: [oldBin, dirname(process.execPath)].join(';'), GH_CONFIG_DIR: join(f.root, 'credentials'),
@@ -140,10 +140,15 @@ test('authorization uses bindings, rejects retired gh versions and never discove
     assert.equal(json(invoke()).reason, 'tool_bindings_missing');
     assert.equal(existsSync(join(toolsRoot(f.root),'gh')), false, 'Missing compatible gh must not trigger installation');
     stub(executable, managedGh, 'success', true);
-    write(config, configText + 'gh = { version = "2.99.0", source = "https://github.com/cli/cli/releases" }\n' + githubConfig);
-    assert.equal(json(invoke()).reason, 'config_retired_field:tools.gh.version');
+    const git=findGit();
+    ok(run(git,['-C',f.root,'init','--quiet']));
+    ok(run(git,['-C',f.root,'remote','add','origin','https://github.com/owner/repo.git']));
+    bindFixture(f.root,{git,gh:managedGh});
+    write(config, configText + '[tools]\ngh = { version = "2.99.0", source = "https://github.com/cli/cli/releases" }\n' + githubConfig);
+    assert.equal(json(invoke()).reason, 'config_retired_structure');
     write(config, configText + githubConfig);
     ok(prepare(f.root,'gh',{env:{PATH:oldBin}}));
+    bindFixture(f.root,{git,gh:managedGh});
     assert.equal(json(ok(invoke())).reason, 'authenticated');
     assert.equal(existsSync(managedGh + '.started'), true);
     assert.equal(existsSync(oldGh + '.started'), false);

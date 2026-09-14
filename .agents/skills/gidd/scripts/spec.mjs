@@ -1,6 +1,6 @@
 import { existsSync, lstatSync } from 'node:fs';
 import { configurationPath, parseConfiguration, readConfigurationText, toolsRoot } from './storage.mjs';
-import { validateGitHubField } from './config.mjs';
+import { validateRemoteField } from './config.mjs';
 import { boundTools, boundExecutor } from './bindings.mjs';
 import { runCommand } from './github.mjs';
 import { inspectSpec, loadSpec, specModes } from './specs.mjs';
@@ -41,7 +41,7 @@ const usableFile = path => {
 async function targetBranch(repository, github, bindings, execute) {
   const result = { branch: null, source: 'unresolved', remote_verified: false };
   if (!usableFile(bindings.git?.path)) return result;
-  try { validateGitHubField('remote', github.remote); } catch { return result; }
+  try { validateRemoteField('name', github.remote); } catch { return result; }
   const prefix = 'refs/remotes/' + github.remote + '/';
   let output;
   try {
@@ -94,7 +94,7 @@ export async function specCommand(repository, options, { execute = runCommand } 
     return { report, text: render(report, options.lang) };
   }
   const unresolved = () => ({ report, text: render(report, options.lang), exitCode: options.action === 'check' ? 2 : 1 });
-  let settings = { github: {}, spec: {} };
+  let settings = { repo: { remote: {} }, spec: {} };
   try {
     const path = configurationPath(repository);
     if (!existsSync(path)) {
@@ -107,7 +107,7 @@ export async function specCommand(repository, options, { execute = runCommand } 
     }
   } catch {
     if (options.selector === 'current') {
-      report.checks = [{ id: 'config_file', status: 'invalid', reason: 'spec_configuration_unreadable',
+      report.checks = [{ id: 'config.toml', status: 'invalid', reason: 'spec_configuration_unreadable',
         hint: 'Run doctor --offline and repair the configuration it reports. No spec was selected.' }];
       return unresolved();
     }
@@ -144,7 +144,7 @@ export async function specCommand(repository, options, { execute = runCommand } 
     let bindings = {};
     try { bindings = boundTools(toolsRoot(), []); } catch { /* Guidance remains available without tools. */ }
     Object.assign(report, { title: spec.definition.title[options.lang], instructions: spec.prompts[options.lang],
-      target: await targetBranch(repository, settings.github, bindings, execute) });
+      target: await targetBranch(repository, { remote: settings.repo.remote.name }, bindings, execute) });
   }
   return { report, text: render(report, options.lang) };
 }

@@ -1,240 +1,105 @@
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
-import { statSync, symlinkSync, unlinkSync } from 'node:fs';
-import { basename, dirname } from 'node:path';
-import { configure, editConfiguration, editGitHub, parseGitHub, readGitHubConfiguration } from '../.agents/skills/gidd/scripts/config.mjs';
-import { diagnosis as runDiagnosis, prepare, jsAdapter, toolsRoot, adapter as shellAdapter, assert, code, compile, existsSync, findGit, fixture, hash, join, json, mkdirSync, ok, ps, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
+import { symlinkSync, unlinkSync, realpathSync } from 'node:fs';
+import { configure, editConfiguration, readRemoteConfiguration, normalizeRepositoryIdentity } from '../.agents/skills/gidd/scripts/config.mjs';
+import { parseConfiguration } from '../.agents/skills/gidd/scripts/storage.mjs';
+import { prepare, toolsRoot, adapter, assert, compile, existsSync, fixture, hash, join, json, mkdirSync, ok, readFileSync, repo, stub, write } from './support/helpers.mjs';
 
-const configText = () => `# preserved comment\nschema_version = 1\n[tools]\n`;
+const configText = 'schema_version = 1\n[repo]\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\nremote.account = "Octocat"\n';
 
-test('retired runtime configuration is rejected without writes; sources remain editable', () => {
-  const f=fixture();
-  try {
-    const path=join(f.root,'.agents/skills/gidd/config.toml');
-    write(path,configText());
-    for(const key of ['bootstrap.runtime','tools.bun.version','tools.node.version','tools.gh.version']) {
-      assert.throws(()=>configure(f.root,'set',key,'node'),/config_unknown_key/);
-      assert.equal(readFileSync(path,'utf8'),configText());
-    }
-    for(const text of ['schema_version = 1\n[bootstrap]\nruntime="bun"\n',
-      configText()+'bun = { version="latest", source="https://github.com/oven-sh/bun/releases" }\n',
-      configText()+'node = { version="lts", source="https://nodejs.org/dist" }\n',
-      configText()+'gh = { version="latest", source="https://github.com/cli/cli/releases" }\n']) {
-      write(path,text);
-      assert.throws(()=>configure(f.root,'show'),/config_retired_field/);
-      assert.match(shellAdapter(f.root,{action:'configuration',repositoryRoot:f.root}).stderr,/config_retired_field/);
-      assert.equal(readFileSync(path,'utf8'),text);
-    }
-    assert.equal(existsSync(toolsRoot(f.root)),false);
-  } finally {f.dispose();}
-});
-
-test('config set repairs invalid GitHub fields independently without losing other values', () => {
-  const f=fixture();
-  try {
-    const path=join(f.root,'.agents/skills/gidd/config.toml');
-    const original=configText()+'[github]\nhostname = "bad:host" # preserve\naccount = "bad account"\nremote = "--bad"\nrepository = "bad url"\n';
-    write(path,original);
-    configure(f.root,'set','github.hostname','github.com');
-    assert.equal(readFileSync(path,'utf8'),original.replace('bad:host','github.com'));
-    const before=readFileSync(path,'utf8');
-    assert.throws(()=>configure(f.root,'set','github.account','still bad'),/config_invalid_github_account/);
-    assert.equal(readFileSync(path,'utf8'),before);
-    configure(f.root,'set','tools.gh.source','https://example.test/releases');
-    for (const [key,value] of [['account','Octocat'],['remote','origin'],['repository','https://github.com/owner/repo']]) configure(f.root,'set',`github.${key}`,value);
-    assert.deepEqual(readGitHubConfiguration(f.root,['hostname','account','remote','repository']),{hostname:'github.com',account:'Octocat',remote:'origin',repository:'https://github.com/owner/repo'});
-    assert.match(readFileSync(path,'utf8'),/# preserve/);
-  } finally {f.dispose();}
-});
-
-for (const engine of ['shell','javascript']) {
-// gh metadata is JavaScript-only; native stage0 prepares Bun/Node only.
-const adapter = (root, spec, options) => (engine === 'shell' ? shellAdapter : jsAdapter)(root,spec,options);
-test('config set edits tool fields without changing companions or installing tools', { timeout: 120000 }, () => {
+test('repository config uses three dotted fields and rejects retired or conflicting structure without writes', () => {
   const f = fixture();
   try {
-    const fresh = join(f.root,'fresh'); mkdirSync(fresh);
-    assert.throws(() => configure(fresh,'set','tools.directory','.agents/skills/gidd'),/config_unknown_key/);
-    assert.equal(existsSync(join(fresh,'.agents/skills/gidd/config.toml')),false);
-    const path = join(f.root,'.agents/skills/gidd/config.toml');
-    const original = '\uFEFF' + configText().replaceAll('\n','\r\n') +
-      "  gh = { source = 'https://github.com/cli/cli/releases' } # keep gh comment\r\n" +
-      '[github]\r\nhostname = "github.com"\r\naccount = "Octocat"\r\nremote = "origin"\r\n';
-    write(path,original);
-    assert.throws(()=>configure(f.root,'set','tools.gh.version','2.98.0'),/config_unknown_key/);
-    assert.equal(readFileSync(path,'utf8'),original);
-    assert.throws(() => configure(f.root,'set','tools.gh.source','https://mirror.example/node,a#bad'),/config_invalid_tool_source/);
-    configure(f.root,'set','tools.gh.source','https://mirror.example/node,a');
-    assert.match(readFileSync(path,'utf8'),/source = "https:\/\/mirror.example\/node,a" \} # keep gh comment/);
-    for (const tool of ['bun','node']) {
-      configure(f.root,'set',`tools.${tool}.source`,`https://mirror.example/${tool}`);
+    const path = join(f.root, '.agents/skills/gidd/config.toml');
+    write(path, configText);
+    assert.deepEqual(readRemoteConfiguration(f.root, ['name','url','account']), { name: 'origin', url: 'https://github.com/owner/repo', account: 'Octocat' });
+    for (const key of ['github.account','repo.hostname','repo.remote.url.account','tools.node.source','tools.gh.version','bootstrap.runtime']) {
+      assert.throws(() => configure(f.root, 'set', key, 'value'), /config_unknown_key/);
+      assert.equal(readFileSync(path,'utf8'), configText);
     }
-    assert.throws(() => configure(f.root,'set','tools.directory','new tools'),/config_unknown_key/);
+    for (const text of ['schema_version = 1\n[github]\naccount="Octocat"\n', 'schema_version = 1\n[tools]\n', 'schema_version = 1\n[bootstrap]\n']) {
+      write(path, text); assert.throws(() => configure(f.root,'show'), /config_retired_structure/);
+      assert.equal(readFileSync(path,'utf8'), text);
+    }
+    for (const suffix of ['remote.url.account = "a"\n','remote.name = "other"\n','hostname = "github.com"\n','[repo]\n','remote.token = "secret"\n']) {
+      assert.throws(() => parseConfiguration(configText + suffix), /config_/);
+    }
     assert.equal(existsSync(toolsRoot(f.root)),false);
-    assert.deepEqual(readGitHubConfiguration(f.root,['account']),{hostname:'github.com',account:'Octocat',remote:'origin'});
-    const before = readFileSync(path,'utf8');
-    for (const [key,value] of [['tools.node.version','01.2.3'],['tools.bun.version','lts'],['tools.gh.source','http://example.test'],
-      ['tools.gh.source','https://user:secret@example.test'],
-      ['schema_version','2'],['tools.node.unknown','value']]) {
-      assert.throws(() => configure(f.root,'set',key,value),/config_/);
-      assert.equal(readFileSync(path,'utf8'),before);
-      assert.equal(existsSync(path+'.lock'),false);
-    }
-    assert.throws(() => editConfiguration(configText()+'node = { source = "https://nodejs.org/dist", other = "x" }\n','tools.node.source','https://example.test'),/config_invalid_tool_table/);
   } finally { f.dispose(); }
 });
 
-test('GitHub config editing preserves comments, BOM, line endings and unrelated settings', () => {
+test('config editing repairs fields independently and preserves comments, BOM, line endings and locks', () => {
   const f = fixture();
   try {
     const path = join(f.root,'.agents/skills/gidd/config.toml');
     assert.throws(() => configure(f.root,'show'),/config_missing/);
-    assert.equal(existsSync(dirname(path)),false);
-    assert.throws(() => configure(f.root,'set','github.token','secret'),/config_unknown_key/);
-    assert.equal(existsSync(dirname(path)),false);
-    configure(f.root,'set','github.account','Octocat');
-    assert.deepEqual(readGitHubConfiguration(f.root,['hostname','account','remote']),{hostname:'github.com',account:'Octocat',remote:'origin'});
-    const recorded=configure(f.root,'set','github.repository','https://GitHub.com/Owner/Repo/');
-    assert.equal(recorded.value,'https://github.com/owner/repo');
-    assert.equal(readGitHubConfiguration(f.root,['repository']).repository,recorded.value);
-    for (const invalid of ['https://u:secret@github.com/a/b','https://github.com/a/b?token=secret',
-      'https://github.com/a/b/commit/123','git@github.com:a/b','https://github.com/../repo']) {
-      const original=readFileSync(path,'utf8');
-      assert.throws(()=>configure(f.root,'set','github.repository',invalid),/config_invalid_github_repository/);
-      assert.equal(readFileSync(path,'utf8'),original);
-    }
+    configure(f.root,'set','repo.remote.account','Octocat');
+    assert.deepEqual(readRemoteConfiguration(f.root), { name:'origin',account:'Octocat' });
+    assert.throws(() => readRemoteConfiguration(f.root,['url']), /config_missing_repo_remote_url/);
+    configure(f.root,'set','repo.remote.url','https://GitHub.com/Owner/Repo.git/');
+    assert.equal(readRemoteConfiguration(f.root).url,'https://github.com/owner/repo');
     for (const newline of ['\n','\r\n']) {
-      const original = '\uFEFF' + ['# 顶部注释','schema_version = 1','[github] # identity',"  account = 'OldAccount' # 保留此注释",'hostname = "github.com"','[tools] # 工具段','# untouched tools comment',''].join(newline);
+      const original='\uFEFF'+['# 保留','schema_version = 1','[repo] # target',"  remote.account = 'bad account' # 注释",'remote.url = "bad url"','[spec]','mode = "issue-direct"',''].join(newline);
       write(path,original);
-      configure(f.root,'set','github.account','Octocat');
-      const replaced = original.replace("'OldAccount'",'"Octocat"');
-      assert.equal(readFileSync(path,'utf8'),replaced);
-      configure(f.root,'set','github.remote','upstream');
-      const updated = readFileSync(path,'utf8');
-      assert.equal(updated,replaced.replace('[tools] # 工具段',`remote = "upstream"${newline}[tools] # 工具段`));
-      assert.equal(configure(f.root,'show').content,updated);
-      configure(f.root,'set','github.repository','https://github.com/owner/repo');
-      assert.equal(readGitHubConfiguration(f.root,['repository']).repository,'https://github.com/owner/repo');
-      assert.ok(readFileSync(path,'utf8').startsWith(replaced.split('[tools]')[0]));
-      const before = hash(path);
-      for (const [key,value] of [['hostname','https://github.com'],['account','a b'],['account','Octocat\n'],['remote','--upload-pack=bad']]) {
-        assert.throws(() => configure(f.root,'set',`github.${key}`,value),/config_invalid_github/);
-        assert.equal(hash(path),before);
+      configure(f.root,'set','repo.remote.account','Octocat');
+      assert.equal(readFileSync(path,'utf8'),original.replace("'bad account'",'"Octocat"'));
+      configure(f.root,'set','repo.remote.name','upstream');
+      configure(f.root,'set','repo.remote.url','https://github.example.test/Owner/Repo');
+      const expected=original.replace("'bad account'",'"Octocat"').replace('bad url','https://github.example.test/owner/repo').replace('[spec]','remote.name = "upstream"'+newline+'[spec]');
+      assert.equal(configure(f.root,'show').content,expected);
+      for (const [key,value] of [['name','--bad'],['account','a b'],['url','https://u:secret@github.com/a/b'],['url','https://github.com/a/b?token=secret'],['url','https://github.com/a/..'],['url','git@github.com:a/b'],['url','https://github.com/a/b\n']]) {
+        assert.throws(() => configure(f.root,'set','repo.remote.'+key,value),/config_invalid_repo_remote_/);
+        assert.equal(readFileSync(path,'utf8'),expected);
       }
-      // Both bootstrap and JavaScript accept the same section order and string syntax.
-      ok(adapter(f.root,{action:'configuration',repositoryRoot:f.root}));
+      write(path+'.lock','another writer');
+      assert.throws(() => configure(f.root,'set','repo.remote.account','Other'),/config_locked/);
+      assert.equal(readFileSync(path,'utf8'),expected); unlinkSync(path+'.lock');
     }
-    assert.throws(() => parseGitHub('[github]\naccount="a"\naccount="b"'),/duplicate/);
-    assert.throws(() => parseGitHub('[github]\n[tools]\n[github]'),/duplicate/);
-    assert.throws(() => parseGitHub('[github]\ntoken="secret"'),/syntax/);
-    assert.equal(parseGitHub(editGitHub('[github]\naccount="bad name"','account','Octocat')).github.account,'Octocat');
-    const before = readFileSync(path,'utf8');
-    write(path+'.lock','another editor');
-    assert.throws(() => configure(f.root,'set','github.account','Other'),/config_locked/);
-    assert.equal(readFileSync(path,'utf8'),before);
-    assert.equal(readFileSync(path+'.lock','utf8'),'another editor');
-    unlinkSync(path+'.lock');
-    const outside = join(f.root,'outside'), linked = join(f.root,'linked'); mkdirSync(outside); mkdirSync(linked);
+    const outside=join(f.root,'outside'), linked=join(f.root,'linked');mkdirSync(outside);mkdirSync(linked);
     symlinkSync(outside,join(linked,'.agents'),'junction');
-    assert.throws(() => configure(linked,'set','github.account','Octocat'),/config_reparse_path/);
+    assert.throws(() => configure(linked,'set','repo.remote.account','Octocat'),/config_reparse_path/);
     assert.equal(existsSync(join(outside,'skills')),false);
-  } finally { f.dispose(); }
-});
-function samePath(actual, expected) {
-  while (!existsSync(expected)) {
-    assert.equal(basename(actual),basename(expected)); actual=dirname(actual); expected=dirname(expected);
-  }
-  const a=statSync(actual,{bigint:true}), b=statSync(expected,{bigint:true});
-  assert.notEqual(b.ino,0n); assert.equal(a.ino,b.ino); assert.equal(a.dev,b.dev);
-}
-
-test('configuration: fixed shared home, repository independence and read-only validation', { timeout: 120000 }, () => {
-  const f=fixture();
-  try {
-    const repositoryRoot=join(f.root,'仓库 space'), other=join(f.root,'other repo');
-    mkdirSync(repositoryRoot); mkdirSync(other);
-    const path=join(repositoryRoot,'.agents/skills/gidd/config.toml'), root=toolsRoot(f.root);
-    const resolve=(target=repositoryRoot,env={}) => adapter(f.root,{action:'configuration',repositoryRoot:target},{env:{PATH:'',...env}});
-    samePath(json(ok(resolve())).tools_root,root);
-    samePath(json(ok(resolve(other))).tools_root,root);
-    assert.equal(existsSync(root),false); assert.equal(existsSync(path),false);
-    write(join(f.root,'.agents/skills/gidd/config.toml'),'invalid user config must not be inherited');
-    assert.equal(json(ok(resolve())).configured,false);
-    for (const text of [configText(),'\uFEFF'+configText(),configText().replaceAll('\n','\r\n')]) {
-      write(path,text); const before=hash(path), result=json(ok(resolve()));
-      samePath(result.tools_root,root); assert.equal(result.configured,true);
-      assert.equal('directory' in result,false); assert.equal('scope' in result,false);
-      assert.equal(hash(path),before); assert.equal(existsSync(root),false);
+    for (const bytes of [Buffer.from([255]),'#'.repeat(16385)]) {
+      write(path,bytes);assert.throws(()=>configure(f.root,'show'),/config_(invalid_utf8|too_large)/);
     }
-    unlinkSync(path);
-    configure(repositoryRoot,'set','github.account','Octocat');
-    samePath(json(ok(resolve())).tools_root,root);
-    samePath(json(ok(resolve(other,{USERPROFILE:join(f.root,'separate home')}))).tools_root,toolsRoot(join(f.root,'separate home')));
-    assert.notEqual(resolve(other,{USERPROFILE:'relative'}).status,0);
-    for (const text of ['',configText().replace('= 1','= 2'),configText().replace('schema_version','Schema_version'),
-      configText()+'directory="other"\n',configText()+'[tools]\n',configText()+'scope="repository"\n',
-      configText()+'unexpected=true\n',configText().replace('[tools]','[other]')+'node="bad"\n']) {
-      write(path,text); assert.notEqual(resolve().status,0,text);
-    }
-    write(path,Buffer.from([0xff,0xfe,0x01])); assert.match(resolve().stderr,/config_invalid_utf8/);
-    write(path,'#'.repeat(16385)); assert.match(resolve().stderr,/config_too_large/);
-    write(path,configText());
-    const outside=join(f.root,'outside'); mkdirSync(outside); mkdirSync(dirname(root),{recursive:true});
-    symlinkSync(outside,root,'junction');
-    try { assert.notEqual(resolve().status,0); } finally { unlinkSync(root); }
-    write(join(root,'nested/SKILL.md'),'keep'); assert.match(resolve().stderr,/tools_directory_contains_project_or_skill/);
+    assert.throws(() => editConfiguration('broken','repo.remote.name','origin'),/config_/);
+    assert.equal(normalizeRepositoryIdentity('https://GitHub.com/OWNER/Repo/'),'https://github.com/owner/repo');
   } finally { f.dispose(); }
 });
 
-test('configured setup reuses gh without knowing a skill installation directory', { timeout: 120000 }, () => {
-  const f=fixture();
-  try {
-    const path=join(f.root,'.agents/skills/gidd/config.toml'), tools=toolsRoot(f.root);
-    write(path,configText()); const before=hash(path), exe=compile(f.root);
-    stub(exe,join(tools,'node/node.exe'),undefined,true); stub(exe,join(tools,'gh/gh.exe'),undefined,true);
-    const invoke=() => prepare(f.root,'gh',{env:{PATH:''}});
-    assert.equal(existsSync(join(code,'setup-tools.ps1')),false);
-    const report=json(ok(invoke())); samePath(report.tools_root,tools);
-    assert.deepEqual(report.tools.map(x=>x.name),['gh']); assert.ok(report.tools.every(x=>x.action==='reused'));
-    assert.equal(existsSync(join(tools,'bun')),false); assert.equal(hash(path),before);
-    assert.equal(readFileSync(join(tools,'INSTALLATION.md'),'utf8'),
-      readFileSync(join(repo,'.agents/skills/gidd/scripts/INSTALLATION.md'),'utf8'));
-    const git=findGit(); ok(run(git,['-C',f.root,'init','--quiet']));
-    const diagnosis=json(runDiagnosis(f.root,{env:{PATH:dirname(git)}}));
-    samePath(diagnosis.checks.find(x=>x.id==='gh').details.path,join(tools,'gh/gh.exe'));
-    assert.equal(diagnosis.checks.find(x=>x.id==='js_runtime').details.name,process.versions.bun?'bun':'node');
-    assert.equal(diagnosis.checks.find(x=>x.id==='config_file').status,'ready');
-    assert.equal(diagnosis.checks.find(x=>x.id==='config.github.account').reason,'config_missing_github_account');
-    assert.equal(diagnosis.checks.find(x=>x.id==='github.identity').status,'not_checked');
-    write(path,configText()+'directory = "../outside"\n'); assert.notEqual(invoke().status,0);
-  } finally { f.dispose(); }
-});
-
-test('inline tool configuration validates versions and visible sources without network or writes', { timeout: 120000 }, () => {
+test('native tool policy ignores absent, malformed and hostile repository configuration', () => {
   const f=fixture();
   try {
     const path=join(f.root,'.agents/skills/gidd/config.toml');
-    const resolve=() => adapter(f.root,{action:'configuration',repositoryRoot:f.root},{env:{PATH:''}});
-    const line='gh = { source = "https://nodejs.org/dist" }';
-    for (const input of [line, line+' # comment with {braces}', 'gh = { source = \'https://nodejs.org/dist/\' } # comment']) {
-      write(path,configText()+input+'\n'); const before=hash(path);
-      const storage=json(ok(resolve()));
-      assert.equal(storage.tools.gh.source,'https://nodejs.org/dist');
-      assert.equal(storage.tools.bun.version,'latest');
-      assert.equal(hash(path),before);
+    const resolve=()=>json(ok(adapter(f.root,{action:'configuration',repositoryRoot:f.root},{env:{PATH:''}})));
+    const original=resolve();
+    assert.equal(original.tools_root,join(realpathSync.native(f.root),'.agents/skills.tools/gidd'));
+    assert.equal(original.tools.node.source,'https://nodejs.org/dist');
+    assert.equal(original.tools.bun.source,'https://github.com/oven-sh/bun/releases');
+    assert.equal(original.tools.gh.source,'https://github.com/cli/cli/releases');
+    assert.equal(Object.hasOwn(original,'config_path'),false);
+    for (const bytes of [configText,'broken TOML','[tools]\nnode = { source="https://untrusted.test" }',Buffer.from([255]),'#'.repeat(20000)]) {
+      write(path,bytes); const before=readFileSync(path);
+      assert.deepEqual(resolve(),original);assert.deepEqual(readFileSync(path),before);
     }
-    for (const invalid of [
-      line+'\n'+line, line.replace('https:','http:'), line.replace('nodejs.org','user:secret@nodejs.org'),
-      line.replace('/dist','/dist?token=secret'), line.replace('/dist','/dist#fragment'),
-      line.replace('source =','Source ='), line.replace('source =','url ='),
-      'node = {}', 'node = { version = "latest" }', line.replace(' }',', }'),
-      line.replace(' }',', version = "latest" }'), line.replace('"https://nodejs.org/dist"','true'),
-      line.replace(' }',', source = "https://example.test" }'),
-    ]) {
-      write(path,configText()+invalid+'\n'); assert.notEqual(resolve().status,0,invalid);
-    }
+    unlinkSync(path);mkdirSync(path);assert.deepEqual(resolve(),original);
     assert.equal(existsSync(toolsRoot(f.root)),false);
-  } finally { f.dispose(); }
+  } finally {f.dispose();}
+});
+
+test('shared tool storage retains ownership guards while preparation ignores business configuration', {timeout:120000}, () => {
+  const f=fixture();
+  try {
+    const path=join(f.root,'.agents/skills/gidd/config.toml'), tools=toolsRoot(f.root);
+    write(path,'invalid TOML');const before=hash(path), exe=compile(f.root);
+    stub(exe,join(tools,'gh/gh.exe'),undefined,true);
+    const report=json(ok(prepare(f.root,'gh',{env:{PATH:''}})));
+    assert.equal(realpathSync.native(report.tools_root),realpathSync.native(tools));assert.equal(hash(path),before);
+    assert.ok(report.tools.every(item=>item.action==='reused'));
+    write(join(tools,'nested/SKILL.md'),'keep');
+    assert.match(adapter(f.root,{action:'configuration',repositoryRoot:f.root}).stderr,/tools_directory_contains_project_or_skill/);
+    assert.notEqual(adapter(f.root,{action:'configuration',repositoryRoot:f.root},{env:{USERPROFILE:'relative'}}).status,0);
+  } finally {f.dispose();}
 });
 
 test('release resolution selects stable versions, verifies upstream hashes and preserves mirror paths', { timeout: 120000 }, () => {
@@ -289,5 +154,3 @@ test('release resolution selects stable versions, verifies upstream hashes and p
     assert.match(resolve('bun','latest',{}, {pinnedPath}).stderr,/unexpected_metadata_request/);
   } finally { f.dispose(); }
 });
-
-}

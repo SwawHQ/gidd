@@ -1,5 +1,5 @@
-# Preparation owns repository checks and generated entry publication.
-# Keep remote parsing aligned with the read-only JS repository check.
+# Preparation checks only local worktree ownership and publishes its entry.
+# Remote configuration and GitHub checks belong to JavaScript.
 function Assert-GiddRepositoryRoot {
     param([string]$Repository)
     if ($Repository -notmatch '^[A-Za-z]:[\\/]') { throw 'repository_absolute_local_path_required' }
@@ -35,56 +35,14 @@ function Get-GiddInstallationRepository {
     return $null
 }
 
-function Assert-GiddRemoteField {
-    param([string]$Name, [string]$Value)
-    $pattern = if ($Name -eq 'hostname') { '^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$' }
-        else { '^[a-z0-9][a-z0-9._/-]*$' }
-    if ($Value -match '[\x00-\x20\x7f]' -or $Value -notmatch $pattern) { throw "config_invalid_github_$Name" }
-}
-
-function ConvertFrom-GiddRemoteAddress {
-    param([string]$Text)
-    if ($Text -match '[\s\\%?#]') { return $null }
-    $protocol = 'https'
-    if ($Text -match '^https://([^/:@]+)/([^/]+)/([^/]+)/?$') { }
-    elseif ($Text -match '^git@([^/:@]+):([^/]+)/([^/]+)/?$' -or $Text -match '^ssh://git@([^/:@]+)(?::[0-9]+)?/([^/]+)/([^/]+)/?$') { $protocol = 'ssh' }
-    else { return $null }
-    $hostname = $Matches[1]; $owner = $Matches[2]; $name = $Matches[3] -replace '\.git$',''
-    try { Assert-GiddRemoteField 'hostname' $hostname } catch { return $null }
-    foreach ($part in @($owner,$name)) { if ($part -notmatch '^[a-z0-9_.-]+$' -or $part -in @('.','..')) { return $null } }
-    return @{protocol=$protocol;hostname=$hostname.ToLowerInvariant();repository="$owner/$name"}
-}
-
 function Test-GiddRepository {
-    param([string]$Repository, [string]$Git, [hashtable]$GitHub = @{})
+    param([string]$Repository, [string]$Git)
     Assert-GiddRepositoryRoot $Repository
     $inside = Invoke-GiddProcess $Git @('-C',$Repository,'rev-parse','--is-inside-work-tree')
     $top = Invoke-GiddProcess $Git @('-C',$Repository,'rev-parse','--show-toplevel')
     if (-not $inside.ok -or $inside.text -cne 'true' -or -not $top.ok) { throw 'not_readable_worktree' }
     if (-not (Test-GiddSameDirectory $Repository $top.text)) { throw 'repository_root_mismatch' }
-    $hostname = if ($GitHub.ContainsKey('hostname')) { $GitHub.hostname } else { 'github.com' }
-    Assert-GiddRemoteField 'hostname' $hostname
-    if ($GitHub.ContainsKey('remote')) { Assert-GiddRemoteField 'remote' $GitHub.remote }
-    $listed = Invoke-GiddProcess $Git @('-C',$Repository,'remote')
-    if (-not $listed.ok) { throw 'repository_remotes_unreadable' }
-    $names = @($listed.text -split '\r?\n' | Where-Object { $_ })
-    if ($GitHub.ContainsKey('remote')) {
-        if ($GitHub.remote -cnotin $names) { throw 'configured_remote_missing' }
-        $names = @($GitHub.remote)
-    }
-    $remotes = @()
-    foreach ($name in $names) {
-        Assert-GiddRemoteField 'remote' $name
-        $result = Invoke-GiddProcess $Git @('-C',$Repository,'remote','get-url','--all',$name)
-        if (-not $result.ok) { continue }
-        $urls = @($result.text -split '\r?\n' | Where-Object { $_ })
-        $address = if ($urls.Count -eq 1) { ConvertFrom-GiddRemoteAddress $urls[0] } else { $null }
-        if ($address -and $address.hostname -eq $hostname) {
-            $remotes += @{name=$name;hostname=$address.hostname;repository=$address.repository;protocol=$address.protocol}
-        }
-    }
-    if (-not $remotes.Count) { throw 'github_remote_required' }
-    return @{status='ready';path=$Repository;remotes=$remotes}
+    return @{status='ready';path=$Repository}
 }
 
 function Get-GiddEntryPath {
@@ -181,11 +139,11 @@ function Get-GiddRepositoryLink {
 }
 
 function Complete-GiddRepositoryPreparation {
-    param($Report, [string]$Repository, [string]$Entry, [hashtable]$GitHub, [switch]$CheckOnly)
+    param($Report, [string]$Repository, [string]$Entry, [switch]$CheckOnly)
     $Report.repository = $Repository
     $git = @($Report.tool_checks | Where-Object { $_.id -eq 'tool.git' -and $_.status -eq 'ready' }) | Select-Object -First 1
     try {
-        $Report.repository_check = if ($git) { Test-GiddRepository $Repository $git.details.path $GitHub }
+        $Report.repository_check = if ($git) { Test-GiddRepository $Repository $git.details.path }
             else { @{status='not_checked';reason='git_unavailable'} }
     } catch {
         $reason = if ($_.Exception.Message -match '^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$') { $_.Exception.Message } else { 'repository_entry_failed' }
