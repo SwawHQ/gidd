@@ -6,6 +6,7 @@ To repair, run `gidd.pre.ensure.cmd --repo <repository-path>` from the GIDD Skil
 Run `gidd.pre.ensure.cmd --help` for more usage information.
 
 - `bun/`, `node/`, `gh/`, `git/`: Downloaded tools and related information.
-- `js_exec.cmd` and `tool-bindings.json`: JS runtime launcher and Git/gh binding configuration.
+- `bun.link.cmd`, `node.link.cmd`, `git.link.cmd`, `gh.link.cmd`: Independent tool launchers.
+- `tool-bindings.json`: Git/gh bindings for GIDD commands.
 - `.cache/`: Data related to downloads, locking, recovery, etc.
-- `.runtime-path-*`: Links to external runtimes. Only delete the links themselves; do not delete the target files they point to.
+- `.runtime-path-*`: Links to external tools. Only delete the links themselves; do not delete the target files they point to.
