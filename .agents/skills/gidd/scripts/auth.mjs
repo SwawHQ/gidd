@@ -1,8 +1,5 @@
 import { statSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { runCommand, validateOptions } from './github.mjs';
-import { configurationHint, readGitHubConfiguration } from './config.mjs';
 
 // Platform-neutral orchestration. Windows is the only verified launcher today.
 export async function authorize(input, { execute = runCommand, env = process.env, signal, onEvent = () => {}, timeoutMs = 900000 } = {}) {
@@ -61,31 +58,3 @@ export async function authorize(input, { execute = runCommand, env = process.env
   return report(matches(after.text) ? 'ready' : 'mismatch', matches(after.text) ? 'authenticated' : 'authorized_account_mismatch',
     { ...changed, login: after.text });
 }
-
-async function main() {
-  const controller = new AbortController();
-  const cancel = () => controller.abort();
-  process.on('SIGINT', cancel); process.on('SIGTERM', cancel);
-  try {
-    if (process.platform !== 'win32') throw new Error('unsupported_platform');
-    const args = process.argv.slice(2), options = {};
-    for (let i = 0; i < args.length; i += 2) {
-      const key = args[i].slice(2);
-      if (!args[i].startsWith('--') || !['repository','gh'].includes(key) || key in options || !args[i + 1]) throw new Error('invalid_arguments');
-      options[key] = args[i + 1];
-    }
-    const { hostname, account } = readGitHubConfiguration(options.repository, ['hostname', 'account']);
-    const result = await authorize({ ...options, hostname, account }, { signal: controller.signal,
-      onEvent: event => console.error(JSON.stringify(event)) });
-    console.log(JSON.stringify(result, null, 2));
-    process.exitCode = result.status === 'ready' ? 0 : 1;
-  } catch (error) {
-    const reason = /^(config_[a-z_]+|expected_account_required|gh_required|repository_unavailable|repository_must_be_absolute|invalid_hostname|invalid_account|gh_must_be_absolute_executable|unsupported_platform|invalid_arguments)$/.test(error.message) ? error.message : 'authorization_start_failed';
-    const hint = configurationHint(reason); if (hint) console.error(hint);
-    console.log(JSON.stringify({ schema: 'gidd.auth/v1', status: 'error', reason }));
-    process.exitCode = 2;
-  } finally {
-    process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel);
-  }
-}
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

@@ -1,15 +1,15 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, isAbsolute, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isAbsolute, resolve } from 'node:path';
 import { configure, configurationHint, readGitHubConfiguration } from './config.mjs';
 import { doctor } from './doctor.mjs';
 import { authorize } from './auth.mjs';
-import { resolveStorage, repositoryRoot } from './storage.mjs';
+import { resolveStorage } from './storage.mjs';
 import { boundTools, boundExecutor } from './bindings.mjs';
 import { parseSpecArguments, specCommand } from './spec.mjs';
 
 export async function main(args, { boundRepository } = {}) {
-  let command = (args.shift() || 'help').toLowerCase();
+  const route = (args.shift() || 'help').toLowerCase();
+  let command = route.startsWith('spec.') ? 'spec' : route;
   const schemas = { config: 'gidd.config/v1', doctor: 'gidd.doctor/v1', auth: 'gidd.auth/v1', spec: 'gidd.spec/v1' };
   let schema = 'gidd.cli/v1';
   try {
@@ -25,9 +25,8 @@ export async function main(args, { boundRepository } = {}) {
     let action, key, value, specOptions;
     if (command === 'spec') {
       schema = schemas.spec;
-      const repositoryFlag = args.indexOf('--repository');
-      specOptions = parseSpecArguments(repositoryFlag < 0 ? args : args.slice(0, repositoryFlag));
-      args = repositoryFlag < 0 ? [] : args.slice(repositoryFlag);
+      specOptions = parseSpecArguments(route, args);
+      args = [];
     }
     if (command === 'config') {
       action = args.shift(); if (!['show','set'].includes(action)) throw new Error('invalid_arguments');
@@ -41,32 +40,19 @@ export async function main(args, { boundRepository } = {}) {
       offline = flags.length === 1;
       args = args.filter(arg => arg !== '--offline');
     }
-    let repository;
-    if (boundRepository) {
-      if (args.length) throw new Error('invalid_arguments');
-      repository = boundRepository;
-      if (command !== 'doctor' && !existsSync(resolve(repository, '.git'))) throw new Error('not_git_repository_root');
-    } else if (args.length) {
-      if (args.length !== 2 || args[0] !== '--repository' || !args[1]) throw new Error('invalid_arguments');
-      repository = args[1];
-    } else {
-      const scripts = dirname(fileURLToPath(import.meta.url));
-      repository = resolve(scripts, '../../../..');
-      if (resolve(repository, '.agents/skills/gidd/scripts').toLowerCase() !== scripts.toLowerCase() || !existsSync(resolve(repository,'.git'))) {
-        if (command !== 'doctor') throw new Error('repository_required_for_unbound_entry');
-        repository = undefined;
-      }
-    }
-    if (repository !== undefined && !isAbsolute(repository)) throw new Error('repository_must_be_absolute');
-    if (command !== 'doctor' && !boundRepository) repository = repositoryRoot(repository);
+    if (args.length) throw new Error('invalid_arguments');
+    if (!boundRepository) throw new Error('repository_binding_required');
+    const repository = boundRepository;
+    if (!isAbsolute(repository)) throw new Error('repository_must_be_absolute');
+    if (command !== 'doctor' && !existsSync(resolve(repository, '.git'))) throw new Error('not_git_repository_root');
     schema = schemas[command];
     if (command === 'spec') {
       const result = await specCommand(repository, specOptions);
       console.log(specOptions.json ? JSON.stringify(result.report) : result.text);
-      return result.report.status === 'ready' ? 0 : 1;
+      return result.exitCode ?? (result.report.status === 'ready' ? 0 : 1);
     }
     let report;
-    if (command === 'doctor') report = await doctor(repository, { offline, fixedRepository: !!boundRepository });
+    if (command === 'doctor') report = await doctor(repository, { offline, fixedRepository: true });
     else if (command === 'config') report = configure(repository,action,key,value);
     else {
       const storage = resolveStorage(repository,{inspect:false});
@@ -89,16 +75,4 @@ export async function main(args, { boundRepository } = {}) {
     console.log(JSON.stringify({ schema, status: 'error', reason }));
     return 2;
   }
-}
-
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  let args = process.argv.slice(2);
-  try {
-    if (args[0] === '--encoded-arguments') {
-      if (args.length !== 2) throw new Error();
-      args = JSON.parse(Buffer.from(args[1],'base64').toString('utf8'));
-      if (!Array.isArray(args) || args.some(arg => typeof arg !== 'string')) throw new Error();
-    }
-    process.exitCode = await main(args);
-  } catch { console.log(JSON.stringify({ schema: 'gidd.cli/v1', status: 'error', reason: 'invalid_arguments' })); process.exitCode = 2; }
 }

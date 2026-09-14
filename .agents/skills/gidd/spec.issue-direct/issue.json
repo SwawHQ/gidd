@@ -1,0 +1,37 @@
+{
+  "schema": "gidd.issue-rules/v1",
+  "scope": "issue_body",
+  "sections": [
+    {
+      "id": "goal",
+      "headings": { "zh-CN": "目标", "en": "Goal" },
+      "required": true,
+      "placeholders": ["说明要解决的问题，以及期望得到的结果。", "Describe the problem and the expected outcome.", "TODO", "TBD", "待填写", "待补充"]
+    },
+    {
+      "id": "scope",
+      "headings": { "zh-CN": "范围", "en": "Scope" },
+      "required": true,
+      "placeholders": ["列出本次需要完成的改动和明确不包含的工作。", "List the changes to deliver and work explicitly excluded from this Issue.", "TODO", "TBD", "待填写", "待补充"]
+    },
+    {
+      "id": "acceptance",
+      "headings": { "zh-CN": "验收条件", "en": "Acceptance criteria" },
+      "required": true,
+      "min_task_items": 1,
+      "placeholders": ["可验证的结果一", "可验证的结果二", "Verifiable outcome one", "Verifiable outcome two", "TODO", "TBD", "待填写", "待补充"]
+    },
+    {
+      "id": "validation",
+      "headings": { "zh-CN": "验证方式", "en": "Validation" },
+      "required": true,
+      "placeholders": ["填写测试命令或检查方法，以及预期结果。", "Provide test commands or inspection steps and the expected results.", "TODO", "TBD", "待填写", "待补充"]
+    },
+    {
+      "id": "delivery",
+      "headings": { "zh-CN": "完成记录", "en": "Delivery record" },
+      "required": false,
+      "placeholders": []
+    }
+  ]
+}

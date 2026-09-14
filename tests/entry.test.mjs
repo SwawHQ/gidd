@@ -1,9 +1,10 @@
 import { test } from 'node:test';
+import { publishRepositoryEntry, runRepositoryCommand } from './support/repository.mjs';
 import { statSync, readFileSync, readdirSync, lstatSync, symlinkSync } from 'node:fs';
-import { bindFixture, adapter, code, hash, makeZip, rmSync, product, toolsRoot, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, ps, run, snapshot, stub, write } from './support/helpers.mjs';
-import { checkRuntime } from '../.agents/skills/gidd/scripts/runtime-compat.mjs';
+import { bindFixture, adapter, code, hash, makeZip, rmSync, toolsRoot, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, run, snapshot, stub, write } from './support/helpers.mjs';
 
 // Encode for the native Windows argv boundary, including terminal backslashes.
+const runtimeLink = (process.versions.bun ? 'bun' : 'node') + '.link.cmd';
 const quote = value => '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';
 
 function installation(f, prepare = true) {
@@ -19,9 +20,8 @@ function installation(f, prepare = true) {
   stub(entryExe,join(entryBin,'gh.exe'));
   const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
   const invoke = (args, env = {}, options = {}, entry) => {
-    // Expand USERPROFILE inside CMD once, preserving percent signs in its value.
-    const executable = entry ? join(skill, entry) : '%USERPROFILE%\\.agents\\skills.tools\\gidd\\js_exec.cmd';
-    const forwarded = entry ? args : [join(skill, 'scripts/gidd.mjs'), ...args];
+    const executable = entry ? join(skill, entry) : join(target,'.agents/skills/gidd/gidd.link.cmd');
+    const forwarded = args;
     return run(cmd, ['/d','/s','/c', `""${executable}" ${forwarded.map(quote).join(' ')}"`], {
       cwd: skill, windowsVerbatimArguments: true, ...options,
       env: { PATH: [dirname(process.execPath),dirname(git),entryBin].join(';'), GIDD_LANG: '', LC_ALL: 'en_US.UTF-8', ...env },
@@ -29,7 +29,7 @@ function installation(f, prepare = true) {
   };
   const ensure = (args = [], env = {}) => invoke(['--repo',target,...args],env,{},'gidd.pre.ensure.cmd');
   if (prepare) ok(ensure());
-  return { skill, target, invoke, ensure, args: ['--repository', target] };
+  return { skill, target, invoke, ensure };
 }
 
 function sameDirectory(actual, expected) {
@@ -37,11 +37,68 @@ function sameDirectory(actual, expected) {
   assert.equal(a.dev, b.dev); assert.equal(a.ino, b.ino);
 }
 
-test('compatibility is a standalone bootstrap method with internal version policy', () => {
-  for (const [versions,status] of [[{bun:'1.4.2'},'compatible'],[{bun:'1.4.1'},'incompatible'],
-    [{bun:'2.0.0'},'compatible'],[{node:'24.19.0'},'compatible'],[{node:'24.18.9'},'incompatible'],
-    [{node:'25.0.0'},'compatible'],[{node:'unknown'},'incompatible']]) assert.equal(checkRuntime(versions).status,status);
-  assert.equal(json(ok(run(process.execPath,[join(code,'../runtime-compat.mjs')]))).status,'compatible');
+test('tools-only prepares exactly one native tool without repository configuration or a JS dependency', () => {
+  const f=fixture();
+  try {
+    const s=installation(f,false), bin=join(f.root,'only-tools'), exe=join(f.root,'tool.exe');
+    write(join(s.skill,'config.toml'),'invalid repository configuration');
+    const invoke=(args)=>s.invoke(args,{PATH:bin},{},'gidd.pre.ensure.cmd');
+    const root=toolsRoot(f.root), initial=snapshot(f.root);
+    for(const name of ['git','gh','bun','node']) {
+      const report=json(invoke(['--tools-only='+name,'--check']));
+      assert.equal(report.status,'needs_tools');assert.equal(report.tool,name);
+    }
+    assert.deepEqual(snapshot(f.root),initial);
+    for(const args of [['--tools-only'],['--tools-only=bad'],['--tools-only=git','--tools-only=gh'],
+      ['--tools-only=git','--repo',s.target],['--tools-only=git','--jsruntime=bun'],['--tools-only=git','--check','--force']]) {
+      assert.equal(invoke(args).status,2);
+    }
+    const published=new Map();
+    for(const name of ['git','gh','bun','node']) {
+      stub(exe,join(bin,name+'.exe'));
+      const report=json(ok(invoke(['--tools-only='+name])));
+      assert.equal(report.tool,name);assert.equal(report.status,'ready');
+      assert.equal(json(ok(invoke(['--tools-only='+name.toUpperCase(),'--check']))).tool,name);
+      assert.equal(existsSync(join(root,name)),false,'External tools are reused');
+      for(const [other,digest] of published) assert.equal(hash(join(root,other+'.link.cmd')),digest);
+      published.set(name,hash(join(root,name+'.link.cmd')));
+      const before=snapshot(f.root);
+      assert.equal(json(ok(invoke(['--tools-only='+name,'--check']))).status,'ready');
+      assert.deepEqual(snapshot(f.root),before);
+      const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
+      assert.match(ok(run(cmd,['/d','/s','/c',`""${join(root,name+'.link.cmd')}" --version"`],{windowsVerbatimArguments:true,env:{PATH:''}})).stdout,/\d+\.\d+\.\d+/);
+    }
+    assert.equal(existsSync(join(root,'js_exec.cmd')),false);
+    assert.equal(existsSync(join(s.target,'.agents/skills/gidd/gidd.link.cmd')),false);
+  } finally {f.dispose();}
+});
+
+test('preparing another runtime preserves the repository runtime selection',()=>{
+  const f=fixture();
+  try {
+    const s=installation(f), root=toolsRoot(f.root), name=process.versions.bun?'node':'bun';
+    const link=join(s.target,'.agents/skills/gidd/gidd.link.cmd'), before=hash(link), launcher=hash(join(root,runtimeLink));
+    const bin=join(f.root,'other-runtime');stub(join(f.root,'tool.exe'),join(bin,name+'.exe'));
+    ok(s.invoke(['--tools-only='+name],{PATH:bin},{},'gidd.pre.ensure.cmd'));
+    assert.equal(hash(link),before);assert.equal(hash(join(root,runtimeLink)),launcher);
+    assert.equal(json(ok(s.ensure())).runtime.id,'tool.'+(process.versions.bun?'bun':'node'));
+    assert.equal(hash(link),before);
+    assert.equal(json(ok(s.ensure(['--check']))).status,'ready');
+  } finally {f.dispose();}
+});
+
+test('native runtime version checks apply the policy without executing JavaScript', () => {
+  const f=fixture();
+  try {
+    const exe=compile(f.root);
+    for (const [name,version,status] of [['bun','1.4.2','compatible'],['bun','1.4.1','incompatible'],
+      ['bun','2.0.0','compatible'],['node','v24.19.0','compatible'],['node','v24.18.9','incompatible'],
+      ['node','v25.0.0','compatible'],['node','unknown','incompatible']]) {
+      const path=join(f.root,'probes',name+'.exe');stub(exe,path,version);
+      assert.equal(json(ok(adapter(f.root,{action:'runtime',executable:path,name}))).status,status);
+    }
+    assert.equal(json(ok(adapter(f.root,{action:'runtime',executable:process.execPath,name:process.versions.bun?'bun':'node'}))).status,'compatible');
+  } finally { f.dispose(); }
 });
 
 test('preparation owns tool checks and gidd no longer routes tool commands', () => {
@@ -49,10 +106,7 @@ test('preparation owns tool checks and gidd no longer routes tool commands', () 
   try {
     const s=installation(f,false),before=snapshot(f.root);
     assert.equal(existsSync(join(s.skill,'gidd.tools.ensure.cmd')),false);
-    const bare=ps(join(s.skill,'scripts/windows/entry.ps1'),['tools'],{env:{PATH:''}});
-    assert.equal(bare.status,2); assert.equal(json(bare).reason,'bootstrap_required');
-    assert.match(bare.stderr,/gidd\.pre\.ensure\.cmd --repo/);
-    assert.deepEqual(snapshot(f.root),before);
+    for (const name of ['entry','doctor','config','authorize']) assert.equal(existsSync(join(s.skill,`scripts/windows/${name}.ps1`)),false);
     const missing=json(s.ensure(['--check'],{PATH:''}));
     assert.equal(missing.status,'needs_tools'); assert.equal(missing.runtime,null);
     assert.equal(missing.read_only,true); assert.deepEqual(snapshot(f.root),before);
@@ -80,21 +134,20 @@ test('shared launcher forwards raw argv, stdin, cwd, stderr and exit without Pow
   const f=fixture();
   try {
     const s=installation(f);
-    write(join(s.skill,'scripts/gidd.mjs'), `import {readFileSync} from 'node:fs'; console.log(JSON.stringify({args:process.argv.slice(2),input:readFileSync(0,'utf8'),cwd:process.cwd(),exe:process.execPath})); console.error('launcher fixture stderr'); process.exit(23);`);
-    rmSync(join(s.skill,'scripts/runtime-compat.mjs'));
+    write(join(s.skill,'echo.mjs'), `import {readFileSync} from 'node:fs'; console.log(JSON.stringify({args:process.argv.slice(2),input:readFileSync(0,'utf8'),cwd:process.cwd(),exe:process.execPath})); console.error('launcher fixture stderr'); process.exit(23);`);
     rmSync(join(s.skill,'scripts/windows'),{recursive:true});
     const before=snapshot(toolsRoot(f.root));
     const args=['two words','','--help','tail\\','a & b','a^b','!literal!','two "quotes"'];
-    const result=s.invoke(args,{PATH:''},{input:'launcher stdin',cwd:s.target});
+    const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
+    const result=run(cmd,['/d','/s','/c',`""${join(toolsRoot(f.root),runtimeLink)}" ${[join(s.skill,'echo.mjs'),...args].map(quote).join(' ')}"`],{windowsVerbatimArguments:true,env:{PATH:''},input:'launcher stdin',cwd:s.target});
     assert.equal(result.status,23,result.stderr);
     const report=json(result); assert.deepEqual(report.args,args);
     assert.equal(report.input,'launcher stdin'); sameDirectory(report.cwd,s.target); assert.equal(report.exe,process.execPath);
     assert.match(result.stderr,/launcher fixture stderr/);
     assert.deepEqual(snapshot(toolsRoot(f.root)),before);
-    // The shared launcher runs a different repository's script, without rebinding.
-    const other=join(f.root,'other repo/.agents/skills/gidd'); copySkill(other);
-    const otherCmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
-    assert.match(ok(run(otherCmd,['/d','/s','/c',`""${join(toolsRoot(f.root),'js_exec.cmd')}" "${join(other,'scripts/gidd.mjs')}" help en"`],{windowsVerbatimArguments:true,env:{PATH:''}})).stdout,/Help and diagnosis:/);
+    // A runtime wrapper can run any JS file, independently of GIDD commands.
+    const other=join(f.root,'other repo/echo.mjs'); write(other,"console.log('other fixture');");
+    assert.equal(ok(run(cmd,['/d','/s','/c',`""${join(toolsRoot(f.root),runtimeLink)}" "${other}""`],{windowsVerbatimArguments:true,env:{PATH:''}})).stdout.trim(),'other fixture');
   } finally {f.dispose();}
 });
 
@@ -141,10 +194,10 @@ test('runtime selection retains a valid binding and switches only when requested
     stub(exe,join(root,'bun/bun.exe'),undefined,true);
     assert.equal(json(ok(invoke())).runtime.id,'tool.node','A new managed Bun does not displace a bound external Node');
     const unicodeBin=join(f.root,'runtime \u4e2d\u6587');stub(exe,join(unicodeBin,'node.exe'));
-    rmSync(join(root,'js_exec.cmd'));ok(invoke({runtime:'node'},unicodeBin));
+    rmSync(join(root,'node.link.cmd'));ok(invoke({runtime:'node'},unicodeBin));
     const link=join(root,readdirSync(root).find(n=>n.startsWith('.runtime-path-')));rmSync(link);
-    assert.match(invoke({reinstall:true}).stderr,/https:\/\/nodejs.org\/dist\/index.json/,'Force identifies Node even when its path junction is missing');
-    write(join(root,'js_exec.cmd'),'unknown launcher');
+    assert.match(invoke({reinstall:true,runtime:'node'}).stderr,/https:\/\/nodejs.org\/dist\/index.json/,'Force identifies Node even when its path junction is missing');
+    write(join(root,'node.link.cmd'),'unknown launcher');
     assert.equal(json(ok(invoke())).runtime.id,'tool.bun','Unknown launcher data is not executed');
   } finally {f.dispose();}
 });
@@ -168,7 +221,7 @@ test('bootstrap installs, repairs and rolls back managed runtimes before publish
       write(config,'schema_version = 1\n[tools]\n');
       const spec={action:'bootstrap',repositoryRoot:f.root,responses,downloads,yes:true,node:name==='node'}, env={PATH:'',USERPROFILE:home};
       const invoke=(extra={})=>adapter(f.root,{...spec,...extra},{env});
-      const before=hash(config), result=json(ok(invoke())), root=toolsRoot(home), target=join(root,name), launcher=join(root,'js_exec.cmd');
+      const before=hash(config), result=json(ok(invoke())), root=toolsRoot(home), target=join(root,name), launcher=join(root,name+'.link.cmd');
       assert.equal(result.runtime.id,`tool.${name}`); assert.equal(hash(config),before); assert.equal(existsSync(join(root,name==='bun'?'node':'bun')),false);
       const healthy=snapshot(home); assert.equal(json(ok(invoke({responses:{},downloads:{}}))).runtime_action,'reused');
       assert.deepEqual(snapshot(home),healthy);
@@ -179,16 +232,6 @@ test('bootstrap installs, repairs and rolls back managed runtimes before publish
       write(executable,'damaged before committed cleanup failure');
       const committed=json(ok(invoke({failCleanup:true})));
       assert.equal(committed.cleanup_pending,true); assert.equal(hash(executable),hash(exe),'Post-publication cleanup must not restore the damaged executable');
-      // An upgrade must recognize the previous launcher as committed cleanup evidence.
-      const currentText=readFileSync(launcher,'utf8');
-      const legacyText=currentText.replace('setlocal DisableDelayedExpansion\r\n', () =>
-        'setlocal DisableDelayedExpansion\r\nfor /f "tokens=2 delims=:" %%C in (\'"%SystemRoot%\\System32\\chcp.com"\') do set "GIDD_JS_CODEPAGE=%%C"\r\n"%SystemRoot%\\System32\\chcp.com" 65001 >nul\r\n')
-        .replace('"%GIDD_JS_EXEC%" %*', () => '"%SystemRoot%\\System32\\chcp.com" %GIDD_JS_CODEPAGE% >nul\r\n"%GIDD_JS_EXEC%" %*');
-      write(launcher,legacyText);
-      const legacyTree=snapshot(root);
-      assert.match(invoke({failCleanup:true,responses:{},downloads:{}}).stderr,/fixture_cleanup_failed/);
-      assert.deepEqual(snapshot(root),legacyTree,'An old published launcher must not restore a damaged backup during upgrade');
-      write(launcher,currentText);
       const committedTree=snapshot(root);
       assert.equal(json(ok(invoke({yes:false,responses:{},downloads:{}}))).status,'ready');
       assert.deepEqual(snapshot(root),committedTree,'Read-only checks must leave committed cleanup pending');
@@ -204,6 +247,7 @@ test('bootstrap installs, repairs and rolls back managed runtimes before publish
       assert.match(invoke({reinstall:true,responses:{...responses,[checksum]:`${'0'.repeat(64)}  ${archiveName}\n`}}).stderr,/download_hash_mismatch/);
       assert.deepEqual(snapshot(target),old); assert.equal(hash(launcher),launcherHash);
       assert.equal(json(ok(invoke({reinstall:true,node:false}))).runtime.id,`tool.${name}`,'Force retains the bound runtime kind without a selector');
+      const beforeInterruption=snapshot(target);
       const definition=json(ok(adapter(f.root,{action:'release',name,version,source:name==='bun'?'https://github.com/oven-sh/bun/releases':'https://nodejs.org/dist',pinnedPath:'',responses})));
       const definitionPath=join(f.root,`${name}-definition.json`); write(definitionPath,JSON.stringify(definition));
       if(name==='bun') write(join(f.root,`bun-${version}-LICENSE.md`),readFileSync(license,'utf8'));
@@ -213,10 +257,8 @@ test('bootstrap installs, repairs and rolls back managed runtimes before publish
       const interruptedTree=snapshot(root);
       assert.equal(json(ok(invoke({yes:false}))).status,'needs_bootstrap');
       assert.deepEqual(snapshot(root),interruptedTree,'Read-only bootstrap must not recover or discard a backup');
-      assert.equal(json(product(['setup',name,'--repository',f.root],{env})).reason,'unknown_command');
-      assert.deepEqual(snapshot(root),interruptedTree,'Removed setup must preserve the pending runtime backup');
       ok(invoke({responses:{},downloads:{}}));
-      assert.deepEqual(snapshot(target),old); assert.equal(hash(launcher),launcherHash);
+      assert.deepEqual(snapshot(target),beforeInterruption); assert.equal(hash(launcher),launcherHash);
       assert.equal(existsSync(join(root,`.cache/previous-${name}`)),false);
       assert.equal(existsSync(join(root,`.cache/${name}`)),false);
       write(join(target,'user.txt'),'keep');
@@ -235,7 +277,7 @@ test('generated launcher pins an external Unicode/percent path and does not sear
     const env={USERPROFILE:home,PATH:[bin,dirname(findGit())].join(';'),GIDD_PATH_SENTINEL:'unexpected-expansion'};
     const report=json(ok(s.ensure([],env)));
     assert.equal(report.runtime.details.source,'path');
-    const launcher=join(toolsRoot(home),'js_exec.cmd'), previous=hash(launcher);
+    const launcher=join(toolsRoot(home),runtimeLink), previous=hash(launcher);
     assert.doesNotMatch(readFileSync(launcher,'utf8'), /chcp|[^\x00-\x7f]/i);
     const root=toolsRoot(home), binding=join(root,readdirSync(root).find(n=>n.startsWith('.runtime-path-')));
     assert.equal(lstatSync(binding).isSymbolicLink(),true); sameDirectory(binding,bin);
@@ -254,16 +296,16 @@ test('generated launcher pins an external Unicode/percent path and does not sear
     assert.equal(json(ok(s.ensure([],env))).launcher_action,'reused');
     sameDirectory(binding,bin);
     write(join(bin,'SKILL.md'),'external content, not GIDD storage');
-    assert.equal(json(s.invoke(['doctor',...s.args],{...env,PATH:''})).schema,'gidd.doctor/v1');
+    assert.equal(json(s.invoke(['doctor'],{...env,PATH:''})).schema,'gidd.doctor/v1');
     const nextBin=join(f.root,'另一个 runtime'); mkdirSync(nextBin); stub(process.execPath,join(nextBin,`${name}.exe`));
     const failed=adapter(f.root,{action:'bootstrap',repositoryRoot:s.target,responses:{},downloads:{},yes:true,failPublish:true},
       {env:{...env,PATH:nextBin}});
     assert.notEqual(failed.status,0); assert.equal(hash(launcher),previous);
-    assert.match(ok(s.invoke(['help','en'],{...env,PATH:''})).stdout,/Help and diagnosis:/);
+    assert.match(ok(s.invoke(['help','en'],{...env,PATH:''})).stdout,/Check tools, repository and GitHub identity/);
 
     const log=join(f.root,'unexpected-probe.log'), fake=compile(f.root);
     stub(fake,join(toolsRoot(home),'bun/bun.exe'),undefined,true);
-    assert.match(ok(s.invoke(['help','en'],{...env,PATH:'',GIDD_TEST_PROBE_LOG:log})).stdout,/Help and diagnosis:/);
+    assert.match(ok(s.invoke(['help','en'],{...env,PATH:'',GIDD_TEST_PROBE_LOG:log})).stdout,/Check tools, repository and GitHub identity/);
     assert.equal(hash(launcher),previous); assert.equal(existsSync(log),false);
     rmSync(join(bin,`${name}.exe`));
     assert.notEqual(s.invoke(['help','en'],{...env,GIDD_TEST_PROBE_LOG:log}).status,0);
@@ -272,7 +314,7 @@ test('generated launcher pins an external Unicode/percent path and does not sear
     stub(process.execPath,join(root,name,`${name}.exe`),undefined,true);
     assert.equal(json(ok(s.ensure([],{...env,PATH:''}))).runtime.details.source,'managed');
     assert.doesNotMatch(readFileSync(launcher,'utf8'),/chcp|[^\x00-\x7f]/i);
-    assert.match(ok(s.invoke(['--help','en'],{...env,PATH:''})).stdout,/Help and diagnosis:/);
+    assert.match(ok(s.invoke(['--help','en'],{...env,PATH:''})).stdout,/Check tools, repository and GitHub identity/);
 
   } finally {f.dispose();}
 });
@@ -281,35 +323,28 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
   const f = fixture();
   try {
     const s = installation(f), before = snapshot(f.root);
-    assert.match(ok(s.invoke(['help','zh'])).stdout, /帮助与诊断：/);
+    assert.match(ok(s.invoke(['help','zh'])).stdout, /显示中文帮助/);
     for (const alias of ['--help','-h']) {
       assert.equal(ok(s.invoke([alias,'zh'])).stdout, ok(s.invoke(['help','zh'])).stdout);
     }
-    assert.match(ok(s.invoke([])).stdout, /Help and diagnosis:/);
-    assert.match(ok(s.invoke([], { GIDD_LANG: 'zh' })).stdout, /帮助与诊断：/);
-    assert.match(ok(s.invoke(['help','en'], { GIDD_LANG: 'zh' })).stdout, /Help and diagnosis:/);
+    assert.match(ok(s.invoke([])).stdout, /Check tools, repository and GitHub identity/);
+    assert.match(ok(s.invoke([], { GIDD_LANG: 'zh' })).stdout, /显示中文帮助/);
+    assert.match(ok(s.invoke(['help','en'], { GIDD_LANG: 'zh' })).stdout, /Check tools, repository and GitHub identity/);
     for (const args of [['unknown'], ['identity'], ['doctor','--offline','--offline'], ['doctor','--offline=true'], ['auth','--offline'], ['help','fr'], ['help','en','extra'], ['doctor','--repository','.'],
-      ['doctor',...s.args,'--repository',s.target], ['doctor',...s.args,'--account','x'], ['setup','python',...s.args],
-      ['setup','bun',...s.args,'--offline','x'], ['auth','Octocat',...s.args]]) {
+      ['doctor','--repository',s.target], ['doctor','--account','x'], ['setup','python'],
+      ['setup','bun','--offline','x'], ['auth','Octocat']]) {
       const result = s.invoke(args);
       assert.equal(result.status, 2, args.join(' '));
-      assert.equal(json(result).schema, 'gidd.cli/v1');
+      assert.ok(['gidd.cli/v1','gidd.repository-entry/v1'].includes(json(result).schema));
     }
-    const unbound = s.invoke(['doctor']);
-    assert.equal(unbound.status,1);
-    assert.equal(json(unbound).repository,null);
-    assert.equal(json(unbound).checks.find(c => c.id === 'git.worktree').reason,'target_required');
-    const absent = s.invoke(['doctor','--repository',join(s.target,'absent')]);
-    assert.equal(absent.status,1);
-    assert.equal(json(absent).checks.find(c => c.id === 'git.worktree').reason,'directory_missing');
-    const result = s.invoke(['doctor',...s.args]);
+    const result = s.invoke(['doctor']);
     assert.equal(result.status, 1);
     const report = json(result);
     assert.equal(report.schema, 'gidd.doctor/v1');
     sameDirectory(report.repository, s.target);
     assert.equal(report.checks.find(c => c.id === 'js_runtime').status, 'ready');
     for (const command of [['auth']]) {
-      const missing = s.invoke([...command,...s.args]);
+      const missing = s.invoke([...command]);
       assert.equal(missing.status, 2);
       assert.equal(json(missing).reason, 'config_missing_github_hostname');
     }
@@ -324,11 +359,9 @@ test('removed runtime setup commands fail without changing configuration or tool
     write(join(s.target,'.agents/skills/gidd/config.toml'),'invalid configuration');
     const before = snapshot(f.root);
     for (const name of ['bun','node','git','gh']) {
-      for (const invoke of [args => s.invoke(args,{PATH:''}), args => product(args,{env:{PATH:''}})]) {
-        const result = invoke(['setup',name,...s.args]);
-        assert.equal(result.status,2);
-        assert.equal(json(result).reason,'unknown_command');
-      }
+      const result = s.invoke(['setup',name],{PATH:''});
+      assert.equal(result.status,2);
+      assert.equal(json(result).reason,'unknown_command');
       assert.equal(existsSync(join(s.skill,'scripts/windows/setup-tools.ps1')),false);
     }
     assert.deepEqual(snapshot(f.root),before,'Rejected commands must not read invalid config, install, or switch the launcher');
@@ -344,31 +377,19 @@ test('repository installation locates its own Git worktree independently of cwd'
     const worktree = join(f.root, 'linked worktree');
     ok(run(git, ['-C',target,'-c','user.name=Fixture','-c','user.email=fixture@example.test','commit','--allow-empty','-m','fixture']));
     ok(run(git, ['-C',target,'worktree','add','-b','fixture',worktree]));
-    const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
     ok(adapter(f.root,{action:'bootstrap',repositoryRoot:f.root,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
-    const unbound = join(f.root,'user profile/.agents/skills/gidd');
-    copySkill(unbound);
-    const unboundReport = run(cmd, ['/d','/s','/c', `""${join(toolsRoot(f.root),'js_exec.cmd')}" "${join(unbound,'scripts/gidd.mjs')}" doctor"`], {
-      cwd: target, windowsVerbatimArguments: true, env: { PATH: [dirname(process.execPath),dirname(git)].join(';') },
-    });
-    assert.equal(unboundReport.status,1);
-    assert.equal(json(unboundReport).repository,null);
-    assert.equal(json(unboundReport).checks.find(c => c.id === 'git.worktree').reason,'target_required');
     for (const root of [target,worktree]) {
       const skill = join(root,'.agents/skills/gidd');
       copySkill(skill);
       write(join(skill,'config.toml'),'schema_version = 1\n[tools]\n');
+      publishRepositoryEntry(root,join(skill,'scripts/gidd.mjs'));
       const before = snapshot(root);
-      const result = run(cmd, ['/d','/s','/c', `""${join(toolsRoot(f.root),'js_exec.cmd')}" "${join(skill,'scripts/gidd.mjs')}" doctor"`], {
-        cwd: f.root, windowsVerbatimArguments: true, env: { PATH: [dirname(process.execPath),dirname(git)].join(';') },
-      });
+      const result = runRepositoryCommand(root,['doctor','--offline'],{cwd:f.root,env:{PATH:''}});
       assert.equal(result.status,1);
       sameDirectory(json(result).repository,root);
-      const override = run(cmd, ['/d','/s','/c', `""${join(toolsRoot(f.root),'js_exec.cmd')}" "${join(skill,'scripts/gidd.mjs')}" doctor --repository "${f.root}""`], {
-        cwd: root, windowsVerbatimArguments: true, env: { PATH: dirname(process.execPath) },
-      });
-      assert.equal(override.status,1);
-      sameDirectory(json(override).repository,f.root);
+      const override = runRepositoryCommand(root,['doctor','--repository',f.root],{cwd:f.root,env:{PATH:''}});
+      assert.equal(override.status,2);
+      assert.equal(json(override).reason,'repository_override_forbidden');
       assert.deepEqual(snapshot(root),before);
     }
   } finally { f.dispose(); }
@@ -389,7 +410,7 @@ test('shell doctor and auth preserve JavaScript results, events and exit codes',
     const env = { PATH: [dirname(process.execPath),dirname(git),dirname(gh)].join(';'), GH_CONFIG_DIR: join(f.root,'credentials'),
       GH_TOKEN:'', GITHUB_TOKEN:'', GH_ENTERPRISE_TOKEN:'', GITHUB_ENTERPRISE_TOKEN:'' };
     const before = snapshot(s.target);
-    const diagnosis = s.invoke(['doctor',...s.args],env);
+    const diagnosis = s.invoke(['doctor'],env);
     assert.equal(diagnosis.status, 0);
     const report = json(diagnosis);
     assert.equal(report.schema,'gidd.doctor/v1');
@@ -399,17 +420,17 @@ test('shell doctor and auth preserve JavaScript results, events and exit codes',
     assert.equal(report.checks.find(c => c.id === 'git.remote_read').severity,'warning');
     assert.equal(report.checks.find(c => c.id === 'git.worktree').severity,'warning');
     assert.ok(report.checks.every(c => c.severity !== 'error'));
-    assert.equal(json(ok(s.invoke(['auth',...s.args],env))).reason,'already_authenticated');
+    assert.equal(json(ok(s.invoke(['auth'],env))).reason,'already_authenticated');
     write(config,configured.replace('remote = "fixture"\n',''));
-    assert.equal(json(ok(s.invoke(['auth',...s.args],env))).reason,'already_authenticated');
-    assert.equal(json(s.invoke(['doctor',...s.args],env)).checks.find(c=>c.id==='config.github.remote').reason,'config_missing_github_remote');
+    assert.equal(json(ok(s.invoke(['auth'],env))).reason,'already_authenticated');
+    assert.equal(json(s.invoke(['doctor'],env)).checks.find(c=>c.id==='config.github.remote').reason,'config_missing_github_remote');
     write(config,configured.replace('"Octocat"','"OtherAccount"'));
-    const mismatch = s.invoke(['auth',...s.args],env);
+    const mismatch = s.invoke(['auth'],env);
     assert.equal(mismatch.status,1);
     assert.equal(json(mismatch).reason,'existing_account_mismatch');
     write(config,configured);
     write(gh + '.mode','success');
-    const auth = ok(s.invoke(['auth',...s.args],env));
+    const auth = ok(s.invoke(['auth'],env));
     assert.equal(json(auth).reason,'authenticated');
     assert.equal(JSON.parse(auth.stderr.trim()).type,'authorization_required');
     assert.deepEqual(snapshot(s.target),before, 'Only the fake gh may write login state');
@@ -422,36 +443,35 @@ test('config shell command creates and edits defaults; auth rejects missing conf
     const s = installation(f), env = { PATH: dirname(process.execPath) };
     const config = join(s.target,'.agents/skills/gidd/config.toml');
     const original = readFileSync(config,'utf8');
-    const missing = s.invoke(['auth',...s.args],env);
+    const missing = s.invoke(['auth'],env);
     assert.equal(json(missing).reason,'config_missing_github_hostname');
     for (const args of [['auth','--account','Octocat'],['auth','--hostname','github.com'],['auth','--remote','origin'],['auth','Octocat']]) {
-      assert.equal(json(s.invoke([...args,...s.args],env)).reason,'github_parameters_moved_to_config');
+      assert.equal(json(s.invoke([...args],env)).reason,'github_parameters_moved_to_config');
     }
     for (const [key,value] of [['hostname','github.com'],['account','Octocat'],['remote','upstream'],['repository','https://github.com/owner/repo']]) {
-      const result = json(ok(s.invoke(['config','set',`github.${key}`,value,...s.args],env)));
+      const result = json(ok(s.invoke(['config','set',`github.${key}`,value],env)));
       assert.equal(result.key,`github.${key}`);
     }
     assert.ok(readFileSync(config,'utf8').startsWith(original));
-    assert.equal(json(ok(s.invoke(['config','show',...s.args],env))).content,readFileSync(config,'utf8'));
+    assert.equal(json(ok(s.invoke(['config','show'],env))).content,readFileSync(config,'utf8'));
     const before = snapshot(s.target);
     for (const [key,value] of [['github.account','bad name'],['github.token','secret'],['schema_version','2']]) {
-      assert.equal(s.invoke(['config','set',key,value,...s.args],env).status,2);
+      assert.equal(s.invoke(['config','set',key,value],env).status,2);
     }
     assert.deepEqual(snapshot(s.target),before);
-    const target = join(f.root,'fresh'); mkdirSync(target);
-    const created = s.invoke(['config','set','github.account','Octocat','--repository',target],env);
+    rmSync(config);
+    const created = s.invoke(['config','set','github.account','Octocat'],env);
     ok(created);
-    const text = readFileSync(join(target,'.agents/skills/gidd/config.toml'),'utf8');
+    const text = readFileSync(config,'utf8');
     assert.match(text,/hostname = "github.com"/); assert.match(text,/remote = "origin"/);
     assert.match(text,/account = "Octocat"/);
     // Runtime version pins are retired; unrelated configuration remains editable.
     for (const key of ['tools.node.version','tools.bun.version']) {
-      assert.equal(s.invoke(['config','set',key,'999.0.0',...s.args],env).status,2);
+      assert.equal(s.invoke(['config','set',key,'999.0.0'],env).status,2);
     }
-    assert.equal(s.invoke(['config','set','tools.directory','custom',...s.args],env).status,2);
-    const direct = ps(join(s.skill,'scripts/windows/config.ps1'),
-      ['-RepositoryPath',s.target,'-Action','set','-Key','tools.node.source','-Value','https://mirror.example/node'],{env});
+    assert.equal(s.invoke(['config','set','tools.directory','custom'],env).status,2);
+    const direct = s.invoke(['config','set','tools.node.source','https://mirror.example/node'],env);
     assert.equal(json(ok(direct)).value,'https://mirror.example/node');
-    ok(s.invoke(['config','show',...s.args],env));
+    ok(s.invoke(['config','show'],env));
   } finally { f.dispose(); }
 });

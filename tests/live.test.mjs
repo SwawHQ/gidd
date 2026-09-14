@@ -1,5 +1,6 @@
 import { test } from 'node:test';
-import { toolsRoot, assert, code, copySkill, existsSync, fixture, join, json, ok, ps, run, write, product, mkdirSync, dirname, findGit } from './support/helpers.mjs';
+import { publishRepositoryEntry, runRepositoryCommand } from './support/repository.mjs';
+import { toolsRoot, assert, copySkill, existsSync, fixture, join, json, ok, run, write, mkdirSync, dirname, findGit } from './support/helpers.mjs';
 import { toolEnvironment } from '../.agents/skills/gidd/scripts/tools.mjs';
 
 function createRepository(root) {
@@ -9,6 +10,35 @@ function createRepository(root) {
   copySkill(join(root,'.agents/skills/gidd'));
 }
 const live = process.env.GIDD_LIVE_TEST === '1' ? test : test.skip;
+live('official tools-only Git and gh bootstrap without a runtime', {timeout:300000},()=>{
+  const f=fixture();
+  try {
+    const skill=join(f.root,'skill');copySkill(skill);
+    const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
+    const invoke=(name,extra='')=>run(cmd,['/d','/s','/c',`""${join(skill,'gidd.pre.ensure.cmd')}" --tools-only=${name} ${extra}"`],
+      {windowsVerbatimArguments:true,env:{PATH:''},timeout:180000});
+    const selected={};
+    for(const name of ['git','gh']) {
+      const report=json(ok(invoke(name)));assert.equal(report.tools[0].action,'installed');
+      selected[name]=report.tools[0].path;
+      assert.equal(json(ok(invoke(name,'--check'))).status,'ready');
+      assert.equal(json(ok(invoke(name))).tools[0].action,'reused');
+    }
+    const root=toolsRoot(f.root);
+    for(const name of ['bun','node']) {assert.equal(existsSync(join(root,name)),false);assert.equal(existsSync(join(root,name+'.link.cmd')),false);}
+    const env=toolEnvironment(selected.git,{PATH:'',HOME:f.root,USERPROFILE:f.root,GH_CONFIG_DIR:join(f.root,'gh-config'),
+      GH_TOKEN:'offline-fixture',GITHUB_TOKEN:'',GH_ENTERPRISE_TOKEN:'',GITHUB_ENTERPRISE_TOKEN:'',GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'NUL',
+      HTTPS_PROXY:'http://127.0.0.1:1',HTTP_PROXY:'http://127.0.0.1:1'});
+    const source=join(f.root,'local-source'),clone=join(f.root,'local-clone');mkdirSync(source);
+    const git=args=>ok(run(selected.git,args,{cwd:source,env}));
+    git(['init']);write(join(source,'hello.txt'),'hello\n');git(['add','.']);
+    git(['-c','user.name=Fixture','-c','user.email=fixture@example.test','commit','-m','initial']);
+    git(['clone',source,clone]);ok(run(selected.git,['fetch','origin'],{cwd:clone,env}));
+    git(['remote','add','origin','https://github.com/example/gidd-fixture.git']);git(['config','remote.origin.gh-resolved','base']);
+    assert.equal(ok(run(cmd,['/d','/s','/c',`""${join(root,'gh.link.cmd')}" repo set-default --view"`],
+      {windowsVerbatimArguments:true,cwd:source,env:{...env,PATH:''}})).stdout.trim(),'example/gidd-fixture');
+  } finally {f.dispose();}
+});
 live('official unified bootstrap, local commit clone fetch and gh Git discovery', { timeout: 300000 }, () => {
   const f=fixture();
   try {
@@ -26,7 +56,7 @@ live('official unified bootstrap, local commit clone fetch and gh Git discovery'
     assert.deepEqual(forced.tools.map(t=>[t.name,t.action]),[['git','reinstalled'],['gh','reinstalled']]);
     assert.equal(existsSync(process.execPath),true,'Force preserves the external runtime');
     assert.equal(bootstrap('--check').status,'ready');
-    assert.equal(existsSync(join(toolsRoot(f.root),'js_exec.cmd')),true);
+    assert.equal(existsSync(join(toolsRoot(f.root),(process.versions.bun?'bun':'node')+'.link.cmd')),true);
     const env=toolEnvironment(git.path,{PATH:'',HOME:f.root,USERPROFILE:f.root,GH_CONFIG_DIR:join(f.root,'gh-profile'),
       GH_TOKEN:'offline-fixture',GITHUB_TOKEN:'',GH_ENTERPRISE_TOKEN:'',GITHUB_ENTERPRISE_TOKEN:'',
       GIT_CONFIG_NOSYSTEM:'1',GIT_CONFIG_GLOBAL:'NUL',HTTPS_PROXY:'http://127.0.0.1:1',HTTP_PROXY:'http://127.0.0.1:1'});
@@ -42,7 +72,9 @@ live('official unified bootstrap, local commit clone fetch and gh Git discovery'
     invoke(['remote','add','origin','https://github.com/example/gidd-fixture.git']);
     invoke(['config','remote.origin.gh-resolved','base']);
     assert.equal(ok(run(gh.path,['repo','set-default','--view'],{env,cwd:source})).stdout.trim(),'example/gidd-fixture');
-    const diagnosis=json(product(['doctor','--offline','--repository',source],{env:{PATH:''}}));
+    copySkill(join(source,'.agents/skills/gidd'));
+    publishRepositoryEntry(source,join(source,'.agents/skills/gidd/scripts/gidd.mjs'));
+    const diagnosis=json(runRepositoryCommand(source,['doctor','--offline'],{env:{PATH:''}}));
     assert.equal(diagnosis.checks.find(item=>item.id==='git').details.path,git.path);
     assert.equal(diagnosis.checks.find(item=>item.id==='git.worktree').status,'ready');
   } finally {f.dispose();}
@@ -62,8 +94,8 @@ live('official Bun cold bootstrap, post-install doctor and reuse', { timeout: 30
     const report=json(ok(invoke()));
     assert.deepEqual(report.tools.map(t=>[t.name,t.action]),[['git','reused'],['gh','reused']]);
     assert.equal(existsSync(join(toolsRoot(f.root),'node')),false);
-    assert.equal(existsSync(join(toolsRoot(f.root),'bun')),true,'stage0 supplies the runtime before JS installs gh');
-    const diagnosis=json(ps(join(code,'doctor.ps1'),['-RepositoryPath',f.root,'-Offline'],{env:{PATH:''}}));
+    assert.equal(existsSync(join(toolsRoot(f.root),'bun')),true,'PowerShell prepares the runtime and native tools');
+    const diagnosis=json(runRepositoryCommand(f.root,['doctor','--offline'],{env:{PATH:''}}));
     for (const id of ['js_runtime','gh']) assert.equal(diagnosis.checks.find(x=>x.id===id).status,'ready');
     const again=json(ok(invoke()));
     assert.deepEqual(again.tools.map(t=>[t.name,t.action]),[['git','reused'],['gh','reused']]);
@@ -88,7 +120,7 @@ live('official Node download and reuse through bootstrap', { timeout: 300000 }, 
     assert.equal(existsSync(join(root,'bun')),false);
     assert.equal(existsSync(join(root,'gh')),true); assert.equal(existsSync(join(root,'git')),true);
     assert.equal(existsSync(join(root,'node/npm.cmd')),false);
-    const diagnosis=json(ps(join(code,'doctor.ps1'),['-RepositoryPath',f.root,'-Offline'],{env:{PATH:''}}));
+    const diagnosis=json(runRepositoryCommand(f.root,['doctor','--offline'],{env:{PATH:''}}));
     assert.equal(diagnosis.checks.find(c=>c.id==='js_runtime').status,'ready');
   } finally { f.dispose(); }
 });

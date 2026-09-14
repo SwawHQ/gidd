@@ -12,14 +12,16 @@ public static class Tool {
             name == "node" ? "v24.19.0" : name == "gh" ? "gh version 2.98.0 (test)" : name == "git" ? "git version 2.55.0.windows.5" : "1.4.2";
         if (mode == "hang") { Thread.Sleep(30000); return 91; }
         if (mode == "fail") { Console.Error.WriteLine("private-test-secret"); return 9; }
-        if (args.Length == 1 && Path.GetFileName(args[0]) == "runtime-compat.mjs") {
-            // Simulate the public compatibility result; real runtimes are tested separately.
-            string version = mode.TrimStart('v');
-            string minimum = name == "node" ? "24.19.0" : "1.4.2";
-            Version parsed;
-            bool compatible = Version.TryParse(version, out parsed) && parsed >= new Version(minimum);
-            Console.WriteLine("{\"schema\":\"gidd.runtime-compat/v1\",\"name\":\"" + name + "\",\"version\":\"" + version + "\",\"minimum\":\"" + minimum + "\",\"status\":\"" + (compatible ? "compatible" : "incompatible") + "\"}");
-            return compatible ? 0 : 1;
+        if (name == "gh" && args.Length > 0 && args[0] == "--test-git") {
+            foreach (string arg in args) Console.WriteLine(arg);
+            Console.WriteLine("GIT_EXEC_PATH=" + Environment.GetEnvironmentVariable("GIT_EXEC_PATH"));
+            Console.WriteLine(Console.In.ReadToEnd());
+            var start = new System.Diagnostics.ProcessStartInfo("git.exe", "--version");
+            start.UseShellExecute = false;
+            using (var child = System.Diagnostics.Process.Start(start)) {
+                child.WaitForExit();
+                return child.ExitCode == 0 ? 23 : child.ExitCode;
+            }
         }
         if (args.Length != 1 || args[0] != "--version") return 90;
         Console.WriteLine(mode);

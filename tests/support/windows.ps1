@@ -5,11 +5,64 @@ $ErrorActionPreference = 'Stop'
 $lock = $null
 try {
     $request = [IO.File]::ReadAllText($RequestPath) | ConvertFrom-Json
-    foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','setup-tools/_filesystem.ps1','setup-tools/download.ps1','setup-tools/releases.ps1','setup-tools/install.ps1')) {
+    foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','setup-tools/_filesystem.ps1','setup-tools/download.ps1','setup-tools/releases.ps1','setup-tools/install.ps1','lib/_bootstrap.ps1','setup-tools/prepare.ps1','lib/_repository.ps1')) {
         $source = Join-Path $request.codeRoot $file
         . $source
     }
     switch ($request.action) {
+        'runtime' { Invoke-GiddRuntimeCompatibility $request.executable $request.name | ConvertTo-Json -Compress }
+        'repository' {
+            switch ($request.operation) {
+                'assert' {
+                    $owner = Get-GiddInstallationRepository $request.repositoryRoot $request.entry
+                    if ($null -eq $owner) { 'null' } else { ConvertTo-Json -InputObject $owner -Compress }
+                }
+                'inspect' {
+                    $github = @{}
+                    foreach ($property in $request.github.PSObject.Properties) { $github[$property.Name] = $property.Value }
+                    Test-GiddRepository $request.repositoryRoot $request.git $github | ConvertTo-Json -Depth 8 -Compress
+                }
+                default {
+                    Get-GiddRepositoryLink $request.repositoryRoot $request.entry $request.runtime -CheckOnly:($request.operation -eq 'check') -BeforePublish {
+                        if ($request.PSObject.Properties['concurrentText']) {
+                            [IO.File]::WriteAllText((Get-GiddEntryPath $request.repositoryRoot),$request.concurrentText)
+                        }
+                    } | ConvertTo-Json -Depth 8 -Compress
+                }
+            }
+        }
+        'prepare' {
+            function Read-GiddReleaseText {
+                param([string]$Url)
+                $property = $request.responses.PSObject.Properties[$Url]
+                if (-not $property) { throw "unexpected_metadata_request:$Url" }
+                return [string]$property.Value
+            }
+            function Open-GiddDownload {
+                param([string]$Url)
+                $property = $request.downloads.PSObject.Properties[$Url]
+                if (-not $property) { throw "unexpected_download:$Url" }
+                return @{response=$null;stream=[IO.File]::OpenRead([string]$property.Value)}
+            }
+            $storage = Resolve-GiddToolStorage $request.repositoryRoot
+            if ($request.PSObject.Properties['root']) { $storage.tools_root = $request.root }
+            $checkOnly = $request.PSObject.Properties['checkOnly'] -and $request.checkOnly
+            $force = $request.PSObject.Properties['force'] -and $request.force
+            $result = Invoke-GiddPrepareTools $storage -Names $request.names -CheckOnly:$checkOnly -Force:$force -ReadText {
+                param($url)
+                $property = $request.responses.PSObject.Properties[$url]
+                if (-not $property) { throw "unexpected_metadata_request:$url" }
+                return [string]$property.Value
+            } -OnPhase {
+                param($name,$phase)
+                if ($request.PSObject.Properties['stopAt'] -and $phase -eq $request.stopAt) { [Diagnostics.Process]::GetCurrentProcess().Kill() }
+            }
+            $result | ConvertTo-Json -Depth 12 -Compress
+            if ($result.status -ne 'ready') { exit 1 }
+        }
+        'extract' {
+            Expand-GiddPayload $request.archivePath $request.destination ([IO.File]::ReadAllText($request.definitionPath) | ConvertFrom-Json)
+        }
         'compile' {
             Add-Type -TypeDefinition ([IO.File]::ReadAllText($request.source)) -OutputAssembly $request.destination -OutputType ConsoleApplication
         }
@@ -96,7 +149,7 @@ try {
                 # still use production code. Public installers always use HTTPS.
                 $fixtureDownloads = @{}
                 $fixtureDownloads[$definition.url] = Join-Path $request.fixtureDirectory $definition.archive
-                foreach ($file in $definition.supplements) {
+                foreach ($file in $(if ($definition.PSObject.Properties['supplements']) { $definition.supplements } else { @() })) {
                     $fixtureDownloads[$file.url] = Join-Path $request.fixtureDirectory "$($definition.name)-$($definition.version)-$($file.name)"
                 }
                 function Open-GiddDownload {

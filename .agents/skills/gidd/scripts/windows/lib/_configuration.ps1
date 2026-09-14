@@ -99,14 +99,18 @@ function Read-GiddToolConfiguration {
         throw "config_unsupported_syntax_or_field:$lineNumber"
     }
     if (-not $values.ContainsKey('schema_version')) { throw 'config_missing_key:schema_version' }
-    return @{ tools = $tools }
+    $github = @{}
+    foreach ($name in @('hostname','account','remote','repository')) {
+        if ($values.ContainsKey("github.$name")) { $github[$name] = $values["github.$name"] }
+    }
+    return @{ tools = $tools; github = $github }
 }
 
 function Resolve-GiddToolStorage {
     param([string]$RepositoryRoot)
     $configPath = if ($RepositoryRoot) { Join-Path $RepositoryRoot '.agents/skills/gidd/config.toml' } else { $null }
     $configured = $false
-    $settings = @{ tools = (Get-GiddDefaultTools) }
+    $settings = @{ tools = (Get-GiddDefaultTools); github = @{} }
     if ($configPath) {
         Assert-GiddPlainPath $configPath
         if (Test-Path -LiteralPath $configPath) { $settings = Read-GiddToolConfiguration $configPath; $configured = $true }
@@ -133,5 +137,5 @@ function Resolve-GiddToolStorage {
             }
         }
     }
-    return @{ tools_root = $root; config_path = $configPath; configured = $configured; tools = $settings.tools }
+    return @{ tools_root = $root; config_path = $configPath; configured = $configured; tools = $settings.tools; github = $settings.github }
 }

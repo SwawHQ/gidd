@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import { realpathSync, renameSync, statSync } from 'node:fs';
-import { assertInstallationRepository, checkRepositoryLink, publishRepositoryEntry } from '../.agents/skills/gidd/scripts/repository-entry.mjs';
-import { assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, readFileSync, rmSync, run, snapshot, stub, toolsRoot, write } from './support/helpers.mjs';
+import { assertInstallationRepository, checkRepositoryLink, publishRepositoryEntry } from './support/repository.mjs';
+import { inspectRepositoryEntry } from '../.agents/skills/gidd/scripts/repository-check.mjs';
+import { adapter, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, readFileSync, readdirSync, rmSync, run, snapshot, stub, toolsRoot, write } from './support/helpers.mjs';
 
 const quote = value => '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';
 function setup(f) {
@@ -22,6 +23,99 @@ function setup(f) {
   const link = target => join(target, '.agents/skills/gidd/gidd.link.cmd');
   return { git, skill, invoke, create, ensure, link };
 }
+
+test('issue-direct lifecycle uses only the public preparation and repository commands', () => {
+  const f = fixture();
+  try {
+    const s = setup(f), target = s.create('issue-direct lifecycle');
+    ok(s.ensure(target));
+    const invoke = args => s.invoke(s.link(target), args, { env: { PATH: '' } });
+    for (const [key,value] of [['spec.mode','issue-direct'],['github.hostname','github.com'],
+      ['github.account','Octocat'],['github.remote','origin'],['github.repository','https://github.com/Team/Repo']]) {
+      ok(invoke(['config','set',key,value]));
+    }
+    for (const [key,value] of [['user.name','Fixture'],['user.email','fixture@example.test']]) {
+      ok(run(s.git,['-C',target,'config',key,value]));
+    }
+    assert.equal(json(ok(invoke(['doctor','--offline']))).status,'local_ready');
+    assert.equal(json(ok(invoke(['spec.current','--json']))).mode,'issue-direct');
+    const template = ok(invoke(['spec.current.issue','--lang','en'])).stdout;
+    const path = join(target,'issue draft.md'); write(path,template);
+    assert.notEqual(invoke(['spec.current.issue.check',path,'--json']).status,0);
+    write(path,template
+      .replace('Describe the problem and the expected outcome.','Use the repository command from another directory.')
+      .replace('List the changes to deliver and work explicitly excluded from this Issue.','Update the command entry and its regression tests.')
+      .replace('Verifiable outcome one','The generated command identifies its own repository.')
+      .replace('Verifiable outcome two','The command works with an empty PATH.')
+      .replace('Provide test commands or inspection steps and the expected results.','Run dev.cmd .test entry and expect every test to pass.'));
+    assert.equal(json(ok(invoke(['spec.current.issue.check',path,'--json']))).status,'passed');
+    const config = readFileSync(join(target,'.agents/skills/gidd/config.toml'));
+    write(s.link(target),'damaged entry');
+    assert.notEqual(s.ensure(target,['--check']).status,0);
+    assert.equal(json(ok(s.ensure(target))).entry.action,'updated');
+    assert.equal(json(ok(invoke(['doctor','--offline']))).status,'local_ready');
+    assert.deepEqual(readFileSync(join(target,'.agents/skills/gidd/config.toml')),config);
+  } finally { f.dispose(); }
+});
+
+test('repository preparation runs entirely in PowerShell; generated commands run entirely in JS', () => {
+  const f=fixture();
+  try {
+    const s=setup(f), target=s.create('native preparation'), scripts=join(s.skill,'scripts'), bin=join(f.root,'bin');
+    // These runtimes only implement --version: attempting to run JS returns 90.
+    for(const name of ['bun','node']) stub(join(f.root,'tool.exe'),join(bin,name+'.exe'));
+    const originals=new Map();
+    for(const name of readdirSync(scripts).filter(name=>name.endsWith('.mjs'))) {
+      const path=join(scripts,name);originals.set(path,readFileSync(path));write(path,"throw new Error('ensure_must_not_execute_js');");
+    }
+    const entry=join(s.skill,'gidd.pre.ensure.cmd'), env={PATH:[bin,dirname(s.git)].join(';')};
+    for(const name of ['bun','node']) {
+      const first=json(ok(s.invoke(entry,['--repo',target,'--jsruntime='+name],{env})));
+      assert.equal(first.runtime.id,'tool.'+name);assert.equal(first.entry.status,'ready');
+      assert.equal(json(ok(s.invoke(entry,['--repo',target,'--check'],{env}))).status,'ready');
+      write(s.link(target),'damaged');
+      assert.equal(json(ok(s.invoke(entry,['--repo',target,'--jsruntime='+name],{env}))).entry.action,'updated');
+    }
+    for(const [path,bytes] of originals) write(path,bytes);
+    // Bind the real test runtime, then remove every native implementation file.
+    stub(process.execPath,join(bin,(process.versions.bun?'bun':'node')+'.exe'));
+    ok(s.invoke(entry,['--repo',target,'--jsruntime='+(process.versions.bun?'bun':'node')],{env}));
+    const native=join(scripts,'windows');
+    assert.ok(native.startsWith(f.root));rmSync(native,{recursive:true});
+    assert.match(ok(s.invoke(s.link(target),['help','en'],{env:{PATH:''}})).stdout,/Check tools, repository and GitHub identity/);
+    assert.equal(json(s.invoke(s.link(target),['doctor','--offline'],{env:{PATH:''}})).schema,'gidd.doctor/v1');
+  } finally {f.dispose();}
+});
+
+test('native preparation and JS Issue checks agree on repository and remote rules', async () => {
+  const f=fixture();
+  try {
+    const s=setup(f),target=s.create('repository rules');
+    const cases=[
+      ['https://github.com/Team/Repo.git',{}],['git@github.com:Team/Repo.git',{}],
+      ['HTTPS://GitHub.COM/Team/Repo.GIT',{hostname:'GITHUB.COM'}],['SSH://GIT@github.com/Team/Repo.git',{}],
+      ['ssh://git@github.example.test:2222/Team/Repo.git',{hostname:'github.example.test'}],
+      ['https://github.com/Team/Repo.git',{remote:'missing'}],['https://github.com/Team/Repo.git',{remote:'Origin'}],
+      ['https://github.com/Team/Repo.git',{hostname:'bad:host'}],['https://github.com/Team/Repo.git',{remote:'--bad'}],
+      ['https://gitlab.com/Team/Repo.git',{}],['https://u:PRIVATE_TOKEN@github.com/Team/Repo.git',{}],
+      ['https://github.com/Team/Repo?token=PRIVATE_TOKEN',{}],['https://github.com/../Repo',{}],
+    ];
+    for(const [url,github] of cases) {
+      ok(run(s.git,['-C',target,'remote','set-url','origin',url]));
+      const native=adapter(f.root,{action:'repository',operation:'inspect',repositoryRoot:target,git:s.git,github});
+      let js;
+      try { js=await inspectRepositoryEntry(target,s.git,github); }
+      catch(error) { assert.equal(native.status,1);assert.equal(native.stderr.trim(),error.message);continue; }
+      assert.deepEqual(json(ok(native)).remotes,js.remotes);
+    }
+    ok(run(s.git,['-C',target,'remote','set-url','origin','https://github.com/Team/Repo.git']));
+    ok(s.ensure(target));const link=s.link(target);
+    const race=adapter(f.root,{action:'repository',operation:'publish',repositoryRoot:target,
+      entry:join(s.skill,'scripts/gidd.mjs'),runtime:process.versions.bun?'node':'bun',concurrentText:'concurrent edit'});
+    assert.equal(race.status,1);assert.match(race.stderr,/repository_entry_changed/);
+    assert.equal(readFileSync(link,'utf8'),'concurrent edit');assert.equal(existsSync(link+'.lock'),false);
+  } finally {f.dispose();}
+});
 
 test('repository ensure help works without tools or a repository and honors language selection', { timeout: 120000 }, () => {
   const f = fixture();
@@ -68,7 +162,7 @@ test('repository ensure help works without tools or a repository and honors lang
   } finally { f.dispose(); }
 });
 
-test('repository installations reject other targets before preparation or JS publication', { timeout: 120000 }, () => {
+test('repository installations reject other targets before preparation or native publication', { timeout: 120000 }, () => {
   const f = fixture();
   try {
     const s = setup(f), target = s.create('owner-other');
@@ -163,7 +257,7 @@ test('repository check reports missing, healthy and damaged state without writes
     rmSync(link);
     assert.equal(inspect().entry.reason, 'repository_entry_missing');
     write(link, '@echo off\r\necho user owned\r\n');
-    assert.equal(inspect().entry.reason, 'repository_entry_occupied');
+    assert.equal(inspect().entry.reason, 'repository_entry_outdated');
     rmSync(link); mkdirSync(link);
     assert.equal(inspect().entry.reason, 'repository_entry_occupied');
     rmSync(link, { recursive: true }); write(link, saved);
@@ -221,7 +315,7 @@ test('repository ensure rejects unsuitable targets and keeps configuration untou
   } finally { f.dispose(); }
 });
 
-test('repository links preserve target, arguments, idempotence and unknown files', { timeout: 120000 }, () => {
+test('repository links repair generated contents and preserve target, arguments and unrelated files', { timeout: 120000 }, () => {
   const f = fixture();
   try {
     const s = setup(f), target = s.create('仓库 %target% ! & spaces'), link = s.link(target);
@@ -237,10 +331,10 @@ test('repository links preserve target, arguments, idempotence and unknown files
     assert.deepEqual(snapshot(f.root), tree); assert.equal(statSync(link).mtimeMs, modified);
     const replacement = join(f.root, 'replacement skill'); copySkill(replacement);
     assert.equal(publishRepositoryEntry(target, join(replacement, 'scripts/gidd.mjs')).action, 'updated');
-    assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /Help and diagnosis/);
+    assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /Check tools, repository and GitHub identity/);
     assert.equal(publishRepositoryEntry(target, join(s.skill, 'scripts/gidd.mjs')).action, 'updated');
-    assert.match(ok(s.invoke(link, ['help', 'zh'], { env: { PATH: '' } })).stdout, /帮助与诊断/);
-    assert.match(ok(s.invoke(link, [])).stdout, /Help and diagnosis/);
+    assert.match(ok(s.invoke(link, ['help', 'zh'], { env: { PATH: '' } })).stdout, /显示中文帮助/);
+    assert.match(ok(s.invoke(link, [])).stdout, /Check tools, repository and GitHub identity/);
     const other = s.create('other');
     const output = s.invoke(link, ['doctor', '--offline'], { cwd: other, env: { GIT_DIR: join(other, '.git'), GIT_WORK_TREE: other } });
     const report = json(output); assert.equal(report.repository, target);
@@ -264,7 +358,7 @@ test('repository links preserve target, arguments, idempotence and unknown files
       assert.equal(repositoryCheck.reason, 'not_git_repository'); assert.equal(repositoryCheck.severity, 'error');
       assert.ok(repositoryCheck.hint);
       assert.equal(diagnosis.checks.find(c => c.id === 'config_file').details.path, join(target, '.agents/skills/gidd/config.toml'));
-      assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /Help and diagnosis/);
+      assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /Check tools, repository and GitHub identity/);
       assert.equal(json(s.invoke(link, ['config', 'show'])).reason, 'not_git_repository_root');
     } finally { renameSync(savedMarker, gitMarker); }
     const beforeRemoved = snapshot(f.root);
@@ -274,11 +368,27 @@ test('repository links preserve target, arguments, idempotence and unknown files
     assert.deepEqual(snapshot(f.root), beforeRemoved);
     const fresh = s.create('new repository'); const shared = snapshot(toolsRoot(f.root));
     assert.equal(json(ok(s.ensure(fresh))).entry.action, 'created'); assert.deepEqual(snapshot(toolsRoot(f.root)), shared);
-    const saved = readFileSync(link, 'utf8'); write(link, '@echo off\r\necho user owned\r\n');
-    const occupied = s.ensure(target); assert.equal(occupied.status, 1);
-    assert.ok(json(occupied).tool_checks.some(c => c.reason === 'repository_entry_occupied'));
-    assert.equal(readFileSync(link, 'utf8'), '@echo off\r\necho user owned\r\n');
-    write(link, saved); write(link + '.lock', 'another writer');
+    // Earlier direct publications may spell the same Windows path using its short name.
+    ok(s.ensure(target));
+    const saved = readFileSync(link, 'utf8');
+    const config = join(target, '.agents/skills/gidd/config.toml'), savedConfig = readFileSync(config, 'utf8');
+    for (const damaged of ['', '@echo off\r\necho modified\r\n', Buffer.alloc(20000, 0xff),
+      saved.replace(/set "GIDD_LINK_SPEC=[^"]*"/, 'set "GIDD_LINK_SPEC=invalid"')]) {
+      write(link, damaged);
+      const beforeRepair = snapshot(f.root);
+      assert.equal(json(s.ensure(target, ['--check'])).entry.reason, 'repository_entry_outdated');
+      assert.deepEqual(snapshot(f.root), beforeRepair);
+      assert.equal(json(ok(s.ensure(target))).entry.action, 'updated');
+      assert.equal(readFileSync(link, 'utf8'), saved);
+      assert.equal(readFileSync(config, 'utf8'), savedConfig);
+      assert.deepEqual(snapshot(toolsRoot(f.root)), shared);
+      assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /Check tools, repository and GitHub identity/);
+    }
+    rmSync(link); mkdirSync(link); write(join(link, 'keep.txt'), 'not a generated file');
+    const occupied = snapshot(f.root);
+    assert.equal(json(s.ensure(target)).reason, 'repository_entry_occupied');
+    assert.deepEqual(snapshot(f.root), occupied);
+    rmSync(link, { recursive: true }); write(link, saved); write(link + '.lock', 'another writer');
     assert.throws(() => publishRepositoryEntry(target, join(s.skill, 'scripts/gidd.mjs')), /repository_entry_locked/);
     assert.equal(readFileSync(link, 'utf8'), saved); rmSync(link + '.lock');
     ok(run(s.git, ['-C', target, 'remote', 'set-url', 'origin', 'https://gitlab.com/Other/Repo']));
@@ -310,7 +420,7 @@ test('repository-relative links survive moves and accept Git worktrees', { timeo
       const target = s.create('local-' + layout), skill = join(target, layout, 'skills/gidd'); copySkill(skill);
       const result = json(ok(s.ensure(target, [], join(skill, 'gidd.pre.ensure.cmd'))));
       assert.equal(result.entry.location, 'relative');
-      assert.match(ok(s.invoke(s.link(target), ['help', 'en'])).stdout, /Help and diagnosis/);
+      assert.match(ok(s.invoke(s.link(target), ['help', 'en'])).stdout, /Check tools, repository and GitHub identity/);
       const moved = join(f.root, 'moved-' + layout); renameSync(target, moved);
       const report = json(s.invoke(s.link(moved), ['doctor', '--offline']));
       assert.equal(report.repository, moved);

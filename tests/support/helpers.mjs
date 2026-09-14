@@ -82,27 +82,27 @@ export function adapter(root, spec, options) {
   try { return ps(join(support, 'windows.ps1'), ['-RequestPath', path], options); }
   finally { rmSync(path, { force: true }); }
 }
-export function product(args, options) { return run(process.execPath, [join(code,'../gidd.mjs'),...args], options); }
-// Test-only access to the JS preparation stage; public preparation is bootstrap.
+// Test-only access to the native preparation stage; public preparation is bootstrap.
 export function prepare(repository, name = 'gh', options = {}) {
-  return jsAdapter(repository,{action:'prepare',repositoryRoot:repository,names:[name]},options);
+  return adapter(repository,{action:'prepare',repositoryRoot:repository,names:[name]},options);
 }
 export function bindFixture(home, tools) {
   const bindings={schema:'gidd.tool-bindings/v1',platform:'windows-x64',tools:{}};
   for(const [name,path] of Object.entries(tools)) if(path) bindings.tools[name]={path,source:'path',version:ok(run(path,['--version'])).stdout.match(/\d+\.\d+\.\d+/)[0]};
   write(join(toolsRoot(home),'tool-bindings.json'),JSON.stringify(bindings));
 }
-export function diagnosis(target, options) { return product(['doctor','--offline','--repository',target],options); }
+export function diagnosis(target, options) { return run(process.execPath, [join(support,'doctor.mjs'),target],options); }
 export function jsAdapter(root, spec, options) {
-  if (!['configuration','release','validate','find','stage','guide','install','prepare'].includes(spec.action)) return adapter(root,spec,options);
+  if (!['configuration','validate','find'].includes(spec.action)) return adapter(root,spec,options);
   const path = request(root,spec);
   try { return run(process.execPath,[join(support,'javascript.mjs'),path],options); }
   finally { rmSync(path,{ force: true }); }
 }
 export function startAdapter(root, spec, options = {}) {
   const path = request(root, spec);
-  const executable = options.javascript ? process.execPath : shell;
-  const arguments_ = options.javascript ? [join(support,'javascript.mjs'),path] : ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(support, 'windows.ps1'), '-RequestPath', path];
+  const javascript = options.javascript && ['configuration','validate','find'].includes(spec.action);
+  const executable = javascript ? process.execPath : shell;
+  const arguments_ = javascript ? [join(support,'javascript.mjs'),path] : ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(support, 'windows.ps1'), '-RequestPath', path];
   const child = spawn(executable, arguments_,
     { cwd: repo, windowsHide: true, env: environment(options.env), stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '', stderr = '';

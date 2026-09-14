@@ -257,8 +257,7 @@ test('doctor distinguishes managed runtimes from external runtimes reached throu
     const name=process.versions.bun?'bun':'node', root=toolsRoot(f.root);
     const managed=join(root,name,name+'.exe');
     mkdirSync(dirname(managed),{recursive:true}); copyFileSync(process.execPath,managed);
-    const invoke=executable=>byId(json(run(executable,[join(repo,'.agents/skills/gidd/scripts/gidd.mjs'),
-      'doctor','--offline','--repository',f.root])),'js_runtime').details;
+    const invoke=executable=>byId(json(run(executable,[join(repo,'tests/support/doctor.mjs'),f.root])),'js_runtime').details;
     assert.equal(invoke(managed).gidd_managed,true);
     const alias=join(root,'.runtime-path-fixture');
     symlinkSync(dirname(process.execPath),alias,'junction');

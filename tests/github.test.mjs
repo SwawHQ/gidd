@@ -1,13 +1,31 @@
 import { bindFixture, prepare } from './support/helpers.mjs';
 import { test } from 'node:test';
-import { copyFileSync, cpSync, mkdirSync } from 'node:fs';
+import { publishRepositoryEntry, runRepositoryCommand } from './support/repository.mjs';
+import { copyFileSync, mkdirSync } from 'node:fs';
 import { runCommand } from '../.agents/skills/gidd/scripts/github.mjs';
 import { authorize } from '../.agents/skills/gidd/scripts/auth.mjs';
-import { toolsRoot, adapter, assert, compile, dirname, existsSync, fixture, findGit, join, json, ok, ps, readFileSync, repo, run, snapshot, stub, write } from './support/helpers.mjs';
+import { toolsRoot, adapter, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, ok, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
 
 const options = { repository: repo, gh: join(repo, 'fixture-gh.exe'), git: findGit(), account: 'octocat' };
 const success = text => ({ ok: true, reason: 'process_exit', text });
 const githubConfig = '\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "origin"\nrepository = "https://github.com/owner/repo"\n';
+
+test('JS execution requires binary paths and preserves literal arguments without a shell', async () => {
+  const f=fixture();
+  try {
+    const marker=join(f.root,'wrapper-started');
+    for(const extension of ['cmd','bat','ps1']) {
+      const wrapper=join(f.root,'tool.'+extension);
+      write(wrapper,extension==='ps1' ? `Set-Content -LiteralPath '${marker}' -Value started` : `@echo started>"${marker}"\r\n`);
+      assert.deepEqual(await runCommand(wrapper,[]),{ok:false,reason:'absolute_binary_required',text:''});
+    }
+    for(const name of ['git','gh.exe']) assert.equal((await runCommand(name,['--version'])).reason,'absolute_binary_required');
+    assert.equal(existsSync(marker),false);
+    const args=['','two words','a & b','a|b','a>b','%PATH%','!literal!','two "quotes"','tail\\','中文'];
+    const result=await runCommand(process.execPath,['-e','console.log(JSON.stringify(process.argv.slice(1)))','--',...args]);
+    assert.equal(result.ok,true,JSON.stringify(result));assert.deepEqual(JSON.parse(result.text),args);
+  } finally {f.dispose();}
+});
 
 test('process adapter bounds hangs and output, redacts failures and isolates repository overrides', { timeout: 15000 }, async () => {
   const common = { cwd: repo, timeoutMs: 5000 };
@@ -116,7 +134,9 @@ test('authorization uses bindings, rejects retired gh versions and never discove
     ok(adapter(f.root,{action:'bootstrap',repositoryRoot:f.root,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
     const env = { PATH: [oldBin, dirname(process.execPath)].join(';'), GH_CONFIG_DIR: join(f.root, 'credentials'),
       GH_TOKEN: '', GITHUB_TOKEN: '', GH_ENTERPRISE_TOKEN: '', GITHUB_ENTERPRISE_TOKEN: '' };
-    const invoke = () => ps(join(repo, '.agents/skills/gidd/scripts/windows/authorize.ps1'), ['-RepositoryPath', f.root], { env });
+    const skill=join(f.root,'.agents/skills/gidd');copySkill(skill);mkdirSync(join(f.root,'.git'));
+    publishRepositoryEntry(f.root,join(skill,'scripts/gidd.mjs'));
+    const invoke = () => runRepositoryCommand(f.root,['auth'],{env});
     assert.equal(json(invoke()).reason, 'tool_bindings_missing');
     assert.equal(existsSync(join(toolsRoot(f.root),'gh')), false, 'Missing compatible gh must not trigger installation');
     stub(executable, managedGh, 'success', true);
@@ -128,57 +148,7 @@ test('authorization uses bindings, rejects retired gh versions and never discove
     assert.equal(existsSync(managedGh + '.started'), true);
     assert.equal(existsSync(oldGh + '.started'), false);
     write(managedGh + '.mode','existing');
-    const direct = run(process.execPath,[join(repo,'.agents/skills/gidd/scripts/auth.mjs'),
-      '--repository',f.root,'--gh',managedGh],{env});
+    const direct = invoke();
     assert.equal(json(ok(direct)).reason,'already_authenticated','Remote identity must not replace the local repository path');
-  } finally { f.dispose(); }
-});
-
-test('dev.cmd .auth requires identity config and uses shared storage', { timeout: 15000 }, () => {
-  const f = fixture();
-  try {
-    const checkout = join(f.root,'checkout');
-    for (const path of ['dev.cmd','dev','.agents/skills/gidd/scripts']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
-    ok(adapter(f.root,{action:'bootstrap',repositoryRoot:checkout,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
-    const compiled = compile(f.root,'auth-gh.cs');
-    const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
-    for (const configured of [false,true]) {
-      if (configured) write(join(checkout,'.agents/skills/gidd/config.toml'),`schema_version = 1\n[tools]\n` + githubConfig);
-      stub(compiled,join(toolsRoot(f.root),'gh/gh.exe'),'existing',true);
-      bindFixture(f.root,{gh:join(toolsRoot(f.root),'gh/gh.exe')});
-      const before = snapshot(checkout);
-      const result = run(cmd,['/d','/s','/c',`""${join(checkout,'dev.cmd')}" .auth"`], {
-        windowsVerbatimArguments:true,
-        env:{PATH:dirname(process.execPath),GH_CONFIG_DIR:join(f.root,'credentials'),
-          GH_TOKEN:'',GITHUB_TOKEN:'',GH_ENTERPRISE_TOKEN:'',GITHUB_ENTERPRISE_TOKEN:''},
-      });
-      assert.equal(result.status,configured ? 0 : 2);
-      assert.equal(json(result).reason,configured ? 'already_authenticated' : 'config_missing');
-      assert.deepEqual(snapshot(checkout),before);
-    }
-  } finally { f.dispose(); }
-});
-
-test('dev.cmd .auth dispatches real JavaScript with one runtime and never installs tools', { timeout: 15000 }, () => {
-  const f = fixture();
-  try {
-    const checkout = join(f.root, 'repo with spaces');
-    for (const path of ['dev.cmd','dev','.agents/skills/gidd/scripts']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
-    write(join(checkout, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\n' + githubConfig);
-    ok(adapter(f.root,{action:'bootstrap',repositoryRoot:checkout,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
-    const compiled = compile(f.root, 'auth-gh.cs'), gh = join(f.root, 'bin/gh.exe');
-    mkdirSync(dirname(gh)); copyFileSync(compiled, gh); write(gh + '.mode', 'success');
-    bindFixture(f.root,{gh});
-    const env = { PATH: [dirname(process.execPath), dirname(gh)].join(';'), GH_CONFIG_DIR: join(f.root, 'credentials'),
-      GH_TOKEN: '', GITHUB_TOKEN: '', GH_ENTERPRISE_TOKEN: '', GITHUB_ENTERPRISE_TOKEN: '' };
-    const entry = join(checkout, 'dev.cmd'), cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
-    const invoke = args => run(cmd, ['/d','/s','/c', `""${entry}" ${args}"`], { env, windowsVerbatimArguments: true });
-    const invalid = invoke('.auth Octocat');
-    assert.notEqual(invalid.status, 0); assert.equal(existsSync(gh + '.started'), false);
-    const before = snapshot(checkout);
-    const result = ok(invoke('.auth'));
-    assert.equal(json(result).reason, 'authenticated');
-    assert.deepEqual(JSON.parse(result.stderr.trim()), { schema: 'gidd.auth.event/v1', type: 'authorization_required', url: 'https://github.com/login/device', code: 'ABCD-EFGH' });
-    assert.deepEqual(snapshot(checkout), before, 'Only gh credentials may change; no repository/tool writes');
   } finally { f.dispose(); }
 });

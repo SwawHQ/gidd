@@ -1,10 +1,16 @@
 import { spawn } from 'node:child_process';
-import { isAbsolute } from 'node:path';
+import { extname, isAbsolute } from 'node:path';
 
 // One deadline covers process exit AND pipe EOF (including inherited pipes).
 // Arbitrary command diagnostics can contain tokens or credential-bearing URLs.
 export function runCommand(executable, args, { cwd, timeoutMs = 15000, env = process.env, signal, onStderrLine } = {}) {
   if (signal?.aborted) return Promise.resolve({ ok: false, reason: 'cancelled', text: '' });
+  // Every JS caller supplies a binary path; never discover PATH commands or
+  // delegate argument parsing to CMD/PowerShell script wrappers.
+  if (typeof executable !== 'string' || !isAbsolute(executable) ||
+      (process.platform === 'win32' && extname(executable).toLowerCase() !== '.exe')) {
+    return Promise.resolve({ ok: false, reason: 'absolute_binary_required', text: '' });
+  }
   const overrides = {
     GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', GCM_INTERACTIVE: 'never',
     GIT_ASKPASS: '', GH_PROMPT_DISABLED: '1', GH_PAGER: '', GH_DEBUG: '', GH_FORCE_TTY: '', NO_COLOR: '1',

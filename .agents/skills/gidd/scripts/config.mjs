@@ -1,7 +1,6 @@
 import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { parseConfiguration } from './storage.mjs';
 import { validateSpecMode, specModes } from './specs.mjs';
 
@@ -251,29 +250,5 @@ export function configure(repository, action, key, value) {
   } finally {
     if (existsSync(temporary)) unlinkSync(temporary);
     if (lock !== undefined) { closeSync(lock); unlinkSync(lockPath); }
-  }
-}
-
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try {
-    let args = process.argv.slice(2);
-    if (args[0] === '--encoded-arguments') {
-      if (args.length !== 2) throw new Error('config_invalid_arguments');
-      try { args = JSON.parse(Buffer.from(args[1], 'base64').toString('utf8')); }
-      catch { throw new Error('config_invalid_arguments'); }
-      if (!Array.isArray(args) || args.some(arg => typeof arg !== 'string')) throw new Error('config_invalid_arguments');
-    }
-    const options = {};
-    for (let i = 0; i < args.length; i += 2) {
-      const key = args[i].slice(2);
-      if (!args[i].startsWith('--') || !['repository', 'action', 'key', 'value'].includes(key) || Object.hasOwn(options, key) || args[i + 1] === undefined) throw new Error('config_invalid_arguments');
-      options[key] = args[i + 1];
-    }
-    console.log(JSON.stringify(configure(options.repository, options.action, options.key, options.value)));
-  } catch (error) {
-    const reason = /^(config_[a-z_]+|spec_mode_unsupported|repository_must_be_absolute)$/.test(error.message) ? error.message : 'config_operation_failed';
-    const hint = configurationHint(reason); if (hint) console.error(hint);
-    console.log(JSON.stringify({ schema: 'gidd.config/v1', status: 'error', reason }));
-    process.exitCode = 2;
   }
 }

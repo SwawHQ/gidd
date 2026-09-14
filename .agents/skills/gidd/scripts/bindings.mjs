@@ -1,8 +1,6 @@
-import { existsSync, lstatSync, readFileSync, renameSync, unlinkSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
-import { durableFile } from './install.mjs';
-import { compareVersions, hashFile, managedExecutable, plainPath, platformName, versionPattern } from './storage.mjs';
+import { compareVersions, managedExecutable, plainPath, platformName, versionPattern } from './storage.mjs';
 import { minimums, toolEnvironment } from './tools.mjs';
 import { runCommand } from './github.mjs';
 
@@ -18,38 +16,14 @@ export function readBindings(root) {
       !record.tools || typeof record.tools !== 'object' || Array.isArray(record.tools) ||
       Object.keys(record.tools).some(name => !['git','gh'].includes(name))) throw new Error('tool_bindings_invalid');
   for (const [name, tool] of Object.entries(record.tools)) {
+    // PowerShell expands Windows short directory names when publishing paths.
+    const managedPaths = [root,realpathSync.native(root)].map(base => resolve(base,name,managedExecutable(name)).toLowerCase());
     if (!tool || typeof tool.path !== 'string' || !isAbsolute(tool.path) || !tool.path.toLowerCase().endsWith('.exe') ||
         !['managed','path'].includes(tool.source) || !versionPattern.test(tool.version) ||
-        (tool.source === 'managed' && (resolve(tool.path).toLowerCase() !== resolve(root,name,managedExecutable(name)).toLowerCase() ||
+        (tool.source === 'managed' && (!managedPaths.includes(resolve(tool.path).toLowerCase()) ||
           !/^[a-f0-9]{64}$/.test(tool.record_sha256)))) throw new Error('tool_bindings_invalid');
   }
   return record;
-}
-
-// The caller holds the shared installation lock and has verified the candidate.
-export function publishBinding(root, name, candidate) {
-  let record;
-  try { record = readBindings(root); }
-  catch (error) {
-    if (!['tool_bindings_missing','tool_bindings_invalid'].includes(error.message)) throw error;
-    const path = bindingPath(root);
-    if (existsSync(path)) {
-      const stat = lstatSync(path);
-      if (!stat.isFile() || stat.size > 65536) throw error;
-      // Preserve damaged generated data before rebuilding it.
-      durableFile(join(root,'.cache',`bindings-invalid-${randomUUID()}.json`),readFileSync(path));
-    }
-    record = { schema:'gidd.tool-bindings/v1', platform:platformName(), tools:{} };
-  }
-  const tool = { path:candidate.path, source:candidate.source, version:candidate.version };
-  if (tool.source === 'managed') tool.record_sha256 = hashFile(join(root,name,'install.json'));
-  record.tools[name] = tool;
-  const path = bindingPath(root), text = JSON.stringify(record);
-  if (existsSync(path) && readFileSync(path,'utf8') === text) return 'reused';
-  const temporary = join(root,`.tool-bindings-${randomUUID()}.tmp`);
-  try { durableFile(temporary,text); renameSync(temporary,path); }
-  finally { if (existsSync(temporary)) unlinkSync(temporary); }
-  return 'published';
 }
 
 export function boundTools(root, required = ['git','gh']) {

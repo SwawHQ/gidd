@@ -61,7 +61,7 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     assert.match(ok(invoke([],{GIDD_DEV_LANG:'zh-CN'})).stdout,/仓库开发/);
     assert.match(ok(invoke(['.help','en'],{GIDD_DEV_LANG:'zh-CN'})).stdout,/repository development/);
     assert.match(ok(invoke([],{LC_ALL:'zh_CN.UTF-8'})).stdout,/仓库开发/);
-    for (const args of [['.help','invalid'],['.help','en','extra'],['.unknown'],['.info','extra'],['.test','unknown'],['.setup','relative-path'],['.test-live',`"${f.root}"`],['.test']]) {
+    for (const args of [['.help','invalid'],['.help','en','extra'],['.unknown'],['.auth'],['.auth','Octocat'],['.info','extra'],['.test','unknown'],['.setup','relative-path'],['.test-live',`"${f.root}"`],['.test']]) {
       assert.notEqual(invoke(args).status,0,`Must reject: ${args.join(' ')}`);
     }
     const info=invoke(['.info']); assert.equal(info.status,1); assert.equal(json(info).bun.status,'missing');

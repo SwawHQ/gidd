@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { statSync, symlinkSync, unlinkSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { configure, editConfiguration, editGitHub, parseGitHub, readGitHubConfiguration } from '../.agents/skills/gidd/scripts/config.mjs';
-import { diagnosis as runDiagnosis, product, prepare, jsAdapter, toolsRoot, adapter as shellAdapter, assert, code, compile, existsSync, findGit, fixture, hash, join, json, mkdirSync, ok, ps, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
+import { diagnosis as runDiagnosis, prepare, jsAdapter, toolsRoot, adapter as shellAdapter, assert, code, compile, existsSync, findGit, fixture, hash, join, json, mkdirSync, ok, ps, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
 
 const configText = () => `# preserved comment\nschema_version = 1\n[tools]\n`;
 
@@ -49,7 +49,7 @@ test('config set repairs invalid GitHub fields independently without losing othe
 
 for (const engine of ['shell','javascript']) {
 // gh metadata is JavaScript-only; native stage0 prepares Bun/Node only.
-const adapter = (root, spec, options) => (engine === 'shell' && !(spec.action === 'release' && spec.name === 'gh') ? shellAdapter : jsAdapter)(root,spec,options);
+const adapter = (root, spec, options) => (engine === 'shell' ? shellAdapter : jsAdapter)(root,spec,options);
 test('config set edits tool fields without changing companions or installing tools', { timeout: 120000 }, () => {
   const f = fixture();
   try {

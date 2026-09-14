@@ -3,29 +3,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
 
-function Assert-GiddInstallationRepository {
-    param([string]$Repository)
-    $skill = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..')).TrimEnd('\')
-    Assert-GiddPlainPath $skill
-    $ancestor = $skill
-    while ($ancestor) {
-        if (Test-Path -LiteralPath (Join-Path $ancestor '.git')) {
-            $knownLayout = $false
-            foreach ($layout in @('.agents','.claude')) {
-                $expected = [IO.Path]::GetFullPath((Join-Path $ancestor "$layout/skills/gidd"))
-                if ($skill -eq $expected) { $knownLayout = $true; break }
-            }
-            if (-not $knownLayout) { throw 'installation_scope_unknown' }
-            if ($ancestor.TrimEnd('\') -ne $Repository.TrimEnd('\')) { throw 'installation_repository_mismatch' }
-            return
-        }
-        $ancestor = [IO.Path]::GetDirectoryName($ancestor)
-    }
-}
-
 try {
     $inputArgs = @($args)
-    $options = @{}; $repository = $null; $runtime = ''
+    $options = @{}; $repository = $null; $runtime = ''; $toolOnly = ''
     if (-not $inputArgs.Count -or $inputArgs[0] -in @('help','--help','-h')) {
         if ($inputArgs.Count -gt 2) { throw 'invalid_arguments' }
         $explicitLanguage = if ($inputArgs.Count -eq 2 -and $inputArgs[1]) { [string]$inputArgs[1] } else { $env:GIDD_LANG }
@@ -39,6 +19,10 @@ try {
     for ($i=0; $i -lt $inputArgs.Count; $i++) {
         $argument = [string]$inputArgs[$i]
         if ($argument -eq '--repo') { $argument = '--repository' }
+        if ($argument -match '^--tools-only=(bun|node|git|gh)$') {
+            if ($options.ContainsKey('--tools-only')) { throw 'invalid_arguments' }
+            $toolOnly = $Matches[1].ToLowerInvariant(); $options['--tools-only'] = $true; continue
+        }
         if ($argument -match '^--jsruntime=(bun|node)$') {
             if ($options.ContainsKey('--jsruntime')) { throw 'invalid_arguments' }
             $runtime = $Matches[1].ToLowerInvariant(); $options['--jsruntime'] = $true; continue
@@ -50,24 +34,49 @@ try {
         } elseif ($argument -notin @('--check','--force')) { throw 'invalid_arguments' }
         $options[$argument] = $true
     }
-    if (-not $repository) { throw 'repository_required' }
+    if ($toolOnly -and ($repository -or $runtime)) { throw 'tools_only_conflicts_with_repository_or_runtime' }
+    if (-not $repository -and -not $toolOnly) { throw 'repository_required' }
     $checkOnly = $options.ContainsKey('--check')
     if ($checkOnly -and ($options.ContainsKey('--force') -or $runtime)) { throw 'check_conflicts_with_preparation' }
-    foreach ($file in @('_process.ps1','_managed.ps1','_tools.ps1','_configuration.ps1','_bootstrap.ps1')) { . (Join-Path $PSScriptRoot "lib/$file") }
-    foreach ($file in @('_filesystem.ps1','download.ps1','releases.ps1','install.ps1')) { . (Join-Path $PSScriptRoot "setup-tools/$file") }
+    foreach ($file in @('_process.ps1','_managed.ps1','_tools.ps1','_configuration.ps1','_bootstrap.ps1','_repository.ps1')) { . (Join-Path $PSScriptRoot "lib/$file") }
+    foreach ($file in @('_filesystem.ps1','download.ps1','releases.ps1','install.ps1','prepare.ps1')) { . (Join-Path $PSScriptRoot "setup-tools/$file") }
     if ([Environment]::OSVersion.Platform -ne 'Win32NT' -or -not [Environment]::Is64BitProcess -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'unsupported_platform' }
+    if ($toolOnly) {
+        $storage = Resolve-GiddToolStorage
+        if ($toolOnly -in @('bun','node')) {
+            $report = Invoke-GiddBootstrap $storage -Yes:(-not $checkOnly) -Runtime $toolOnly -Reinstall:($options.ContainsKey('--force'))
+        } else {
+            $report = Invoke-GiddPrepareTools $storage -Names @($toolOnly) -CheckOnly:$checkOnly -Force:($options.ContainsKey('--force'))
+        }
+        $report.schema = 'gidd.tools/v1'; $report.tool = $toolOnly
+        if ($report.status -ne 'ready') { $report.status = 'needs_tools' }
+        $report | ConvertTo-Json -Depth 12 -Compress
+        if ($report.status -eq 'ready') { exit 0 }; exit 1
+    }
     if ($repository -notmatch '^[A-Za-z]:[\\/]') { throw 'repository_absolute_local_path_required' }
     $root = [IO.Path]::GetFullPath($repository)
     if (-not [IO.Directory]::Exists($root)) { throw 'repository_directory_missing' }
     Assert-GiddPlainPath $root
     if (-not (Test-Path -LiteralPath (Join-Path $root '.git'))) { throw 'not_git_repository_root' }
-    Assert-GiddInstallationRepository $root
+    $sourceEntry = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../gidd.mjs'))
+    [void](Get-GiddInstallationRepository $root $sourceEntry)
     $link = Join-Path $root '.agents/skills/gidd/gidd.link.cmd'
     if (-not $checkOnly) {
         Assert-GiddPlainPath $link
         if ([IO.Directory]::Exists($link)) { throw 'repository_entry_occupied' }
     }
-    $report = Invoke-GiddBootstrap (Resolve-GiddToolStorage $root) -Yes:(-not $checkOnly) -Runtime $runtime -Reinstall:($options.ContainsKey('--force'))
+    # An existing repository keeps its selected runtime until explicitly changed.
+    if (-not $runtime -and [IO.File]::Exists($link)) {
+        try {
+            $text = [IO.File]::ReadAllText($link)
+            if ($text -match '(?m)^rem GIDD_LINK ([A-Za-z0-9+/=]+)\r?$') {
+                $metadata = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Matches[1])) | ConvertFrom-Json
+                if ($metadata.schema -eq 'gidd.repository-entry/v1' -and $metadata.runtime -in @('bun','node')) { $runtime = $metadata.runtime }
+            }
+        } catch { }
+    }
+    $storage = Resolve-GiddToolStorage $root
+    $report = Invoke-GiddBootstrap $storage -Yes:(-not $checkOnly) -Runtime $runtime -Reinstall:($options.ContainsKey('--force'))
     $report.schema = 'gidd.tools/v1'
     if ($report.status -eq 'needs_bootstrap') { $report.status = 'needs_tools' }
     if (-not $report.runtime) {
@@ -78,14 +87,12 @@ try {
         $report | ConvertTo-Json -Depth 12 -Compress
         exit 1
     }
-    $jsArguments = @((Join-Path $PSScriptRoot '../bootstrap-tools.mjs'),'--repository',$root)
-    if ($checkOnly) { $jsArguments += '--check' }
-    if ($options.ContainsKey('--force')) { $jsArguments += '--force' }
-    $OutputEncoding = New-Object Text.UTF8Encoding($false)
-    # Bypass a second cmd expansion of Unicode/percent paths.
-    $executor = $report.runtime.details.path
-    ($report | ConvertTo-Json -Depth 12 -Compress) | & $executor @jsArguments
-    exit $LASTEXITCODE
+    $prepared = Invoke-GiddPrepareTools $storage -CheckOnly:$checkOnly -Force:($options.ContainsKey('--force'))
+    $report.tools = $prepared.tools; $report.tool_checks = $prepared.checks; $report.binding_path = $prepared.binding_path
+    if ($prepared.status -ne 'ready') { $report.status = 'needs_tools' }
+    $report = Complete-GiddRepositoryPreparation $report $root $sourceEntry $storage.github -CheckOnly:$checkOnly
+    $report | ConvertTo-Json -Depth 12 -Compress
+    if ($report.status -eq 'ready') { exit 0 }; exit 1
 } catch {
     $reason = if ($_.Exception.Message -match '^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$') { $_.Exception.Message } else { 'tools_failed' }
     [Console]::Error.WriteLine('GIDD preparation failed. Use gidd.pre.ensure.cmd help en or help zh.')
