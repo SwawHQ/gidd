@@ -15,7 +15,7 @@ function installation(f, prepare = true) {
   const git = findGit();
   ok(run(git, ['-C',target,'init','--quiet']));
   ok(run(git, ['-C',target,'remote','add','origin','https://github.com/Team/Repo.git']));
-  write(join(target, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[tools]\n');
+  write(join(target, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n');
   const entryBin=join(f.root,'entry-tools'), entryExe=compile(f.root);
   stub(entryExe,join(entryBin,'gh.exe'));
   const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
@@ -218,7 +218,7 @@ test('bootstrap installs, repairs and rolls back managed runtimes before publish
       const metadata=name==='bun'?{'https://api.github.com/repos/oven-sh/bun/releases/latest':JSON.stringify({tag_name:`bun-v${version}`,draft:false,prerelease:false})}:
         {'https://nodejs.org/dist/index.json':JSON.stringify([{version:`v${version}`,lts:'Fixture',files:['win-x64-zip']}])};
       const responses={...metadata,[checksum]:`${hash(archive)}  ${archiveName}\n`,[licenseUrl]:readFileSync(license,'utf8')}, downloads={[url]:archive,[licenseUrl]:license};
-      write(config,'schema_version = 1\n[tools]\n');
+      write(config,'schema_version = 1\n');
       const spec={action:'bootstrap',repositoryRoot:f.root,responses,downloads,yes:true,node:name==='node'}, env={PATH:'',USERPROFILE:home};
       const invoke=(extra={})=>adapter(f.root,{...spec,...extra},{env});
       const before=hash(config), result=json(ok(invoke())), root=toolsRoot(home), target=join(root,name), launcher=join(root,name+'.link.cmd');
@@ -341,12 +341,12 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
     assert.equal(result.status, 1);
     const report = json(result);
     assert.equal(report.schema, 'gidd.doctor/v1');
-    sameDirectory(report.repository, s.target);
-    assert.equal(report.checks.find(c => c.id === 'js_runtime').status, 'ready');
+    sameDirectory(report.folder, s.target);
+    assert.equal(report.checks.find(c => c.id === 'tool.js_runtime').status, 'ready');
     for (const command of [['auth']]) {
       const missing = s.invoke([...command]);
       assert.equal(missing.status, 2);
-      assert.equal(json(missing).reason, 'config_missing_github_hostname');
+      assert.equal(json(missing).reason, 'config_missing_repo_remote_name');
     }
     assert.deepEqual(snapshot(f.root), before, 'Help, invalid commands and missing dependencies must not write or install');
   } finally { f.dispose(); }
@@ -381,12 +381,12 @@ test('repository installation locates its own Git worktree independently of cwd'
     for (const root of [target,worktree]) {
       const skill = join(root,'.agents/skills/gidd');
       copySkill(skill);
-      write(join(skill,'config.toml'),'schema_version = 1\n[tools]\n');
+      write(join(skill,'config.toml'),'schema_version = 1\n');
       publishRepositoryEntry(root,join(skill,'scripts/gidd.mjs'));
       const before = snapshot(root);
       const result = runRepositoryCommand(root,['doctor','--offline'],{cwd:f.root,env:{PATH:''}});
       assert.equal(result.status,1);
-      sameDirectory(json(result).repository,root);
+      sameDirectory(json(result).folder,root);
       const override = runRepositoryCommand(root,['doctor','--repository',f.root],{cwd:f.root,env:{PATH:''}});
       assert.equal(override.status,2);
       assert.equal(json(override).reason,'repository_override_forbidden');
@@ -400,7 +400,7 @@ test('shell doctor and auth preserve JavaScript results, events and exit codes',
   try {
     const s = installation(f), git = findGit();
     const config = join(s.target,'.agents/skills/gidd/config.toml');
-    const configured = 'schema_version = 1\n[spec]\nmode = "issue-direct"\n[tools]\n[github]\nhostname = "github.com"\naccount = "Octocat"\nremote = "fixture"\nrepository = "https://github.com/owner/repo"\n';
+    const configured = 'schema_version = 1\n[spec]\nmode = "issue-direct"\n[repo]\nremote.account = "Octocat"\nremote.name = "fixture"\nremote.url = "https://github.com/owner/repo"\n';
     write(config,configured);
     for (const args of [['init'], ['config','user.name','Fixture Author'], ['config','user.email','author@example.test'],
       ['remote','add','fixture','git@github.com:owner/repo.git']]) ok(run(git, ['-C',s.target,...args]));
@@ -414,16 +414,26 @@ test('shell doctor and auth preserve JavaScript results, events and exit codes',
     assert.equal(diagnosis.status, 0);
     const report = json(diagnosis);
     assert.equal(report.schema,'gidd.doctor/v1');
-    assert.equal(report.checks.find(c => c.id === 'github.identity').status,'ready');
-    assert.equal(report.checks.find(c => c.id === 'git.author').details.email,'author@example.test');
-    assert.equal(report.checks.find(c => c.id === 'git.remote_read').reason,'https_remote_required');
-    assert.equal(report.checks.find(c => c.id === 'git.remote_read').severity,'warning');
-    assert.equal(report.checks.find(c => c.id === 'git.worktree').severity,'warning');
+    assert.equal(report.checks.find(c => c.id === 'config.repo.remote.account..online').status,'ready');
+    assert.equal(report.checks.find(c => c.id === 'folder.git.author').details.email,'author@example.test');
+    assert.equal(report.checks.find(c => c.id === 'config.repo.remote.url..online').reason,'online_incomplete');
+    assert.equal(report.status,'checks_incomplete');
+    assert.equal(report.checks.find(c => c.id === 'config.repo.remote.url..online').severity,'warning');
+    assert.equal(report.checks.find(c => c.id === 'folder.git.worktree').severity,'warning');
     assert.ok(report.checks.every(c => c.severity !== 'error'));
     assert.equal(json(ok(s.invoke(['auth'],env))).reason,'already_authenticated');
-    write(config,configured.replace('remote = "fixture"\n',''));
-    assert.equal(json(ok(s.invoke(['auth'],env))).reason,'already_authenticated');
-    assert.equal(json(s.invoke(['doctor'],env)).checks.find(c=>c.id==='config.github.remote').reason,'config_missing_github_remote');
+    write(config,configured.replace('remote.name = "fixture"\n',''));
+    assert.equal(json(s.invoke(['auth'],env)).reason,'config_missing_repo_remote_name');
+    assert.equal(json(s.invoke(['doctor'],env)).checks.find(c=>c.id==='config.repo.remote.name').reason,'config_missing_repo_remote_name');
+    for (const [text,reason] of [
+      [configured.replace('remote.url = "https://github.com/owner/repo"\n',''),'config_missing_repo_remote_url'],
+      [configured.replace('remote.account = "Octocat"\n',''),'config_missing_repo_remote_account'],
+      [configured.replace('https://github.com/owner/repo','https://github.com/other/repo'),'repository_address_mismatch'],
+    ]) {
+      write(config,text);
+      assert.equal(json(s.invoke(['auth'],env)).reason,reason);
+      assert.equal(existsSync(gh + '.started'),false,'Invalid configuration must never start login');
+    }
     write(config,configured.replace('"Octocat"','"OtherAccount"'));
     const mismatch = s.invoke(['auth'],env);
     assert.equal(mismatch.status,1);
@@ -444,34 +454,34 @@ test('config shell command creates and edits defaults; auth rejects missing conf
     const config = join(s.target,'.agents/skills/gidd/config.toml');
     const original = readFileSync(config,'utf8');
     const missing = s.invoke(['auth'],env);
-    assert.equal(json(missing).reason,'config_missing_github_hostname');
+    assert.equal(json(missing).reason,'config_missing_repo_remote_name');
     for (const args of [['auth','--account','Octocat'],['auth','--hostname','github.com'],['auth','--remote','origin'],['auth','Octocat']]) {
       assert.equal(json(s.invoke([...args],env)).reason,'github_parameters_moved_to_config');
     }
-    for (const [key,value] of [['hostname','github.com'],['account','Octocat'],['remote','upstream'],['repository','https://github.com/owner/repo']]) {
-      const result = json(ok(s.invoke(['config','set',`github.${key}`,value],env)));
-      assert.equal(result.key,`github.${key}`);
+    for (const [key,value] of [['account','Octocat'],['name','upstream'],['url','https://github.com/owner/repo']]) {
+      const result = json(ok(s.invoke(['config','set',`repo.remote.${key}`,value],env)));
+      assert.equal(result.key,`repo.remote.${key}`);
     }
     assert.ok(readFileSync(config,'utf8').startsWith(original));
     assert.equal(json(ok(s.invoke(['config','show'],env))).content,readFileSync(config,'utf8'));
     const before = snapshot(s.target);
-    for (const [key,value] of [['github.account','bad name'],['github.token','secret'],['schema_version','2']]) {
+    for (const [key,value] of [['repo.remote.account','bad name'],['github.token','secret'],['schema_version','2']]) {
       assert.equal(s.invoke(['config','set',key,value],env).status,2);
     }
     assert.deepEqual(snapshot(s.target),before);
     rmSync(config);
-    const created = s.invoke(['config','set','github.account','Octocat'],env);
+    const created = s.invoke(['config','set','repo.remote.account','Octocat'],env);
     ok(created);
     const text = readFileSync(config,'utf8');
-    assert.match(text,/hostname = "github.com"/); assert.match(text,/remote = "origin"/);
-    assert.match(text,/account = "Octocat"/);
-    // Runtime version pins are retired; unrelated configuration remains editable.
-    for (const key of ['tools.node.version','tools.bun.version']) {
+    assert.doesNotMatch(text,/hostname/); assert.match(text,/remote.name = "origin"/);
+    assert.match(text,/remote.account = "Octocat"/);
+    // All tool settings are internal; only repository business settings are editable.
+    for (const key of ['tools.node.version','tools.bun.version','tools.node.source']) {
       assert.equal(s.invoke(['config','set',key,'999.0.0'],env).status,2);
     }
     assert.equal(s.invoke(['config','set','tools.directory','custom'],env).status,2);
-    const direct = s.invoke(['config','set','tools.node.source','https://mirror.example/node'],env);
-    assert.equal(json(ok(direct)).value,'https://mirror.example/node');
+    const direct = s.invoke(['config','set','repo.remote.url','https://github.example.test/owner/repo'],env);
+    assert.equal(json(ok(direct)).value,'https://github.example.test/owner/repo');
     ok(s.invoke(['config','show'],env));
   } finally { f.dispose(); }
 });

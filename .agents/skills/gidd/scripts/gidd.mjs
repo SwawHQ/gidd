@@ -1,9 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-import { configure, configurationHint, readGitHubConfiguration } from './config.mjs';
+import { configure, configurationHint, readRemoteConfiguration } from './config.mjs';
 import { doctor } from './doctor.mjs';
 import { authorize } from './auth.mjs';
-import { resolveStorage } from './storage.mjs';
+import { toolsRoot } from './storage.mjs';
+import { requireRemoteTarget } from './repository-check.mjs';
 import { boundTools, boundExecutor } from './bindings.mjs';
 import { parseSpecArguments, specCommand } from './spec.mjs';
 
@@ -55,19 +56,19 @@ export async function main(args, { boundRepository } = {}) {
     if (command === 'doctor') report = await doctor(repository, { offline, fixedRepository: true });
     else if (command === 'config') report = configure(repository,action,key,value);
     else {
-      const storage = resolveStorage(repository,{inspect:false});
-      const github = readGitHubConfiguration(repository,['hostname','account']);
-      const bindings = boundTools(storage.tools_root,['gh']);
+      readRemoteConfiguration(repository, ['name', 'url', 'account']);
+      const bindings = boundTools(toolsRoot());
       const execute = boundExecutor(bindings);
-      const options = { repository, hostname:github.hostname, account:github.account,
-        gh:bindings.gh?.path, git:bindings.git?.path };
+      const github = await requireRemoteTarget(repository, bindings.git.path, execute);
+      const options = { repository, hostname: github.hostname, account: github.account,
+        gh: bindings.gh.path, git: bindings.git.path };
       const controller = new AbortController(), cancel = () => controller.abort();
       process.on('SIGINT',cancel); process.on('SIGTERM',cancel);
       try { report = await authorize(options,{ execute, signal: controller.signal, onEvent: event => console.error(JSON.stringify(event)) }); }
       finally { process.removeListener('SIGINT',cancel); process.removeListener('SIGTERM',cancel); }
     }
     console.log(JSON.stringify(report));
-    return ['ready','local_ready','checks_passed'].includes(report.status) ? 0 : 1;
+    return ['ready','local_ready','checks_passed','checks_incomplete'].includes(report.status) ? 0 : 1;
   } catch (error) {
     const reason = /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : 'operation_failed';
     if (reason.startsWith('tool_binding')) console.error('Run gidd.pre.ensure.cmd --repo with the target directory to prepare tools and rebuild bindings.');

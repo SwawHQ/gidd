@@ -12,3 +12,5 @@ GIDD 运行前准备 (Windows x64 / PowerShell 5.1)
   gidd.pre.ensure --tools-only=node
   gidd.pre.ensure --tools-only=git --check  #只读检查（以 git 为例）
   gidd.pre.ensure --tools-only=git --force  #重新下载并设置便携版（以 git 为例）
+前置准备不读取或创建 config.toml；工具来源与版本策略由内部模块维护。
+--repo 只检查本地工作区与入口位置，remote、账号及仓库配置由 gidd.link doctor 检查。

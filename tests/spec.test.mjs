@@ -10,7 +10,7 @@ import { adapter, assert, bindFixture, compile, copySkill, dirname, existsSync, 
   readFileSync, rmSync, run, snapshot, stub, toolsRoot, write } from './support/helpers.mjs';
 
 const chosen = 'schema_version = 1\n[spec]\nmode = "issue-direct"\n';
-const github = '[github]\nhostname = "github.com"\nrepository = "https://github.com/owner/repo"\nremote = "origin"\n';
+const github = '[repo]\nremote.url = "https://github.com/owner/repo"\nremote.name = "origin"\n';
 const configPath = root => join(root, '.agents/skills/gidd/config.toml');
 function installation(f, config = chosen) {
   const skill = join(f.root, "installed skill 中文 & ' spaces");
@@ -28,7 +28,7 @@ function installation(f, config = chosen) {
 const check = (report, id) => report.checks.find(item => item.id === id);
 const validIssue = '## Goal\nShow the selected spec.\n\n## Scope\nUpdate the CLI and its help.\n\n## Acceptance criteria\n- [ ] Listing prints the installed spec names.\n\n## Validation\n```powershell\ndev.cmd .test spec\n```\n\n## Delivery record\n';
 
-test('spec mode editing preserves text and remains readable by both bootstrap parsers', () => {
+test('spec mode editing preserves text while preparation ignores business configuration', () => {
   const f = fixture();
   try {
     const path = configPath(f.root);
@@ -36,17 +36,17 @@ test('spec mode editing preserves text and remains readable by both bootstrap pa
     assert.equal(existsSync(path), false);
     for (const newline of ['\n', '\r\n']) {
       const text = '\uFEFF' + ['# 用户注释', 'schema_version = 1', '[spec] # choice',
-        "  mode = 'unknown-mode' # preserve", '[github]', 'account = "bad account"', '[tools]', ''].join(newline);
+        "  mode = 'unknown-mode' # preserve", '[repo]', 'remote.account = "bad account"', ''].join(newline);
       write(path, text);
       ok(adapter(f.root, { action: 'configuration', repositoryRoot: f.root }, { env: { PATH: '' } }));
       assert.equal(parseConfiguration(text).spec.mode, 'unknown-mode');
       configure(f.root, 'set', 'spec.mode', 'issue-direct');
       assert.equal(readFileSync(path, 'utf8'), text.replace("'unknown-mode'", '"issue-direct"'));
-      configure(f.root, 'set', 'github.account', 'Octocat');
+      configure(f.root, 'set', 'repo.remote.account', 'Octocat');
       assert.equal(parseConfiguration(configure(f.root, 'show').content).spec.mode, 'issue-direct');
       ok(adapter(f.root, { action: 'configuration', repositoryRoot: f.root }, { env: { PATH: '' } }));
     }
-    for (const text of ['schema_version = 1\n', 'schema_version = 1\n[spec]\n# select here\n[tools]\n']) {
+    for (const text of ['schema_version = 1\n', 'schema_version = 1\n[spec]\n# select here\n']) {
       write(path, text); configure(f.root, 'set', 'spec.mode', 'issue-direct');
       assert.equal(parseConfiguration(readFileSync(path, 'utf8')).spec.mode, 'issue-direct');
     }
@@ -54,7 +54,7 @@ test('spec mode editing preserves text and remains readable by both bootstrap pa
       const text = 'schema_version = 1\n[spec]\n' + tail;
       write(path, text);
       assert.throws(() => parseConfiguration(text), /config_/);
-      assert.notEqual(adapter(f.root, { action: 'configuration', repositoryRoot: f.root }, { env: { PATH: '' } }).status, 0);
+      ok(adapter(f.root, { action: 'configuration', repositoryRoot: f.root }, { env: { PATH: '' } }));
     }
     assert.equal(existsSync(toolsRoot(f.root)), false, 'Configuration must not prepare tools');
   } finally { f.dispose(); }
@@ -68,19 +68,19 @@ test('doctor and current agree on absent, missing and unsupported modes and neve
       if (text !== null) write(configPath(s.target), text);
       const before = snapshot(f.root), result = s.current(), report = json(result);
       assert.equal(result.status, 1); assert.equal(report.mode, undefined);
+      assert.equal(report.checks.length, 1);
       const mode = check(report, 'config.spec.mode');
       assert.equal(mode.reason, text?.includes('issue-pr') ? 'spec_mode_unsupported' : 'spec_mode_missing');
       assert.deepEqual(mode.details.available_modes, ['issue-direct']);
       assert.deepEqual(mode.commands[0].args, ['config', 'set', 'spec.mode', 'issue-direct']);
       const diagnosis = s.diagnose();
-      assert.equal(check(diagnosis, 'spec.resources').status, 'not_checked');
       if (text !== null) assert.equal(check(diagnosis, 'config.spec.mode').reason, mode.reason);
-      else assert.equal(check(diagnosis, 'config.spec.mode').blocked_by, 'config_file');
+      else assert.equal(check(diagnosis, 'config.spec.mode').blocked_by, 'config.toml');
       assert.deepEqual(snapshot(f.root), before);
     }
     configure(s.target, 'set', 'spec.mode', 'issue-direct');
     assert.equal(check(s.diagnose(), 'config.spec.mode').status, 'ready');
-    assert.equal(check(s.diagnose(), 'spec.resources').status, 'ready');
+    assert.deepEqual(check(s.diagnose(), 'config.spec.mode').details, { configured: 'issue-direct', version: 1 });
     assert.equal(json(ok(s.current())).mode, 'issue-direct');
   } finally { f.dispose(); }
 });
@@ -88,7 +88,7 @@ test('doctor and current agree on absent, missing and unsupported modes and neve
 test('successful offline doctor guarantees current spec and localized templates are readable', () => {
   const f = fixture();
   try {
-    const s = installation(f, chosen + github + 'account = "Octocat"\n');
+    const s = installation(f, chosen + github + 'remote.account = "Octocat"\n');
     const git = findGit(), gh = join(f.root, 'bin/gh.exe');
     stub(compile(f.root), gh);
     bindFixture(f.root, { git, gh });
@@ -100,7 +100,7 @@ test('successful offline doctor guarantees current spec and localized templates 
       const before = snapshot(f.root);
       const diagnosis = json(ok(s.invoke(['doctor', '--offline'])));
       assert.equal(diagnosis.status, 'local_ready');
-      assert.equal(check(diagnosis, 'spec.resources').status, 'ready');
+      assert.equal(check(diagnosis, 'config.spec.mode').status, 'ready');
       for (const lang of ['en', 'zh']) {
         const report = json(ok(s.current('--lang', lang)));
         assert.equal(report.status, 'ready');
@@ -116,7 +116,7 @@ test('successful offline doctor guarantees current spec and localized templates 
     write(prompt, '');
     const failed = s.invoke(['doctor', '--offline']);
     assert.equal(failed.status, 1);
-    assert.equal(check(json(failed), 'spec.resources').reason, 'spec_resources_invalid');
+    assert.equal(check(json(failed), 'config.spec.mode').reason, 'spec_resources_invalid');
     assert.equal(s.current('--lang', 'zh').status, 1);
     write(prompt, saved);
     verify();
@@ -189,8 +189,8 @@ test('resource failures require repair and cannot silently fall back to another 
     const s = installation(f), root = join(s.skill, 'spec.issue-direct');
     const path = join(root, 'prompt.en.md'), saved = readFileSync(path, 'utf8');
     rmSync(path);
-    assert.equal(check(s.diagnose(), 'spec.resources').reason, 'spec_resources_missing');
-    assert.equal(check(json(s.current()), 'spec.resources').reason, 'spec_resources_missing');
+    assert.equal(check(s.diagnose(), 'config.spec.mode').reason, 'spec_resources_missing');
+    assert.equal(check(json(s.current()), 'config.spec.mode').reason, 'spec_resources_missing');
     write(path, saved);
     const definitionPath = join(root, 'definition.json'), original = readFileSync(definitionPath, 'utf8');
     for (const change of [d => { d.version = 2; },
@@ -198,14 +198,18 @@ test('resource failures require repair and cannot silently fall back to another 
       const definition = JSON.parse(original); change(definition); write(definitionPath, JSON.stringify(definition));
       const before = snapshot(f.root), result = s.current();
       assert.equal(result.status, 1);
-      const resource = check(json(result), 'spec.resources');
+      const resource = check(json(result), 'config.spec.mode');
+      assert.equal(json(result).checks.length, 1);
+      assert.equal(resource.status, 'invalid');
+      assert.equal(resource.details.configured, 'issue-direct');
+      assert.equal(realpathSync.native(resource.details.path), realpathSync.native(root));
       assert.equal(resource.reason, 'spec_resources_invalid'); assert.equal(resource.commands, undefined);
       assert.match(resource.hint, /Restore or reinstall/);
-      assert.equal(check(s.diagnose(), 'spec.resources').reason, resource.reason);
+      assert.equal(check(s.diagnose(), 'config.spec.mode').reason, resource.reason);
       assert.deepEqual(snapshot(f.root), before);
     }
     write(definitionPath, original); write(path, '');
-    assert.equal(check(json(s.current()), 'spec.resources').reason, 'spec_resources_invalid');
+    assert.equal(check(json(s.current()), 'config.spec.mode').reason, 'spec_resources_invalid');
     write(path, saved);
     assert.equal(json(ok(s.current())).mode, 'issue-direct');
     // Tool repair understands the configuration even if spec assets are absent.
@@ -346,24 +350,24 @@ test('rule resources are validated by doctor and template structure stays consis
     const s = installation(f), root = join(s.skill, 'spec.issue-direct');
     const rulesPath = join(root, 'issue.json'), original = readFileSync(rulesPath, 'utf8');
     rmSync(rulesPath);
-    assert.equal(check(s.diagnose(), 'spec.resources').reason, 'spec_resources_missing');
+    assert.equal(check(s.diagnose(), 'config.spec.mode').reason, 'spec_resources_missing');
     for (const change of [rules => { rules.sections[0].required = 'yes'; },
       rules => { rules.sections[1].id = rules.sections[0].id; },
       rules => { rules.sections[0].headings.en = 'Scope'; }, rules => { rules.sections[2].min_task_items = -1; },
       rules => { rules.sections[0].requiredd = true; }]) {
       const rules = JSON.parse(original); change(rules); write(rulesPath, JSON.stringify(rules));
-      assert.equal(check(s.diagnose(), 'spec.resources').reason, 'spec_resources_invalid');
+      assert.equal(check(s.diagnose(), 'config.spec.mode').reason, 'spec_resources_invalid');
     }
     write(rulesPath, original);
     write(join(root, 'issue.en.md'), '## Goal\nOnly one section');
-    assert.equal(check(s.diagnose(), 'spec.resources').reason, 'spec_resources_invalid');
+    assert.equal(check(s.diagnose(), 'config.spec.mode').reason, 'spec_resources_invalid');
   } finally { f.dispose(); }
 });
 
 test('GitHub Issue checks verify repository and identity, read only, and share the local body validator', async () => {
   const f = fixture();
   try {
-    const s = installation(f, chosen + github + 'account = "Octocat"\n');
+    const s = installation(f, chosen + github + 'remote.account = "Octocat"\n');
     const git = join(f.root, 'git.exe'), gh = join(f.root, 'gh.exe');
     write(git, 'mock'); write(gh, 'mock');
     write(join(toolsRoot(f.root), 'tool-bindings.json'), JSON.stringify({ schema: 'gidd.tool-bindings/v1', platform: 'windows-x64',
@@ -405,7 +409,7 @@ test('GitHub Issue checks verify repository and identity, read only, and share t
     assert.equal((await invoke('123')).report.reason, 'unexpected_account');
     assert.ok(calls.every(call => call.args[0] !== 'issue'));
     remote = 'https://github.com/other/repo.git'; calls.length = 0;
-    assert.equal((await invoke('123')).report.reason, 'issue_repository_mismatch');
+    assert.equal((await invoke('123')).report.reason, 'repository_address_mismatch');
     assert.ok(calls.every(call => call.exe !== gh));
     assert.deepEqual(snapshot(f.root), before);
   } finally { f.dispose(); }

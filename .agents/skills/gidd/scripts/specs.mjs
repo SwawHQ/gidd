@@ -47,11 +47,9 @@ export function loadSpec(mode) {
 
 export function inspectSpec(mode, repository, configurationReady = true) {
   const modeCheck = { id: 'config.spec.mode', status: 'ready' };
-  const resourceCheck = { id: 'spec.resources', status: 'not_checked',
-    reason: 'dependency_unavailable', blocked_by: modeCheck.id };
-  const checks = [modeCheck, resourceCheck];
+  const checks = [modeCheck];
   if (!configurationReady) {
-    Object.assign(modeCheck, { status: 'not_checked', reason: 'configuration_unavailable', blocked_by: 'config_file' });
+    Object.assign(modeCheck, { status: 'not_checked', reason: 'configuration_unavailable', blocked_by: 'config.toml' });
     return { checks };
   }
   if (!specModes.includes(mode)) {
@@ -66,14 +64,12 @@ export function inspectSpec(mode, repository, configurationReady = true) {
   modeCheck.details = { configured: mode };
   try {
     const spec = loadSpec(mode);
-    Object.assign(resourceCheck, { status: 'ready', details: { mode, version: spec.definition.version } });
-    delete resourceCheck.reason; delete resourceCheck.blocked_by;
+    modeCheck.details.version = spec.definition.version;
     return { checks, spec };
   } catch (error) {
-    Object.assign(resourceCheck, { status: 'invalid', reason: error.message,
+    Object.assign(modeCheck, { status: 'invalid', reason: error.message,
       hint: `Restore or reinstall this GIDD skill including its spec.${mode} directory, then rerun doctor. Changing mode does not repair damaged resources.`,
-      details: { mode, path: join(skillRoot, `spec.${mode}`) } });
-    delete resourceCheck.blocked_by;
+      details: { configured: mode, path: join(skillRoot, `spec.${mode}`) } });
     return { checks };
   }
 }

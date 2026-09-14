@@ -161,7 +161,7 @@ test('MinGit nested installation, integrity, recovery, managed selection and ext
     assert.equal(json(ok(prepare(f.root,'git',{env:{PATH:''}}))).tools[0].action,'reused');
     assert.equal(readBindings(root).tools.git.source,'managed');
     const doctor = json(diagnosis(f.root,{env:{PATH:''}}));
-    assert.equal(doctor.checks.find(item=>item.id==='git')?.details?.gidd_managed,true,JSON.stringify(doctor));
+    assert.equal(doctor.checks.find(item=>item.id==='tool.git')?.details?.gidd_managed,true,JSON.stringify(doctor));
     for (const phase of ['downloaded','extracted','verified','published']) {
       const where = join(f.root,'interrupted-'+phase);
       const killed = await startShellAdapter(f.root,installSpec(where,definitionPath,f.root,phase)).result;
@@ -341,7 +341,7 @@ test(`setup ${engine}: install, integrity, interrupted publication, locks, prese
     const home=join(f.root,'gh-home');
     for (const existing of [false,true]) {
       if (existing) mkdirSync(toolsRoot(home),{recursive:true});
-      write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n[tools]\n');
+      write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n');
       const report=json(ok(prepare(f.root,'gh',{env:{PATH:external,USERPROFILE:home}})));
       assert.equal(report.status,'ready');
       assert.deepEqual(report.tools,[{ name:'gh', action:'reused', path:join(external,'gh.exe'), binding_action:existing?'reused':'published' }]);

@@ -7,7 +7,9 @@ GIDD (Windows x64 / PowerShell 5.1)
 
   gidd.link config show                         #Show current config.toml contents
   gidd.link config set <key> <value>             #Set a field in config.toml
-  gidd.link config set github.account SwawHQ    #(Example) Set github.account to SwawHQ
+  gidd.link config set repo.remote.account bornwhy    #(Example) Set repo.remote.account to bornwhy
+  gidd.link config set repo.remote.name origin #Select the local remote
+  gidd.link config set repo.remote.url https://github.com/swawhq/gidd #Record the expected repository
   gidd.link config set spec.mode issue-direct   #Select the lightweight spec
 
   gidd.link auth                                #Request device authorization using config and wait for confirmation; gh may save credentials
@@ -20,3 +22,15 @@ GIDD (Windows x64 / PowerShell 5.1)
   gidd.link spec.issue-direct.issue             #Print a named spec's Issue template
   gidd.link spec.current.issue.check 123        #Check a GitHub Issue body in the bound repository
   gidd.link spec.current.issue.check ./issue.md #Check a local Markdown body
+
+Configuration: [repo] remote.name, remote.url, remote.account; the host is derived from remote.url.
+Use a canonical HTTPS repository URL; local HTTPS/SSH fetch addresses are compared by repository identity.
+Doctor checks use a stable tool., folder., config. order; local config checks precede online checks, regardless of status.
+The report's folder is the local directory path; its hint reflects the result and refers to severity "error" or "warning" only when present.
+Tool IDs are tool.js_runtime/git/gh; config.toml checks file existence, readability and syntax/structure, not a configuration field.
+config.spec.mode validates the selected mode and its resources together; missing or invalid resources prevent this check from passing.
+Doctor reports config.repo.remote.name/url/account separately; ..online marks the corresponding online checks.
+url..online records gh metadata reading and returned URL verification in details.gh_remote_read, and Git remote reference reading in details.git_remote_read; account..online verifies the API account.
+Offline never connects. SSH reading is not probed; checks_incomplete is a warning (exit 0), not full online success.
+Auth requires all three remote fields and a matching local remote; spec.mode, Git author and commits are not prerequisites.
+Preparation owns tool sources and version policy; config.toml no longer accepts [tools], [github] or hostname.

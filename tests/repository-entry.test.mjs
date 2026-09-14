@@ -30,8 +30,8 @@ test('issue-direct lifecycle uses only the public preparation and repository com
     const s = setup(f), target = s.create('issue-direct lifecycle');
     ok(s.ensure(target));
     const invoke = args => s.invoke(s.link(target), args, { env: { PATH: '' } });
-    for (const [key,value] of [['spec.mode','issue-direct'],['github.hostname','github.com'],
-      ['github.account','Octocat'],['github.remote','origin'],['github.repository','https://github.com/Team/Repo']]) {
+    for (const [key,value] of [['spec.mode','issue-direct'],
+      ['repo.remote.account','Octocat'],['repo.remote.name','origin'],['repo.remote.url','https://github.com/Team/Repo']]) {
       ok(invoke(['config','set',key,value]));
     }
     for (const [key,value] of [['user.name','Fixture'],['user.email','fixture@example.test']]) {
@@ -87,26 +87,24 @@ test('repository preparation runs entirely in PowerShell; generated commands run
   } finally {f.dispose();}
 });
 
-test('native preparation and JS Issue checks agree on repository and remote rules', async () => {
+test('native preparation and JS agree on worktree ownership without remote prerequisites', async () => {
   const f=fixture();
   try {
     const s=setup(f),target=s.create('repository rules');
-    const cases=[
-      ['https://github.com/Team/Repo.git',{}],['git@github.com:Team/Repo.git',{}],
-      ['HTTPS://GitHub.COM/Team/Repo.GIT',{hostname:'GITHUB.COM'}],['SSH://GIT@github.com/Team/Repo.git',{}],
-      ['ssh://git@github.example.test:2222/Team/Repo.git',{hostname:'github.example.test'}],
-      ['https://github.com/Team/Repo.git',{remote:'missing'}],['https://github.com/Team/Repo.git',{remote:'Origin'}],
-      ['https://github.com/Team/Repo.git',{hostname:'bad:host'}],['https://github.com/Team/Repo.git',{remote:'--bad'}],
-      ['https://gitlab.com/Team/Repo.git',{}],['https://u:PRIVATE_TOKEN@github.com/Team/Repo.git',{}],
-      ['https://github.com/Team/Repo?token=PRIVATE_TOKEN',{}],['https://github.com/../Repo',{}],
+    const urls=[
+      'https://github.com/Team/Repo.git','git@github.com:Team/Repo.git',
+      'HTTPS://GitHub.COM/Team/Repo.GIT','SSH://GIT@github.com/Team/Repo.git',
+      'ssh://git@github.example.test:2222/Team/Repo.git',
+      'https://gitlab.com/Team/Repo.git','https://u:PRIVATE_TOKEN@github.com/Team/Repo.git',
+      'https://github.com/Team/Repo?token=PRIVATE_TOKEN','https://github.com/../Repo',
     ];
-    for(const [url,github] of cases) {
+    for(const url of urls) {
       ok(run(s.git,['-C',target,'remote','set-url','origin',url]));
-      const native=adapter(f.root,{action:'repository',operation:'inspect',repositoryRoot:target,git:s.git,github});
+      const native=adapter(f.root,{action:'repository',operation:'inspect',repositoryRoot:target,git:s.git});
       let js;
-      try { js=await inspectRepositoryEntry(target,s.git,github); }
+      try { js=await inspectRepositoryEntry(target,s.git); }
       catch(error) { assert.equal(native.status,1);assert.equal(native.stderr.trim(),error.message);continue; }
-      assert.deepEqual(json(ok(native)).remotes,js.remotes);
+      assert.deepEqual(json(ok(native)).path,js.path);
     }
     ok(run(s.git,['-C',target,'remote','set-url','origin','https://github.com/Team/Repo.git']));
     ok(s.ensure(target));const link=s.link(target);
@@ -274,7 +272,7 @@ test('repository check reports missing, healthy and damaged state without writes
     assert.equal(pending.entry.status, 'ready');
     ok(run(s.git, ['-C', target, 'remote', 'set-url', 'origin', 'https://gitlab.com/Other/Repo']));
     const wrongRemote = inspect();
-    assert.equal(wrongRemote.repository_check.reason, 'github_remote_required');
+    assert.equal(wrongRemote.repository_check.status, 'ready');
     assert.equal(wrongRemote.tool_checks.find(c => c.id === 'tool.gh').status, 'ready');
     assert.equal(wrongRemote.entry.status, 'ready');
     const bindings = join(toolsRoot(f.root), 'tool-bindings.json'); write(bindings, '{broken');
@@ -296,22 +294,26 @@ test('repository ensure rejects unsuitable targets and keeps configuration untou
     for (const [name, remote] of [['no remote', null], ['gitlab', 'https://gitlab.com/Team/Repo.git'],
       ['credential URL', 'https://u:PRIVATE_TOKEN@github.com/Team/Repo.git']]) {
       const target = s.create(name, remote), result = s.ensure(target);
-      assert.equal(result.status, 1, result.stderr);
-      assert.equal(json(result).entry.status, 'not_published');
-      assert.ok(json(result).tool_checks.some(c => c.reason === 'github_remote_required'));
+      ok(result);
+      assert.equal(json(result).entry.status, 'ready');
       assert.ok(!result.stdout.includes('PRIVATE_TOKEN'));
-      assert.equal(existsSync(s.link(target)), false);
+      assert.equal(existsSync(s.link(target)), true);
       assert.equal(existsSync(join(target, '.agents/skills/gidd/config.toml')), false);
     }
     const target = s.create('configured');
     const config = join(target, '.agents/skills/gidd/config.toml');
-    write(config, 'schema_version = 1\n[github]\nhostname = "github.com"\nremote = "missing"\n');
+    write(config, 'schema_version = 1\n[repo]\nremote.name = "missing"\n');
     const original = readFileSync(config, 'utf8'), result = s.ensure(target);
-    assert.equal(result.status, 1); assert.ok(json(result).tool_checks.some(c => c.reason === 'configured_remote_missing'));
-    assert.equal(readFileSync(config, 'utf8'), original); assert.equal(existsSync(s.link(target)), false);
-    write(config, 'schema_version = 1\n[github]\nhostname = "github.example.test"\n');
+    ok(result);
+    assert.equal(readFileSync(config, 'utf8'), original); assert.equal(existsSync(s.link(target)), true);
+    write(config, 'schema_version = 1\n[repo]\n');
     ok(run(s.git, ['-C', target, 'remote', 'set-url', 'origin', 'git@github.example.test:Team/Repo.git']));
-    assert.equal(json(ok(s.ensure(target))).repository_check.remotes[0].hostname, 'github.example.test');
+    assert.equal(json(ok(s.ensure(target))).repository_check.status, 'ready');
+    for (const bytes of ['broken TOML', Buffer.from([255]), '#'.repeat(20000)]) {
+      write(config, bytes); const before = readFileSync(config);
+      ok(s.ensure(target)); ok(s.ensure(target, ['--check']));
+      assert.deepEqual(readFileSync(config), before);
+    }
   } finally { f.dispose(); }
 });
 
@@ -337,15 +339,15 @@ test('repository links repair generated contents and preserve target, arguments 
     assert.match(ok(s.invoke(link, [])).stdout, /Check tools, repository and GitHub identity/);
     const other = s.create('other');
     const output = s.invoke(link, ['doctor', '--offline'], { cwd: other, env: { GIT_DIR: join(other, '.git'), GIT_WORK_TREE: other } });
-    const report = json(output); assert.equal(report.repository, target);
-    assert.equal(report.checks.find(c => c.id === 'config_file').reason, 'config_missing');
-    assert.equal(realpathSync.native(report.checks.find(c => c.id === 'git.worktree').details.path), realpathSync.native(target));
+    const report = json(output); assert.equal(report.folder, target);
+    assert.equal(report.checks.find(c => c.id === 'config.toml').reason, 'config_missing');
+    assert.equal(realpathSync.native(report.checks.find(c => c.id === 'folder.git.worktree').details.path), realpathSync.native(target));
     const rejected = s.invoke(link, ['config', 'show', '--repository', other]);
     assert.equal(json(rejected).reason, 'repository_override_forbidden');
     assert.equal(json(s.invoke(link, ['--repository=' + other])).reason, 'repository_override_forbidden');
     assert.equal(json(s.invoke(link, ['--encoded-arguments', Buffer.from(JSON.stringify(['config', 'show', '--repository', other])).toString('base64')])).reason, 'unknown_command');
-    const source = 'https://example.test/工具&!%value%';
-    const set = json(ok(s.invoke(link, ['config', 'set', 'tools.node.source', source])));
+    const source = 'https://github.example.test/team/repo';
+    const set = json(ok(s.invoke(link, ['config', 'set', 'repo.remote.url', source])));
     assert.equal(set.value, source);
     assert.ok(readFileSync(join(target, '.agents/skills/gidd/config.toml'), 'utf8').includes(source));
     const gitMarker = join(target, '.git'), savedMarker = join(target, '.git.saved');
@@ -354,10 +356,10 @@ test('repository links repair generated contents and preserve target, arguments 
       const broken = s.invoke(link, ['doctor', '--offline'], { cwd: other });
       const diagnosis = json(broken);
       assert.equal(broken.status, 1); assert.equal(diagnosis.schema, 'gidd.doctor/v1');
-      const repositoryCheck = diagnosis.checks.find(c => c.id === 'git.worktree');
+      const repositoryCheck = diagnosis.checks.find(c => c.id === 'folder.git.worktree');
       assert.equal(repositoryCheck.reason, 'not_git_repository'); assert.equal(repositoryCheck.severity, 'error');
       assert.ok(repositoryCheck.hint);
-      assert.equal(diagnosis.checks.find(c => c.id === 'config_file').details.path, join(target, '.agents/skills/gidd/config.toml'));
+      assert.equal(diagnosis.checks.find(c => c.id === 'config.toml').details.path, join(target, '.agents/skills/gidd/config.toml'));
       assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /Check tools, repository and GitHub identity/);
       assert.equal(json(s.invoke(link, ['config', 'show'])).reason, 'not_git_repository_root');
     } finally { renameSync(savedMarker, gitMarker); }
@@ -392,7 +394,7 @@ test('repository links repair generated contents and preserve target, arguments 
     assert.throws(() => publishRepositoryEntry(target, join(s.skill, 'scripts/gidd.mjs')), /repository_entry_locked/);
     assert.equal(readFileSync(link, 'utf8'), saved); rmSync(link + '.lock');
     ok(run(s.git, ['-C', target, 'remote', 'set-url', 'origin', 'https://gitlab.com/Other/Repo']));
-    assert.equal(s.ensure(target).status, 1); assert.equal(readFileSync(link, 'utf8'), saved);
+    ok(s.ensure(target)); assert.equal(readFileSync(link, 'utf8'), saved);
     const dispatcher = join(s.skill, 'scripts/gidd.mjs');
     write(dispatcher, `import {readFileSync} from 'node:fs'; export async function main(args, options) { console.log(JSON.stringify({args, options, linkEnvironment:Object.keys(process.env).filter(key=>key.startsWith('GIDD_LINK_')), input:readFileSync(0,'utf8')})); console.error('linked stderr'); return 23; }`);
     const args = ['two words', '', 'a & b', 'a^b', '!literal!', 'two "quotes"', 'tail\\', '--help'];
@@ -423,8 +425,8 @@ test('repository-relative links survive moves and accept Git worktrees', { timeo
       assert.match(ok(s.invoke(s.link(target), ['help', 'en'])).stdout, /Check tools, repository and GitHub identity/);
       const moved = join(f.root, 'moved-' + layout); renameSync(target, moved);
       const report = json(s.invoke(s.link(moved), ['doctor', '--offline']));
-      assert.equal(report.repository, moved);
-      assert.equal(report.checks.find(c => c.id === 'git.worktree').reason, 'unborn_branch');
+      assert.equal(report.folder, moved);
+      assert.equal(report.checks.find(c => c.id === 'folder.git.worktree').reason, 'unborn_branch');
     }
     const parent = s.create('parent');
     ok(run(s.git, ['-C', parent, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '--quiet', '-m', 'fixture']));
@@ -435,7 +437,7 @@ test('repository-relative links survive moves and accept Git worktrees', { timeo
     assert.equal(json(s.ensure(parent, ['--check'], worktreeEntry)).reason, 'installation_repository_mismatch');
     assert.throws(() => publishRepositoryEntry(parent, join(worktreeSkill, 'scripts/gidd.mjs')), /installation_repository_mismatch/);
     assert.equal(realpathSync.native(json(ok(s.ensure(worktree, [], worktreeEntry))).entry.target), realpathSync.native(worktree));
-    const report = json(s.invoke(s.link(worktree), ['doctor', '--offline'])); assert.equal(report.repository, worktree);
+    const report = json(s.invoke(s.link(worktree), ['doctor', '--offline'])); assert.equal(report.folder, worktree);
     const nested = join(parent, 'nested'); mkdirSync(nested);
     assert.equal(json(s.ensure(nested)).reason, 'not_git_repository_root');
   } finally { f.dispose(); }

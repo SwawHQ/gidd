@@ -75,8 +75,8 @@ live('official unified bootstrap, local commit clone fetch and gh Git discovery'
     copySkill(join(source,'.agents/skills/gidd'));
     publishRepositoryEntry(source,join(source,'.agents/skills/gidd/scripts/gidd.mjs'));
     const diagnosis=json(runRepositoryCommand(source,['doctor','--offline'],{env:{PATH:''}}));
-    assert.equal(diagnosis.checks.find(item=>item.id==='git').details.path,git.path);
-    assert.equal(diagnosis.checks.find(item=>item.id==='git.worktree').status,'ready');
+    assert.equal(diagnosis.checks.find(item=>item.id==='tool.git').details.path,git.path);
+    assert.equal(diagnosis.checks.find(item=>item.id==='folder.git.worktree').status,'ready');
   } finally {f.dispose();}
 });
 
@@ -84,7 +84,7 @@ live('official Bun cold bootstrap, post-install doctor and reuse', { timeout: 30
   const f=fixture();
   try {
     createRepository(f.root);
-    write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n[tools]\n');
+    write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n');
     const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
     const prepared=run(cmd,['/d','/s','/c',`""${join(f.root,'.agents/skills/gidd/gidd.pre.ensure.cmd')}" --repo "${f.root}""`],
       {windowsVerbatimArguments:true,env:{PATH:''},timeout:300000});
@@ -96,7 +96,7 @@ live('official Bun cold bootstrap, post-install doctor and reuse', { timeout: 30
     assert.equal(existsSync(join(toolsRoot(f.root),'node')),false);
     assert.equal(existsSync(join(toolsRoot(f.root),'bun')),true,'PowerShell prepares the runtime and native tools');
     const diagnosis=json(runRepositoryCommand(f.root,['doctor','--offline'],{env:{PATH:''}}));
-    for (const id of ['js_runtime','gh']) assert.equal(diagnosis.checks.find(x=>x.id===id).status,'ready');
+    for (const id of ['tool.js_runtime','tool.gh']) assert.equal(diagnosis.checks.find(x=>x.id===id).status,'ready');
     const again=json(ok(invoke()));
     assert.deepEqual(again.tools.map(t=>[t.name,t.action]),[['git','reused'],['gh','reused']]);
   } finally { f.dispose(); }
@@ -107,7 +107,7 @@ live('official Node download and reuse through bootstrap', { timeout: 300000 }, 
   try {
     createRepository(f.root);
     const root=toolsRoot(f.root);
-    write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n[tools]\n');
+    write(join(f.root,'.agents/skills/gidd/config.toml'),'schema_version = 1\n');
     const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
     const bootstrap=()=>run(cmd,['/d','/s','/c',`""${join(f.root,'.agents/skills/gidd/gidd.pre.ensure.cmd')}" --jsruntime=node --repo "${f.root}""`],
       {windowsVerbatimArguments:true,env:{PATH:''},timeout:300000});
@@ -121,6 +121,6 @@ live('official Node download and reuse through bootstrap', { timeout: 300000 }, 
     assert.equal(existsSync(join(root,'gh')),true); assert.equal(existsSync(join(root,'git')),true);
     assert.equal(existsSync(join(root,'node/npm.cmd')),false);
     const diagnosis=json(runRepositoryCommand(f.root,['doctor','--offline'],{env:{PATH:''}}));
-    assert.equal(diagnosis.checks.find(c=>c.id==='js_runtime').status,'ready');
+    assert.equal(diagnosis.checks.find(c=>c.id==='tool.js_runtime').status,'ready');
   } finally { f.dispose(); }
 });

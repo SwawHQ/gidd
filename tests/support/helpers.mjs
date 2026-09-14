@@ -93,14 +93,14 @@ export function bindFixture(home, tools) {
 }
 export function diagnosis(target, options) { return run(process.execPath, [join(support,'doctor.mjs'),target],options); }
 export function jsAdapter(root, spec, options) {
-  if (!['configuration','validate','find'].includes(spec.action)) return adapter(root,spec,options);
+  if (!['validate','find'].includes(spec.action)) return adapter(root,spec,options);
   const path = request(root,spec);
   try { return run(process.execPath,[join(support,'javascript.mjs'),path],options); }
   finally { rmSync(path,{ force: true }); }
 }
 export function startAdapter(root, spec, options = {}) {
   const path = request(root, spec);
-  const javascript = options.javascript && ['configuration','validate','find'].includes(spec.action);
+  const javascript = options.javascript && ['validate','find'].includes(spec.action);
   const executable = javascript ? process.execPath : shell;
   const arguments_ = javascript ? [join(support,'javascript.mjs'),path] : ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(support, 'windows.ps1'), '-RequestPath', path];
   const child = spawn(executable, arguments_,

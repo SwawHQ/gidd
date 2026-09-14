@@ -9,6 +9,9 @@ public static class AuthGh {
         if (args.Length == 1 && args[0] == "--version") {
             Console.WriteLine(mode == "old" ? "gh version 2.97.0" : "gh version 2.98.0"); return 0;
         }
+        if (args.Length == 5 && args[0] == "repo" && args[1] == "view") {
+            Console.WriteLine("{\"url\":\"" + args[2] + "\"}"); return 0;
+        }
         if (args[0] == "api") {
             if (mode == "existing") { Console.WriteLine("Octocat"); return 0; }
             if (mode == "existing-mismatch") { Console.WriteLine("OtherAccount"); return 0; }
