@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { cpSync, statSync } from 'node:fs';
 import { toolsRoot, adapter, assert, compile, dirname, existsSync, fixture, join, json, mkdirSync, ok, readFileSync, readdirSync, repo, run, snapshot, stub, write } from './support/helpers.mjs';
 
-test('PowerShell sources have UTF-8 BOM before parsing', { timeout: 120000 }, () => {
+test('PowerShell sources are ASCII and parse without BOM', { timeout: 120000 }, () => {
   const f=fixture();
   try {
     const paths=[];
@@ -12,27 +12,30 @@ test('PowerShell sources have UTF-8 BOM before parsing', { timeout: 120000 }, ()
         if (entry.isDirectory()) visit(path); else if (entry.name.endsWith('.ps1')) paths.push(path);
       }
     }
-    for (const dir of ['scripts','.agents/skills/gidd/scripts','tests']) visit(join(repo,dir));
+    for (const dir of ['dev','.agents/skills/gidd/scripts','tests']) visit(join(repo,dir));
+    for (const path of paths) assert.ok(readFileSync(path).every(byte => byte < 128), `PowerShell source must be ASCII without BOM: ${path}`);
     assert.equal(json(ok(adapter(f.root,{action:'syntax',paths}))).checked,paths.length);
   } finally { f.dispose(); }
 });
 
-test('test command executes every suite and propagates failures', { timeout: 120000 }, () => {
+test('test command executes every suite and rejects failures or premature zero exits', { timeout: 120000 }, () => {
   const f=fixture();
   try {
-    const runner=join(f.root,'scripts/dev/dev.mjs');
-    write(runner,readFileSync(join(repo,'scripts/dev/dev.mjs'),'utf8'));
-    for (const suite of ['doctor','setup','process','dev','config','github','entry']) {
+    const runner=join(f.root,'dev/dev.mjs');
+    write(runner,readFileSync(join(repo,'dev/dev.mjs'),'utf8'));
+    write(join(f.root,'dev/node-test.cjs'),readFileSync(join(repo,'dev/node-test.cjs'),'utf8'));
+    for (const suite of ['doctor','setup','process','dev','config','github','entry','repository-entry','spec']) {
       const marker=join(f.root,`${suite}.ran`);
       write(join(f.root,`tests/${suite}.test.mjs`),
-        `import {test} from 'node:test'; import {writeFileSync} from 'node:fs';\ntest('${suite}', () => { writeFileSync(${JSON.stringify(marker)}, 'ran'); ${suite === 'setup' ? "throw new Error('expected fixture failure');" : ''} });\n`);
+        `import {test,after} from 'node:test'; import {writeFileSync} from 'node:fs';\nafter(() => writeFileSync(process.env.GIDD_TEST_COMPLETION, 'completed'));\ntest('${suite}', () => { writeFileSync(${JSON.stringify(marker)}, 'ran'); ${suite === 'setup' ? "throw new Error('expected fixture failure');" : suite === 'entry' ? 'process.exit(0);' : ''} });\n`);
     }
     const result=run(process.execPath,[runner,'.test']);
     assert.equal(result.status,1,'A failing suite must fail the command');
-    assert.match(result.stdout,/Suite summary: 6 passed, 1 failed/);
+    assert.match(result.stdout,/Suite summary: 7 passed, 2 failed/);
+    assert.match(result.stderr,/Test worker did not complete: tests\/entry.test.mjs/);
     assert.match(result.stdout,/FAIL tests\/setup.test.mjs \(\d+\.\d+s\)/);
     assert.match(result.stdout,/Rerun \(PowerShell\): .*\.test-(bun|node) setup/);
-    for (const suite of ['doctor','setup','process','dev','config','github','entry']) {
+    for (const suite of ['doctor','setup','process','dev','config','github','entry','repository-entry','spec']) {
       assert.equal(existsSync(join(f.root,`${suite}.ran`)),true,`${suite} must actually execute, including after a failure`);
     }
     const selected=ok(run(process.execPath,[runner,'.test','doctor']));
@@ -47,7 +50,7 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
   const f=fixture();
   try {
     const checkout=join(f.root,'开发 repo & spaces'); mkdirSync(checkout);
-    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts/windows','.agents/skills/gidd/assets']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    for (const path of ['dev.cmd','dev','.agents/skills/gidd/scripts']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
     const entry=join(checkout,'dev.cmd'), cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
     const invoke=(args, env={}) => run(cmd,['/d','/s','/c',`""${entry}" ${args.join(' ')}"`],{
       cwd:f.root,windowsVerbatimArguments:true,env:{PATH:'',GIDD_DEV_LANG:'',LC_ALL:'en_US.UTF-8',...env},
@@ -58,7 +61,7 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     assert.match(ok(invoke([],{GIDD_DEV_LANG:'zh-CN'})).stdout,/仓库开发/);
     assert.match(ok(invoke(['.help','en'],{GIDD_DEV_LANG:'zh-CN'})).stdout,/repository development/);
     assert.match(ok(invoke([],{LC_ALL:'zh_CN.UTF-8'})).stdout,/仓库开发/);
-    for (const args of [['.help','invalid'],['.help','en','extra'],['.unknown'],['.info','extra'],['.test','unknown'],['.setup','relative-path'],['.test-live',`"${f.root}"`],['.test']]) {
+    for (const args of [['.help','invalid'],['.help','en','extra'],['.unknown'],['.auth'],['.auth','Octocat'],['.info','extra'],['.test','unknown'],['.setup','relative-path'],['.test-live',`"${f.root}"`],['.test']]) {
       assert.notEqual(invoke(args).status,0,`Must reject: ${args.join(' ')}`);
     }
     const info=invoke(['.info']); assert.equal(info.status,1); assert.equal(json(info).bun.status,'missing');
@@ -81,7 +84,7 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     const nodeLeftover=join(toolsRoot(f.root),'.cache/node/download.part'); write(nodeLeftover,'leftover after publication');
     ok(invoke(['.setup'])); assert.equal(existsSync(leftover),false,'Reuse must clean staging left after publication');
     assert.equal(existsSync(nodeLeftover),false);
-    assert.equal(existsSync(join(toolsRoot(f.root),'.cache/install.lock')),true);
+    assert.equal(existsSync(join(toolsRoot(f.root),'.cache/install.lock')),false);
     const localInfo=json(ok(invoke(['.info'])));
     assert.equal(localInfo.bun.details.source,'managed');
     assert.equal(localInfo.node.details.source,'managed');
@@ -104,60 +107,32 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     assert.match(readFileSync(config,'utf8'),/^# retain this comment/);
     const configuredText=readFileSync(config,'utf8');
     write(config,configuredText+'node = { version = "24.0.1", source = "https://nodejs.org/dist" }\n');
-    const mismatch=json(invoke(['.info']));
-    assert.equal(mismatch.node.status,'invalid');
-    assert.ok(mismatch.node.details.rejected.some(x=>x.reason==='configured_version_mismatch'));
-    assert.match(invoke(['.setup']).stderr,/occupied_or_version_conflicting_target:node/);
-    assert.equal(readFileSync(join(configuredRoot,'node/install.json'),'utf8').includes('24.0.0'),true);
+    assert.match(invoke(['.info']).stderr,/config_retired_field:tools.node.version/);
+    assert.match(invoke(['.setup']).stderr,/config_retired_field/);
     write(config,'invalid = true');
     assert.notEqual(invoke(['.setup']).status,0); assert.notEqual(invoke(['.info']).status,0);
     assert.match(ok(invoke(['.help','en'])).stdout,/repository development/);
   } finally { f.dispose(); }
 });
 
-test('dev.cmd .setup selects one tool, reuses gh and rejects local package inputs', () => {
-  const f = fixture();
+test('development setup keeps runtime selectors and retires the gh shortcut',()=>{
+  const f=fixture();
   try {
-    const checkout = join(f.root, 'repo with spaces');
-    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts/windows','.agents/skills/gidd/assets']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
-    const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
-    const invoke = (args = '', path = '', tool = 'gh') => run(cmd, ['/d','/s','/c', `""${join(checkout,'dev.cmd')}" .setup ${tool} ${args}"`], { windowsVerbatimArguments:true, env:{PATH:path} });
-    assert.notEqual(invoke('relative-path').status, 0);
-    assert.notEqual(invoke('', '', 'unknown').status, 0);
-    assert.notEqual(invoke('one two').status, 0);
-    assert.notEqual(invoke(`"${f.root}"`).status, 0);
-    const exe = compile(f.root), bin = join(f.root,'bin');
-    stub(exe, join(bin,'gh.exe'));
-    assert.match(ok(invoke('',bin)).stdout, /gh 2\.98\.0:/);
-    assert.equal(existsSync(toolsRoot(f.root)), false, 'PATH reuse must not create tool storage');
-    for (const name of ['bun','node']) {
-      const selectedBin = join(f.root,name);
-      stub(exe,join(selectedBin,`${name}.exe`));
-      const selected = ok(invoke('',selectedBin,name));
-      assert.match(selected.stdout,new RegExp(`^${name} `));
-      assert.equal(existsSync(toolsRoot(f.root)),false,'A selected runtime must not install other missing tools');
-    }
-    const config = join(checkout,'.agents/skills/gidd/config.toml');
-    const configText = 'schema_version = 1\n[tools]\ngh = { version = "2.98.0", source = "https://github.com/cli/cli/releases" }\n';
-    write(config,configText);
-    const tools = toolsRoot(f.root);
-    stub(exe,join(tools,'gh/gh.exe'),undefined,true);
-    assert.match(ok(invoke()).stdout, /gh 2\.98\.0:/);
-    assert.equal(existsSync(join(tools,'gh/gh.exe')), true);
-    for (const name of ['bun','node','.cache/gh']) assert.equal(existsSync(join(tools,name)), false);
-    assert.equal(readFileSync(config,'utf8'),configText);
-    ok(invoke());
-    write(config,configText.replace('2.98.0','2.99.0'));
-    assert.match(invoke().stderr,/occupied_or_version_conflicting_target:gh/);
-    assert.equal(JSON.parse(readFileSync(join(tools,'gh/install.json'),'utf8')).version,'2.98.0');
-  } finally { f.dispose(); }
+    const checkout=join(f.root,'checkout');
+    for(const path of ['dev.cmd','dev','.agents/skills/gidd'])cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
+    const invoke=tool=>run(cmd,['/d','/s','/c',`""${join(checkout,'dev.cmd')}" .setup ${tool}"`],{windowsVerbatimArguments:true,env:{PATH:''}});
+    const rejected=invoke('gh');assert.notEqual(rejected.status,0);assert.match(rejected.stderr,/gidd\.pre\.ensure/);
+    assert.equal(existsSync(toolsRoot(f.root)),false);
+    for(const tool of ['unknown','bun extra','node extra'])assert.notEqual(invoke(tool).status,0);
+  } finally {f.dispose();}
 });
 
 test('dev.cmd bun/node forwards argv, stdin, cwd and exit code using the selected runtime', { timeout: 60000 }, () => {
   const f = fixture();
   try {
     const checkout = join(f.root, '开发 repo & spaces');
-    for (const path of ['dev.cmd','scripts/dev','.agents/skills/gidd/scripts/windows','.agents/skills/gidd/assets']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
+    for (const path of ['dev.cmd','dev','.agents/skills/gidd/scripts']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
     const config = join(checkout, '.agents/skills/gidd/config.toml');
     write(config, 'schema_version = 1\n[tools]\n');
     const name = process.versions.bun ? 'bun' : 'node', other = name === 'bun' ? 'node' : 'bun';

@@ -1,4 +1,4 @@
-﻿function Invoke-GiddProcess {
+function Invoke-GiddProcess {
     param([string]$Executable, [string[]]$Arguments, [ValidateRange(1, 3600)][int]$TimeoutSeconds = 5)
 
     # Shared by diagnosis and installation; not a diagnostic domain.

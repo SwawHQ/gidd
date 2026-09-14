@@ -1,4 +1,4 @@
-﻿function Get-DoctorPlatformCheck {
+function Get-DoctorPlatformCheck {
     $architecture = [Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITEW6432')
     if (-not $architecture) { $architecture = [Environment]::GetEnvironmentVariable('PROCESSOR_ARCHITECTURE') }
     $supported = [Environment]::OSVersion.Platform -eq 'Win32NT' -and $architecture -eq 'AMD64'

@@ -1,0 +1,22 @@
+GIDD (Windows x64 / PowerShell 5.1)
+
+  gidd.link help en                             #Show English help
+  gidd.link help zh                             #Show Chinese help
+  gidd.link doctor                              #Check tools, repository and GitHub identity (includes network checks)
+  gidd.link doctor --offline                    #Check local tools, config and repository without network requests
+
+  gidd.link config show                         #Show current config.toml contents
+  gidd.link config set <key> <value>             #Set a field in config.toml
+  gidd.link config set github.account SwawHQ    #(Example) Set github.account to SwawHQ
+  gidd.link config set spec.mode issue-direct   #Select the lightweight spec
+
+  gidd.link auth                                #Request device authorization using config and wait for confirmation; gh may save credentials
+
+  gidd.link spec                                #List available spec names
+  gidd.link spec --json --lang en               #Optional --json and --lang zh|en also apply to the spec commands below
+  gidd.link spec.current                        #Print the configured spec
+  gidd.link spec.issue-direct                   #Print a named spec without changing configuration
+  gidd.link spec.current.issue                  #Print the current spec's Issue template
+  gidd.link spec.issue-direct.issue             #Print a named spec's Issue template
+  gidd.link spec.current.issue.check 123        #Check a GitHub Issue body in the bound repository
+  gidd.link spec.current.issue.check ./issue.md #Check a local Markdown body

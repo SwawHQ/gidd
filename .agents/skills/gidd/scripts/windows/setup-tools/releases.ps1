@@ -1,4 +1,4 @@
-﻿function Read-GiddReleaseText {
+function Read-GiddReleaseText {
     param([string]$Url)
     if (([uri]$Url).Scheme -ne 'https') { throw 'https_required' }
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -40,6 +40,7 @@ function Get-GiddChecksum {
 function Resolve-GiddRelease {
     param([string]$Name, $Settings, $PinnedDefinition = $null,
         [scriptblock]$ReadText = { param($url) Read-GiddReleaseText $url })
+    if ($Name -eq 'git') { return Resolve-GiddGitRelease $ReadText }
     if ($Name -notin @('node','bun','gh')) { throw 'invalid_tool_name' }
     Assert-GiddToolSettings $Name $Settings
     $version = $Settings.version
@@ -80,7 +81,7 @@ function Resolve-GiddRelease {
             $metadata += $releaseUrl
             $release = (& $ReadText $releaseUrl) | ConvertFrom-Json
             $pattern = if ($Name -eq 'bun') { '^bun-v(\d+\.\d+\.\d+)$' } else { '^v(\d+\.\d+\.\d+)$' }
-            if ($release.draft -or $release.prerelease -or $release.tag_name -cnotmatch $pattern) { throw "invalid_stable_release:$Name" }
+            if (($release.PSObject.Properties['draft'] -and $release.draft) -or ($release.PSObject.Properties['prerelease'] -and $release.prerelease) -or $release.tag_name -cnotmatch $pattern) { throw "invalid_stable_release:$Name" }
             $version = $Matches[1]; $tag = $release.tag_name
         }
         $archive = if ($Name -eq 'bun') { 'bun-windows-x64.zip' } else { "gh_${version}_windows_amd64.zip" }
@@ -90,19 +91,35 @@ function Resolve-GiddRelease {
         $hash = Get-GiddChecksum (& $ReadText $checksumUrl) $archive
         $url = "$source/download/$tag/$archive"
         $supplements = @()
+        $files = @(@{entry='bin/gh.exe';name='gh.exe'}, @{entry='LICENSE';name='LICENSE'})
         if ($Name -eq 'bun') {
-            $files = @(@{entry='bun-windows-x64/bun.exe';name='bun.exe'})
-            $licenseUrl = "https://raw.githubusercontent.com/oven-sh/bun/$tag/LICENSE.md"
-            $metadata += $licenseUrl
-            $license = & $ReadText $licenseUrl
-            if ([string]::IsNullOrWhiteSpace($license)) { throw 'empty_bun_license' }
-            $sha = [Security.Cryptography.SHA256]::Create()
-            try { $licenseHash = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($license))).Replace('-','').ToLowerInvariant() }
-            finally { $sha.Dispose() }
-            $supplements = @(@{name='LICENSE.md';url=$licenseUrl;sha256=$licenseHash})
-        } else {
-            $files = @(@{entry='bin/gh.exe';name='gh.exe'}, @{entry='LICENSE';name='LICENSE'})
+        $files = @(@{entry='bun-windows-x64/bun.exe';name='bun.exe'})
+        $licenseUrl = "https://raw.githubusercontent.com/oven-sh/bun/$tag/LICENSE.md"
+        $metadata += $licenseUrl
+        $license = & $ReadText $licenseUrl
+        if ([string]::IsNullOrWhiteSpace($license)) { throw 'empty_bun_license' }
+        $sha = [Security.Cryptography.SHA256]::Create()
+        try { $licenseHash = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($license))).Replace('-','').ToLowerInvariant() }
+        finally { $sha.Dispose() }
+        $supplements = @(@{name='LICENSE.md';url=$licenseUrl;sha256=$licenseHash})
         }
     }
     return [pscustomobject]@{name=$Name;version=$version;archive=$archive;url=$url;sha256=$hash;files=$files;supplements=$supplements;metadata_sources=$metadata}
+}
+
+function Resolve-GiddGitRelease {
+    param([scriptblock]$ReadText = { param($url) Read-GiddReleaseText $url })
+    $metadata = 'https://api.github.com/repos/git-for-windows/git/releases/latest'
+    $release = (& $ReadText $metadata) | ConvertFrom-Json
+    if (($release.PSObject.Properties['draft'] -and $release.draft) -or ($release.PSObject.Properties['prerelease'] -and $release.prerelease) -or
+        $release.tag_name -cnotmatch '^v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))\.windows\.([1-9]\d*)$') { throw 'invalid_stable_release:git' }
+    $version = $Matches[1]; $revision = $Matches[2]
+    $suffix = if ($revision -eq '1') { '' } else { ".$revision" }
+    $archive = "MinGit-$version$suffix-64-bit.zip"
+    $url = "https://github.com/git-for-windows/git/releases/download/$($release.tag_name)/$archive"
+    $assets = @($release.assets | Where-Object name -CEQ $archive)
+    if ($assets.Count -ne 1 -or $assets[0].browser_download_url -cne $url -or $assets[0].digest -cnotmatch '^sha256:[a-f0-9]{64}$' -or
+        $assets[0].size -le 0 -or $assets[0].size -gt 256MB -or $assets[0].size -ne [Math]::Truncate($assets[0].size)) { throw 'git_release_asset_or_checksum_missing' }
+    return [pscustomobject]@{name='git';version=$version;archive=$archive;url=$url;sha256=$assets[0].digest.Substring(7);
+        reported_version="$version.windows.$revision";release_tag=$release.tag_name;metadata_sources=@($metadata);supplements=@()}
 }

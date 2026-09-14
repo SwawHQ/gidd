@@ -3,10 +3,53 @@ import { createHash } from 'node:crypto';
 import { statSync, symlinkSync, unlinkSync } from 'node:fs';
 import { basename, dirname } from 'node:path';
 import { configure, editConfiguration, editGitHub, parseGitHub, readGitHubConfiguration } from '../.agents/skills/gidd/scripts/config.mjs';
-import { toolsRoot, adapter, assert, code, compile, existsSync, findGit, fixture, hash, join, json, mkdirSync, ok, ps, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
+import { diagnosis as runDiagnosis, prepare, jsAdapter, toolsRoot, adapter as shellAdapter, assert, code, compile, existsSync, findGit, fixture, hash, join, json, mkdirSync, ok, ps, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
 
 const configText = () => `# preserved comment\nschema_version = 1\n[tools]\n`;
 
+test('retired runtime configuration is rejected without writes; sources remain editable', () => {
+  const f=fixture();
+  try {
+    const path=join(f.root,'.agents/skills/gidd/config.toml');
+    write(path,configText());
+    for(const key of ['bootstrap.runtime','tools.bun.version','tools.node.version','tools.gh.version']) {
+      assert.throws(()=>configure(f.root,'set',key,'node'),/config_unknown_key/);
+      assert.equal(readFileSync(path,'utf8'),configText());
+    }
+    for(const text of ['schema_version = 1\n[bootstrap]\nruntime="bun"\n',
+      configText()+'bun = { version="latest", source="https://github.com/oven-sh/bun/releases" }\n',
+      configText()+'node = { version="lts", source="https://nodejs.org/dist" }\n',
+      configText()+'gh = { version="latest", source="https://github.com/cli/cli/releases" }\n']) {
+      write(path,text);
+      assert.throws(()=>configure(f.root,'show'),/config_retired_field/);
+      assert.match(shellAdapter(f.root,{action:'configuration',repositoryRoot:f.root}).stderr,/config_retired_field/);
+      assert.equal(readFileSync(path,'utf8'),text);
+    }
+    assert.equal(existsSync(toolsRoot(f.root)),false);
+  } finally {f.dispose();}
+});
+
+test('config set repairs invalid GitHub fields independently without losing other values', () => {
+  const f=fixture();
+  try {
+    const path=join(f.root,'.agents/skills/gidd/config.toml');
+    const original=configText()+'[github]\nhostname = "bad:host" # preserve\naccount = "bad account"\nremote = "--bad"\nrepository = "bad url"\n';
+    write(path,original);
+    configure(f.root,'set','github.hostname','github.com');
+    assert.equal(readFileSync(path,'utf8'),original.replace('bad:host','github.com'));
+    const before=readFileSync(path,'utf8');
+    assert.throws(()=>configure(f.root,'set','github.account','still bad'),/config_invalid_github_account/);
+    assert.equal(readFileSync(path,'utf8'),before);
+    configure(f.root,'set','tools.gh.source','https://example.test/releases');
+    for (const [key,value] of [['account','Octocat'],['remote','origin'],['repository','https://github.com/owner/repo']]) configure(f.root,'set',`github.${key}`,value);
+    assert.deepEqual(readGitHubConfiguration(f.root,['hostname','account','remote','repository']),{hostname:'github.com',account:'Octocat',remote:'origin',repository:'https://github.com/owner/repo'});
+    assert.match(readFileSync(path,'utf8'),/# preserve/);
+  } finally {f.dispose();}
+});
+
+for (const engine of ['shell','javascript']) {
+// gh metadata is JavaScript-only; native stage0 prepares Bun/Node only.
+const adapter = (root, spec, options) => (engine === 'shell' ? shellAdapter : jsAdapter)(root,spec,options);
 test('config set edits tool fields without changing companions or installing tools', { timeout: 120000 }, () => {
   const f = fixture();
   try {
@@ -15,16 +58,15 @@ test('config set edits tool fields without changing companions or installing too
     assert.equal(existsSync(join(fresh,'.agents/skills/gidd/config.toml')),false);
     const path = join(f.root,'.agents/skills/gidd/config.toml');
     const original = '\uFEFF' + configText().replaceAll('\n','\r\n') +
-      "  node = { source = 'https://nodejs.org/dist' , version = 'lts' } # keep node comment\r\n" +
+      "  gh = { source = 'https://github.com/cli/cli/releases' } # keep gh comment\r\n" +
       '[github]\r\nhostname = "github.com"\r\naccount = "Octocat"\r\nremote = "origin"\r\n';
     write(path,original);
-    configure(f.root,'set','tools.node.version','24.20.0');
-    assert.equal(readFileSync(path,'utf8'),original.replace("'lts'",'"24.20.0"'));
-    assert.throws(() => configure(f.root,'set','tools.node.source','https://mirror.example/node,a#bad'),/config_invalid_tool_source/);
-    configure(f.root,'set','tools.node.source','https://mirror.example/node,a');
-    assert.match(readFileSync(path,'utf8'),/source = "https:\/\/mirror.example\/node,a" , version = "24.20.0" \} # keep node comment/);
-    for (const tool of ['bun','gh']) {
-      configure(f.root,'set',`tools.${tool}.version`,'latest');
+    assert.throws(()=>configure(f.root,'set','tools.gh.version','2.98.0'),/config_unknown_key/);
+    assert.equal(readFileSync(path,'utf8'),original);
+    assert.throws(() => configure(f.root,'set','tools.gh.source','https://mirror.example/node,a#bad'),/config_invalid_tool_source/);
+    configure(f.root,'set','tools.gh.source','https://mirror.example/node,a');
+    assert.match(readFileSync(path,'utf8'),/source = "https:\/\/mirror.example\/node,a" \} # keep gh comment/);
+    for (const tool of ['bun','node']) {
       configure(f.root,'set',`tools.${tool}.source`,`https://mirror.example/${tool}`);
     }
     assert.throws(() => configure(f.root,'set','tools.directory','new tools'),/config_unknown_key/);
@@ -38,7 +80,7 @@ test('config set edits tool fields without changing companions or installing too
       assert.equal(readFileSync(path,'utf8'),before);
       assert.equal(existsSync(path+'.lock'),false);
     }
-    assert.throws(() => editConfiguration(configText()+'node = { version = "lts", other = "x" }\n','tools.node.version','latest'),/config_invalid_tool_table/);
+    assert.throws(() => editConfiguration(configText()+'node = { source = "https://nodejs.org/dist", other = "x" }\n','tools.node.source','https://example.test'),/config_invalid_tool_table/);
   } finally { f.dispose(); }
 });
 
@@ -52,6 +94,15 @@ test('GitHub config editing preserves comments, BOM, line endings and unrelated 
     assert.equal(existsSync(dirname(path)),false);
     configure(f.root,'set','github.account','Octocat');
     assert.deepEqual(readGitHubConfiguration(f.root,['hostname','account','remote']),{hostname:'github.com',account:'Octocat',remote:'origin'});
+    const recorded=configure(f.root,'set','github.repository','https://GitHub.com/Owner/Repo/');
+    assert.equal(recorded.value,'https://github.com/owner/repo');
+    assert.equal(readGitHubConfiguration(f.root,['repository']).repository,recorded.value);
+    for (const invalid of ['https://u:secret@github.com/a/b','https://github.com/a/b?token=secret',
+      'https://github.com/a/b/commit/123','git@github.com:a/b','https://github.com/../repo']) {
+      const original=readFileSync(path,'utf8');
+      assert.throws(()=>configure(f.root,'set','github.repository',invalid),/config_invalid_github_repository/);
+      assert.equal(readFileSync(path,'utf8'),original);
+    }
     for (const newline of ['\n','\r\n']) {
       const original = '\uFEFF' + ['# 顶部注释','schema_version = 1','[github] # identity',"  account = 'OldAccount' # 保留此注释",'hostname = "github.com"','[tools] # 工具段','# untouched tools comment',''].join(newline);
       write(path,original);
@@ -62,6 +113,9 @@ test('GitHub config editing preserves comments, BOM, line endings and unrelated 
       const updated = readFileSync(path,'utf8');
       assert.equal(updated,replaced.replace('[tools] # 工具段',`remote = "upstream"${newline}[tools] # 工具段`));
       assert.equal(configure(f.root,'show').content,updated);
+      configure(f.root,'set','github.repository','https://github.com/owner/repo');
+      assert.equal(readGitHubConfiguration(f.root,['repository']).repository,'https://github.com/owner/repo');
+      assert.ok(readFileSync(path,'utf8').startsWith(replaced.split('[tools]')[0]));
       const before = hash(path);
       for (const [key,value] of [['hostname','https://github.com'],['account','a b'],['account','Octocat\n'],['remote','--upload-pack=bad']]) {
         assert.throws(() => configure(f.root,'set',`github.${key}`,value),/config_invalid_github/);
@@ -112,7 +166,8 @@ test('configuration: fixed shared home, repository independence and read-only va
       assert.equal('directory' in result,false); assert.equal('scope' in result,false);
       assert.equal(hash(path),before); assert.equal(existsSync(root),false);
     }
-    write(path,readFileSync(join(repo,'.agents/skills/gidd/assets/config.example.toml'),'utf8'));
+    unlinkSync(path);
+    configure(repositoryRoot,'set','github.account','Octocat');
     samePath(json(ok(resolve())).tools_root,root);
     samePath(json(ok(resolve(other,{USERPROFILE:join(f.root,'separate home')}))).tools_root,toolsRoot(join(f.root,'separate home')));
     assert.notEqual(resolve(other,{USERPROFILE:'relative'}).status,0);
@@ -131,23 +186,25 @@ test('configuration: fixed shared home, repository independence and read-only va
   } finally { f.dispose(); }
 });
 
-test('configured setup reuses Node/gh without knowing a skill installation directory', { timeout: 120000 }, () => {
+test('configured setup reuses gh without knowing a skill installation directory', { timeout: 120000 }, () => {
   const f=fixture();
   try {
     const path=join(f.root,'.agents/skills/gidd/config.toml'), tools=toolsRoot(f.root);
     write(path,configText()); const before=hash(path), exe=compile(f.root);
     stub(exe,join(tools,'node/node.exe'),undefined,true); stub(exe,join(tools,'gh/gh.exe'),undefined,true);
-    const invoke=() => ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root],{env:{PATH:''}});
-    assert.notEqual(ps(join(code,'setup-tools.ps1'),['-RepositoryPath',f.root,'-ArchiveDirectory',f.root],{env:{PATH:''}}).status,0);
+    const invoke=() => prepare(f.root,'gh',{env:{PATH:''}});
+    assert.equal(existsSync(join(code,'setup-tools.ps1')),false);
     const report=json(ok(invoke())); samePath(report.tools_root,tools);
-    assert.deepEqual(report.tools.map(x=>x.name),['node','gh']); assert.ok(report.tools.every(x=>x.action==='reused'));
+    assert.deepEqual(report.tools.map(x=>x.name),['gh']); assert.ok(report.tools.every(x=>x.action==='reused'));
     assert.equal(existsSync(join(tools,'bun')),false); assert.equal(hash(path),before);
-    assert.match(readFileSync(join(tools,'INSTALLATION.md'),'utf8'),/independent of the skill installation directory/);
+    assert.equal(readFileSync(join(tools,'INSTALLATION.md'),'utf8'),
+      readFileSync(join(repo,'.agents/skills/gidd/scripts/INSTALLATION.md'),'utf8'));
     const git=findGit(); ok(run(git,['-C',f.root,'init','--quiet']));
-    const diagnosis=json(ps(join(code,'doctor.ps1'),['-RepositoryPath',f.root],{env:{PATH:dirname(git)}}));
-    samePath(diagnosis.checks.find(x=>x.id==='tools.storage').details.tools_root,tools);
-    assert.equal(diagnosis.checks.find(x=>x.id==='runtime').details.selected,'tool.node');
-    assert.equal(diagnosis.checks.find(x=>x.id==='repository.config.validation').status,'ready');
+    const diagnosis=json(runDiagnosis(f.root,{env:{PATH:dirname(git)}}));
+    samePath(diagnosis.checks.find(x=>x.id==='gh').details.path,join(tools,'gh/gh.exe'));
+    assert.equal(diagnosis.checks.find(x=>x.id==='js_runtime').details.name,process.versions.bun?'bun':'node');
+    assert.equal(diagnosis.checks.find(x=>x.id==='config_file').status,'ready');
+    assert.equal(diagnosis.checks.find(x=>x.id==='config.github.account').reason,'config_missing_github_account');
     assert.equal(diagnosis.checks.find(x=>x.id==='github.identity').status,'not_checked');
     write(path,configText()+'directory = "../outside"\n'); assert.notEqual(invoke().status,0);
   } finally { f.dispose(); }
@@ -158,23 +215,21 @@ test('inline tool configuration validates versions and visible sources without n
   try {
     const path=join(f.root,'.agents/skills/gidd/config.toml');
     const resolve=() => adapter(f.root,{action:'configuration',repositoryRoot:f.root},{env:{PATH:''}});
-    const line='node = { version = "lts", source = "https://nodejs.org/dist" }';
-    for (const input of [line, line+' # comment with {braces}', 'node = { source = \'https://nodejs.org/dist/\', version = \'24.20.0\' } # comment']) {
+    const line='gh = { source = "https://nodejs.org/dist" }';
+    for (const input of [line, line+' # comment with {braces}', 'gh = { source = \'https://nodejs.org/dist/\' } # comment']) {
       write(path,configText()+input+'\n'); const before=hash(path);
       const storage=json(ok(resolve()));
-      assert.equal(storage.tools.node.source,'https://nodejs.org/dist');
+      assert.equal(storage.tools.gh.source,'https://nodejs.org/dist');
       assert.equal(storage.tools.bun.version,'latest');
       assert.equal(hash(path),before);
     }
     for (const invalid of [
-      line+'\n'+line, line.replace('"lts"','"canary"'), line.replace('"lts"','"24"'),
-      line.replace('"lts"','"024.1.0"'), line.replace('"lts"','"24.0.0-beta"'),
-      line.replace('https:','http:'), line.replace('nodejs.org','user:secret@nodejs.org'),
+      line+'\n'+line, line.replace('https:','http:'), line.replace('nodejs.org','user:secret@nodejs.org'),
       line.replace('/dist','/dist?token=secret'), line.replace('/dist','/dist#fragment'),
-      line.replace('version =','Version ='), line.replace('source =','url ='),
-      'node = {}', 'node = { version = "lts" }', line.replace(' }',', }'),
-      line.replace(' }',', version = "latest" }'), line.replace('"lts"','true'),
-      line.replace('node =','bun ='), line.replace('node =','gh ='),
+      line.replace('source =','Source ='), line.replace('source =','url ='),
+      'node = {}', 'node = { version = "latest" }', line.replace(' }',', }'),
+      line.replace(' }',', version = "latest" }'), line.replace('"https://nodejs.org/dist"','true'),
+      line.replace(' }',', source = "https://example.test" }'),
     ]) {
       write(path,configText()+invalid+'\n'); assert.notEqual(resolve().status,0,invalid);
     }
@@ -225,7 +280,7 @@ test('release resolution selects stable versions, verifies upstream hashes and p
         assert.match(resolve(name,'latest',{...data,[endpoint]:JSON.stringify(bad)}).stderr,/invalid_stable_release/);
       }
     }
-    const pinned=JSON.parse(readFileSync(join(repo,'.agents/skills/gidd/assets/runtimes.json'),'utf8')).tools[0];
+    const pinned=JSON.parse(readFileSync(join(repo,'.agents/skills/gidd/scripts/runtimes.json'),'utf8')).tools[0];
     const pinnedPath=join(f.root,'pinned.json'); write(pinnedPath,JSON.stringify(pinned));
     const original=hash(pinnedPath);
     const verified=json(ok(resolve('bun',pinned.version,{}, {pinnedPath})));
@@ -234,3 +289,5 @@ test('release resolution selects stable versions, verifies upstream hashes and p
     assert.match(resolve('bun','latest',{}, {pinnedPath}).stderr,/unexpected_metadata_request/);
   } finally { f.dispose(); }
 });
+
+}

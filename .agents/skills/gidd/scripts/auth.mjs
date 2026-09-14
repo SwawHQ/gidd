@@ -1,8 +1,5 @@
 import { statSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { runCommand, validateOptions } from './github.mjs';
-import { configurationHint, readGitHubConfiguration } from './config.mjs';
 
 // Platform-neutral orchestration. Windows is the only verified launcher today.
 export async function authorize(input, { execute = runCommand, env = process.env, signal, onEvent = () => {}, timeoutMs = 900000 } = {}) {
@@ -28,12 +25,7 @@ export async function authorize(input, { execute = runCommand, env = process.env
   if (Object.entries(env).some(([key, value]) => /^(GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN)$/i.test(key) && value)) {
     return report('failed', 'environment_token_active');
   }
-  // Output parsing follows the verified gh 2.98 device flow. Older versions are
-  // rejected instead of silently starting a different interactive protocol.
-  const version = await execute(options.gh, ['--version'], commandOptions);
-  if (signal?.aborted) return cancelled();
-  const v = version.ok && /^gh version (\d+)\.(\d+)\.(\d+)/.exec(version.text);
-  if (!v || Number(v[1]) < 2 || (Number(v[1]) === 2 && Number(v[2]) < 98)) return report('failed', 'requires_gh_2_98_or_newer');
+  // Bootstrap validates the gh version before publishing the binding.
   let code, url, displayed = false, plaintext = false, protocolFailure = false;
   const login = await execute(options.gh, ['auth', 'login', '--hostname', options.hostname,
     '--web', '--skip-ssh-key', '--clipboard=false'], {
@@ -66,30 +58,3 @@ export async function authorize(input, { execute = runCommand, env = process.env
   return report(matches(after.text) ? 'ready' : 'mismatch', matches(after.text) ? 'authenticated' : 'authorized_account_mismatch',
     { ...changed, login: after.text });
 }
-
-async function main() {
-  const controller = new AbortController();
-  const cancel = () => controller.abort();
-  process.on('SIGINT', cancel); process.on('SIGTERM', cancel);
-  try {
-    if (process.platform !== 'win32') throw new Error('unsupported_platform');
-    const args = process.argv.slice(2), options = {};
-    for (let i = 0; i < args.length; i += 2) {
-      const key = args[i].slice(2);
-      if (!args[i].startsWith('--') || !['repository','gh'].includes(key) || key in options || !args[i + 1]) throw new Error('invalid_arguments');
-      options[key] = args[i + 1];
-    }
-    const result = await authorize({ ...options, ...readGitHubConfiguration(options.repository, ['hostname', 'account']) }, { signal: controller.signal,
-      onEvent: event => console.error(JSON.stringify(event)) });
-    console.log(JSON.stringify(result, null, 2));
-    process.exitCode = result.status === 'ready' ? 0 : 1;
-  } catch (error) {
-    const reason = /^(config_[a-z_]+|expected_account_required|gh_required|repository_unavailable|repository_must_be_absolute|invalid_hostname|invalid_account|gh_must_be_absolute_executable|unsupported_platform|invalid_arguments)$/.test(error.message) ? error.message : 'authorization_start_failed';
-    const hint = configurationHint(reason); if (hint) console.error(hint);
-    console.log(JSON.stringify({ schema: 'gidd.auth/v1', status: 'error', reason }));
-    process.exitCode = 2;
-  } finally {
-    process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel);
-  }
-}
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

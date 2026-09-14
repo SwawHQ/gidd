@@ -1,4 +1,4 @@
-﻿function Get-GiddRepositoryRoot {
+function Get-GiddRepositoryRoot {
     param([string]$Path)
     if ($Path -notmatch '^[A-Za-z]:[\\/]') { throw 'repository_absolute_local_path_required' }
     $target = [IO.Path]::GetFullPath($Path)
@@ -56,12 +56,18 @@ function Read-GiddToolConfiguration {
         $line = $line.TrimEnd("`r")
         if ($line -match '[\x00-\x08\x0b-\x1f\x7f]') { throw "config_control_character:$lineNumber" }
         if ($line -cmatch '^[ \t]*(?:#.*)?$') { continue }
-        if ($line -cmatch '^[ \t]*\[(tools|github)\][ \t]*(?:#.*)?$') {
+        if ($line -cmatch '^[ \t]*\[bootstrap\]') { throw 'config_retired_field:bootstrap' }
+        if ($line -cmatch '^[ \t]*\[(tools|github|spec)\][ \t]*(?:#.*)?$') {
             $section = $Matches[1]
             if (-not $tables.Add($section)) { throw "config_duplicate_${section}_table" }
             $inTools = $section -eq 'tools'; continue
         }
-        if ($section -eq 'github' -and $line -cmatch ('^[ \t]*(hostname|account|remote)[ \t]*=[ \t]*(' + $stringPattern + ')[ \t]*(?:#.*)?$')) {
+        # Mode availability belongs to JS diagnosis, never prerequisite repair.
+        if ($section -eq 'spec' -and $line -cmatch ('^[ \t]*mode[ \t]*=[ \t]*(' + $stringPattern + ')[ \t]*(?:#.*)?$')) {
+            if ($values.ContainsKey('spec.mode')) { throw 'config_duplicate_key:spec.mode' }
+            $values.Add('spec.mode', (ConvertFrom-GiddConfigString $Matches[1])); continue
+        }
+        if ($section -eq 'github' -and $line -cmatch ('^[ \t]*(hostname|account|remote|repository)[ \t]*=[ \t]*(' + $stringPattern + ')[ \t]*(?:#.*)?$')) {
             $key = 'github.' + $Matches[1]
             if ($values.ContainsKey($key)) { throw "config_duplicate_key:$key" }
             $values.Add($key, (ConvertFrom-GiddConfigString $Matches[2])); continue
@@ -78,13 +84,14 @@ function Read-GiddToolConfiguration {
             while ($remaining) {
                 if ($remaining -cnotmatch ('^(version|source)[ \t]*=[ \t]*(' + $stringPattern + ')[ \t]*(.*)$')) { throw "config_invalid_tool_table:$name" }
                 $key = $Matches[1]; $literal = $Matches[2]; $tail = $Matches[3]
+                if ($key -eq 'version') { throw "config_retired_field:tools.$name.version" }
                 if (-not $seen.Add($key)) { throw "config_duplicate_tool_field:${name}:$key" }
                 $tools[$name][$key] = ConvertFrom-GiddConfigString $literal
                 if (-not $tail) { break }
                 if (-not $tail.StartsWith(',') -or -not $tail.Substring(1).Trim()) { throw "config_invalid_tool_table:$name" }
                 $remaining = $tail.Substring(1).Trim()
             }
-            if (-not $seen.Contains('version') -or -not $seen.Contains('source')) { throw "config_missing_tool_field:$name" }
+            if (-not $seen.Contains('source')) { throw "config_missing_tool_field:$name" }
             Assert-GiddToolSettings $name $tools[$name]
             continue
         }
@@ -92,15 +99,18 @@ function Read-GiddToolConfiguration {
         throw "config_unsupported_syntax_or_field:$lineNumber"
     }
     if (-not $values.ContainsKey('schema_version')) { throw 'config_missing_key:schema_version' }
-    return @{ tools = $tools }
+    $github = @{}
+    foreach ($name in @('hostname','account','remote','repository')) {
+        if ($values.ContainsKey("github.$name")) { $github[$name] = $values["github.$name"] }
+    }
+    return @{ tools = $tools; github = $github }
 }
 
 function Resolve-GiddToolStorage {
-    param([string]$RepositoryRoot, [string]$CandidatePath)
-    # Internal editor validation can inspect a temporary candidate before publication.
-    $configPath = if ($CandidatePath) { $CandidatePath } elseif ($RepositoryRoot) { Join-Path $RepositoryRoot '.agents/skills/gidd/config.toml' } else { $null }
+    param([string]$RepositoryRoot)
+    $configPath = if ($RepositoryRoot) { Join-Path $RepositoryRoot '.agents/skills/gidd/config.toml' } else { $null }
     $configured = $false
-    $settings = @{ tools = (Get-GiddDefaultTools) }
+    $settings = @{ tools = (Get-GiddDefaultTools); github = @{} }
     if ($configPath) {
         Assert-GiddPlainPath $configPath
         if (Test-Path -LiteralPath $configPath) { $settings = Read-GiddToolConfiguration $configPath; $configured = $true }
@@ -115,12 +125,17 @@ function Resolve-GiddToolStorage {
         $pending = New-Object 'System.Collections.Generic.Stack[string]'
         $pending.Push($root)
         while ($pending.Count) {
-            foreach ($item in Get-ChildItem -LiteralPath $pending.Pop() -Force) {
-                if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'reparse_tools_directory' }
+            $directory = $pending.Pop()
+            foreach ($item in Get-ChildItem -LiteralPath $directory -Force) {
+                if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                    # Bootstrap validates its selected binding; never traverse external tools.
+                    if ($directory -eq $root -and $item.Name -cmatch '^\.runtime-path-[a-f0-9]{64}$') { continue }
+                    throw 'reparse_tools_directory'
+                }
                 if ($item.Name -in @('SKILL.md','config.toml','.git')) { throw 'tools_directory_contains_project_or_skill' }
                 if ($item.PSIsContainer) { $pending.Push($item.FullName) }
             }
         }
     }
-    return @{ tools_root = $root; config_path = $configPath; configured = $configured; tools = $settings.tools }
+    return @{ tools_root = $root; config_path = $configPath; configured = $configured; tools = $settings.tools; github = $settings.github }
 }

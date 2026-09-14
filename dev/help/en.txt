@@ -1,0 +1,29 @@
+GIDD repository development (Windows x64 / Windows PowerShell 5.1)
+
+  dev.cmd .help [en|zh]          Show help without Bun/Node or downloads.
+  dev.cmd .info                  Report development Bun and Node separately.
+  dev.cmd .setup bun            Prepare only Bun; reuse or download stable Bun.
+  dev.cmd .setup node           Prepare only Node; reuse or download Node LTS.
+  dev.cmd .setup                Prepare both Bun and Node for development tests.
+  dev.cmd .test [suite]          Run the same offline tests under Bun and Node.
+  dev.cmd .test-bun [suite]      Run only Bun tests.
+  dev.cmd .test-node [suite]     Run only Node tests.
+  dev.cmd .test-live            Test official downloads, installation and reuse under both runtimes.
+  dev.cmd bun [args...]          Run the shared portable Bun, without PATH fallback.
+  dev.cmd node [args...]         Run the shared portable Node, without PATH fallback.
+  dev.cmd sys bun [args...]  Run Bun from PATH only.
+  dev.cmd sys node [args...] Run Node from PATH only.
+
+Suites: all (default), doctor, setup, process, dev, config, github, entry, spec.
+Each suite reports its result and duration; failures include PowerShell rerun commands.
+Use a focused suite while editing, then run .test before submitting changes.
+No arguments show help. Help language: argument, GIDD_DEV_LANG, locale, then English.
+.setup/.test-live can download tools; .test never installs tools.
+bun/node forward caller cwd, arguments and stdio; the invoked command controls its own effects.
+Portable and sys modes never fall back to each other; both use the internal compatibility method.
+Tools: ~/.agents/skills.tools/gidd/; download sources follow repository config.toml; version policy is internal.
+Defaults for missing downloads: Node LTS, stable Bun; existing usable tools are reused.
+Setup downloads configured tools or reuses existing ones; local package directories are not accepted.
+Portable Node includes the runtime and license, without npm; tests have no npm dependencies.
+Tests never log in. No command enables GIDD or changes user skills or system PATH.
+Product JavaScript must still work in both Node.js and Bun.

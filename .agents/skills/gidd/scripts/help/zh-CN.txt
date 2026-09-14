@@ -1,0 +1,22 @@
+GIDD（Windows x64 / PowerShell 5.1）
+
+  gidd.link help en                             #Show English help
+  gidd.link help zh                             #显示中文帮助
+  gidd.link doctor                              #检查工具、仓库及 GitHub 身份（含联网检查）
+  gidd.link doctor --offline                    #仅检查本地工具、配置和仓库，不联网
+
+  gidd.link config show                         #列出 config.toml 当前内容
+  gidd.link config set <字段> <值>              #设置 config.toml 中指定字段的值
+  gidd.link config set github.account SwawHQ    #(示例) 设置 github.account 的值为 SwawHQ
+  gidd.link config set spec.mode issue-direct   #选择轻量规范
+
+  gidd.link auth                                #按配置申请设备授权并等待确认；gh 可能保存凭据
+
+  gidd.link spec                                #列出已有规范名称
+  gidd.link spec --json --lang zh              #支持可选参数 --json、--lang zh|en，下同，不再赘述
+  gidd.link spec.current                        #输出当前配置的规范
+  gidd.link spec.issue-direct                   #输出指定规范，不改变当前配置
+  gidd.link spec.current.issue                  #输出当前规范的 Issue 模板
+  gidd.link spec.issue-direct.issue             #输出指定规范的 Issue 模板
+  gidd.link spec.current.issue.check 123        #检查所属仓库的 GitHub Issue 正文
+  gidd.link spec.current.issue.check ./issue.md #检查本地 Markdown 正文

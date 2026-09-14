@@ -5,6 +5,13 @@ import { copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, re
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { after } from 'node:test';
+
+// An exit code of zero alone does not prove that a test worker reached its end.
+// In particular, Node on this Windows host can terminate during native fixtures.
+after(() => {
+  if (process.env.GIDD_TEST_COMPLETION) writeFileSync(process.env.GIDD_TEST_COMPLETION, 'completed');
+});
 
 export const repo = fileURLToPath(new URL('../../', import.meta.url));
 export const code = join(repo, '.agents/skills/gidd/scripts/windows');
@@ -12,9 +19,10 @@ export const support = join(repo, 'tests/support');
 export function copySkill(destination) {
   const source = join(repo, '.agents/skills/gidd');
   const config = join(source, 'config.toml');
+  const link = join(source, 'gidd.link.cmd');
   // Repository settings and in-flight editor files are not part of the skill.
   cpSync(source, destination, { recursive: true,
-    filter: path => path !== config && !path.startsWith(config + '.'),
+    filter: path => path !== config && !path.startsWith(config + '.') && path !== link && !path.startsWith(link + '.'),
   });
 }
 const windowsRoot = process.env.SystemRoot || process.env.SYSTEMROOT || 'C:\\Windows';
@@ -25,7 +33,9 @@ export function environment(overrides = {}) {
     if (/^(path|psmodulepath|git_dir|git_work_tree|git_index_file|git_common_dir|git_ceiling_directories)$/i.test(key) ||
         Object.keys(overrides).some(name => name.toLowerCase() === key.toLowerCase())) delete env[key];
   }
-  return { ...env, PATH: process.env.PATH ?? process.env.Path ?? '', PSModulePath: join(dirname(shell), 'Modules'), ...overrides };
+  // An isolated USERPROFILE can make Windows PowerShell's cache path relative.
+  // Disable that cache so fixtures cannot leave Microsoft/ in the checkout.
+  return { ...env, PATH: process.env.PATH ?? process.env.Path ?? '', PSModulePath: join(dirname(shell), 'Modules'), PSModuleAnalysisCachePath: 'NUL', ...overrides };
 }
 export function run(executable, args = [], options = {}) {
   const result = spawnSync(executable, args, { encoding: 'utf8', timeout: 20000, windowsHide: true, cwd: repo, ...options, env: environment(options.env) });
@@ -38,8 +48,6 @@ export function ok(result) {
 }
 export function json(result) { return JSON.parse(result.stdout); }
 export function ps(script, args = [], options = {}) {
-  const bytes = readFileSync(script);
-  assert.equal(bytes.subarray(0, 3).toString('hex'), 'efbbbf', `PowerShell BOM: ${script}`);
   return run(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, ...args], options);
 }
 export function fixture() {
@@ -74,9 +82,28 @@ export function adapter(root, spec, options) {
   try { return ps(join(support, 'windows.ps1'), ['-RequestPath', path], options); }
   finally { rmSync(path, { force: true }); }
 }
+// Test-only access to the native preparation stage; public preparation is bootstrap.
+export function prepare(repository, name = 'gh', options = {}) {
+  return adapter(repository,{action:'prepare',repositoryRoot:repository,names:[name]},options);
+}
+export function bindFixture(home, tools) {
+  const bindings={schema:'gidd.tool-bindings/v1',platform:'windows-x64',tools:{}};
+  for(const [name,path] of Object.entries(tools)) if(path) bindings.tools[name]={path,source:'path',version:ok(run(path,['--version'])).stdout.match(/\d+\.\d+\.\d+/)[0]};
+  write(join(toolsRoot(home),'tool-bindings.json'),JSON.stringify(bindings));
+}
+export function diagnosis(target, options) { return run(process.execPath, [join(support,'doctor.mjs'),target],options); }
+export function jsAdapter(root, spec, options) {
+  if (!['configuration','validate','find'].includes(spec.action)) return adapter(root,spec,options);
+  const path = request(root,spec);
+  try { return run(process.execPath,[join(support,'javascript.mjs'),path],options); }
+  finally { rmSync(path,{ force: true }); }
+}
 export function startAdapter(root, spec, options = {}) {
   const path = request(root, spec);
-  const child = spawn(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(support, 'windows.ps1'), '-RequestPath', path],
+  const javascript = options.javascript && ['configuration','validate','find'].includes(spec.action);
+  const executable = javascript ? process.execPath : shell;
+  const arguments_ = javascript ? [join(support,'javascript.mjs'),path] : ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(support, 'windows.ps1'), '-RequestPath', path];
+  const child = spawn(executable, arguments_,
     { cwd: repo, windowsHide: true, env: environment(options.env), stdio: ['ignore', 'pipe', 'pipe'] });
   let stdout = '', stderr = '';
   child.stdout.on('data', chunk => { stdout += chunk; });
@@ -107,7 +134,7 @@ export function stub(source, destination, mode, managed = false) {
     const dir = dirname(destination);
     const files = readdirSync(dir).filter(name => name !== 'install.json').map(name => ({ name, length: lstatSync(join(dir, name)).size, sha256: hash(join(dir, name)) }));
     const name = destination.endsWith('bun.exe') ? 'bun' : destination.endsWith('node.exe') ? 'node' : 'gh';
-    write(join(dir, 'install.json'), JSON.stringify({ schema: 'gidd.install/v1', name, platform: 'windows-x64', version: name === 'node' ? '24.0.0' : name === 'gh' ? '2.98.0' : '1.2.15', archive_sha256: '0'.repeat(64), files }));
+    write(join(dir, 'install.json'), JSON.stringify({ schema: 'gidd.install/v1', name, platform: 'windows-x64', version: name === 'node' ? '24.19.0' : name === 'gh' ? '2.98.0' : '1.4.2', archive_sha256: '0'.repeat(64), files }));
   }
 }
 export function snapshot(root) {
