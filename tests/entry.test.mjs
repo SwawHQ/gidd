@@ -106,7 +106,7 @@ test('preparation owns tool checks and gidd no longer routes tool commands', () 
   try {
     const s=installation(f,false),before=snapshot(f.root);
     assert.equal(existsSync(join(s.skill,'gidd.tools.ensure.cmd')),false);
-    for (const name of ['entry','doctor','config','authorize']) assert.equal(existsSync(join(s.skill,`scripts/windows/${name}.ps1`)),false);
+    for (const name of ['entry','doctor','config','authorize']) assert.equal(existsSync(join(s.skill,`scripts.powershell/${name}.ps1`)),false);
     const missing=json(s.ensure(['--check'],{PATH:''}));
     assert.equal(missing.status,'needs_tools'); assert.equal(missing.runtime,null);
     assert.equal(missing.read_only,true); assert.deepEqual(snapshot(f.root),before);
@@ -135,7 +135,7 @@ test('shared launcher forwards raw argv, stdin, cwd, stderr and exit without Pow
   try {
     const s=installation(f);
     write(join(s.skill,'echo.mjs'), `import {readFileSync} from 'node:fs'; console.log(JSON.stringify({args:process.argv.slice(2),input:readFileSync(0,'utf8'),cwd:process.cwd(),exe:process.execPath})); console.error('launcher fixture stderr'); process.exit(23);`);
-    rmSync(join(s.skill,'scripts/windows'),{recursive:true});
+    rmSync(join(s.skill,'scripts.powershell'),{recursive:true});
     const before=snapshot(toolsRoot(f.root));
     const args=['two words','','--help','tail\\','a & b','a^b','!literal!','two "quotes"'];
     const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
@@ -362,7 +362,7 @@ test('removed runtime setup commands fail without changing configuration or tool
       const result = s.invoke(['setup',name],{PATH:''});
       assert.equal(result.status,2);
       assert.equal(json(result).reason,'unknown_command');
-      assert.equal(existsSync(join(s.skill,'scripts/windows/setup-tools.ps1')),false);
+      assert.equal(existsSync(join(s.skill,'scripts.powershell/setup-tools.ps1')),false);
     }
     assert.deepEqual(snapshot(f.root),before,'Rejected commands must not read invalid config, install, or switch the launcher');
   } finally { f.dispose(); }
@@ -382,7 +382,7 @@ test('repository installation locates its own Git worktree independently of cwd'
       const skill = join(root,'.agents/skills/gidd');
       copySkill(skill);
       write(join(skill,'config.toml'),'schema_version = 1\n');
-      publishRepositoryEntry(root,join(skill,'scripts/gidd.mjs'));
+      publishRepositoryEntry(root,join(skill,'scripts.js/gidd.mjs'));
       const before = snapshot(root);
       const result = runRepositoryCommand(root,['doctor','--offline'],{cwd:f.root,env:{PATH:''}});
       assert.equal(result.status,1);

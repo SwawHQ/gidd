@@ -6,7 +6,7 @@ import { authorize } from './auth.mjs';
 import { toolsRoot } from './storage.mjs';
 import { requireRemoteTarget } from './repository-check.mjs';
 import { boundTools, boundExecutor } from './bindings.mjs';
-import { parseSpecArguments, specCommand } from './spec.mjs';
+import { parseSpecArguments, specCommand, specError } from './spec.mjs';
 
 export async function main(args, { boundRepository } = {}) {
   const route = (args.shift() || 'help').toLowerCase();
@@ -49,8 +49,9 @@ export async function main(args, { boundRepository } = {}) {
     schema = schemas[command];
     if (command === 'spec') {
       const result = await specCommand(repository, specOptions);
-      console.log(specOptions.json ? JSON.stringify(result.report) : result.text);
-      return result.exitCode ?? (result.report.status === 'ready' ? 0 : 1);
+      if (result.markdown !== undefined) process.stdout.write(result.markdown);
+      else console.log(JSON.stringify(result.report, null, 2));
+      return result.exitCode;
     }
     let report;
     if (command === 'doctor') report = await doctor(repository, { offline, fixedRepository: true });
@@ -71,6 +72,10 @@ export async function main(args, { boundRepository } = {}) {
     return ['ready','local_ready','checks_passed','checks_incomplete'].includes(report.status) ? 0 : 1;
   } catch (error) {
     const reason = /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : 'operation_failed';
+    if (command === 'spec') {
+      console.log(JSON.stringify(specError(boundRepository, undefined, reason), null, 2));
+      return 2;
+    }
     if (reason.startsWith('tool_binding')) console.error('Run gidd.pre.ensure.cmd --repo with the target directory to prepare tools and rebuild bindings.');
     const hint = configurationHint(reason); if (hint) console.error(hint);
     console.log(JSON.stringify({ schema, status: 'error', reason }));

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import { publishRepositoryEntry, runRepositoryCommand } from './support/repository.mjs';
 import { toolsRoot, assert, copySkill, existsSync, fixture, join, json, ok, run, write, mkdirSync, dirname, findGit } from './support/helpers.mjs';
-import { toolEnvironment } from '../.agents/skills/gidd/scripts/tools.mjs';
+import { toolEnvironment } from '../.agents/skills/gidd/scripts.js/tools.mjs';
 
 function createRepository(root) {
   const git = findGit();
@@ -73,7 +73,7 @@ live('official unified bootstrap, local commit clone fetch and gh Git discovery'
     invoke(['config','remote.origin.gh-resolved','base']);
     assert.equal(ok(run(gh.path,['repo','set-default','--view'],{env,cwd:source})).stdout.trim(),'example/gidd-fixture');
     copySkill(join(source,'.agents/skills/gidd'));
-    publishRepositoryEntry(source,join(source,'.agents/skills/gidd/scripts/gidd.mjs'));
+    publishRepositoryEntry(source,join(source,'.agents/skills/gidd/scripts.js/gidd.mjs'));
     const diagnosis=json(runRepositoryCommand(source,['doctor','--offline'],{env:{PATH:''}}));
     assert.equal(diagnosis.checks.find(item=>item.id==='tool.git').details.path,git.path);
     assert.equal(diagnosis.checks.find(item=>item.id==='folder.git.worktree').status,'ready');

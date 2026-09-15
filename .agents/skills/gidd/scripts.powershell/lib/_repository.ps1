@@ -71,8 +71,8 @@ function Get-GiddDesiredEntry {
     $fullEntry = (Get-Item -LiteralPath $Entry).FullName
     # Known repository layouts need no URI-based relative-path conversion.
     $target = if ($internal) {
-        if ([IO.Path]::GetDirectoryName([IO.Path]::GetDirectoryName($fullEntry)) -eq (Join-Path $internal '.agents/skills/gidd')) { 'scripts\gidd.mjs' }
-        else { '..\..\..\.claude\skills\gidd\scripts\gidd.mjs' }
+        if ([IO.Path]::GetDirectoryName([IO.Path]::GetDirectoryName($fullEntry)) -eq (Join-Path $internal '.agents/skills/gidd')) { 'scripts.js\gidd.mjs' }
+        else { '..\..\..\.claude\skills\gidd\scripts.js\gidd.mjs' }
     } else { $fullEntry }
     $spec = [ordered]@{schema='gidd.repository-entry/v1';entry=$target;runtime=$Runtime}
     $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(($spec | ConvertTo-Json -Compress)))

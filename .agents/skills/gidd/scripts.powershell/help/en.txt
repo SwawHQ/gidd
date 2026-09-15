@@ -12,6 +12,3 @@ GIDD prerequisites preparation (Windows x64 / PowerShell 5.1)
   gidd.pre.ensure --tools-only=node
   gidd.pre.ensure --tools-only=git --check  #Read-only check (using git as an example)
   gidd.pre.ensure --tools-only=git --force  #Download and set up a portable copy again (using git as an example)
-
-Preparation never reads or creates config.toml; internal modules own tool sources and version policy.
---repo checks only the local worktree and entry location. gidd.link doctor checks remote and account configuration.

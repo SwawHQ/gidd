@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import { symlinkSync, unlinkSync } from 'node:fs';
-import { managedToolValid } from '../.agents/skills/gidd/scripts/storage.mjs';
-import { findTool, toolEnvironment } from '../.agents/skills/gidd/scripts/tools.mjs';
-import { boundTools, boundExecutor, readBindings } from '../.agents/skills/gidd/scripts/bindings.mjs';
+import { managedToolValid } from '../.agents/skills/gidd/scripts.js/storage.mjs';
+import { findTool, toolEnvironment } from '../.agents/skills/gidd/scripts.js/tools.mjs';
+import { boundTools, boundExecutor, readBindings } from '../.agents/skills/gidd/scripts.js/bindings.mjs';
 import { prepare, diagnosis, toolsRoot, adapter as shellAdapter, assert, code, compile, dirname, existsSync, fixture, hash, installSpec, join, json, makeZip, mkdirSync, ok, ps, readFileSync, run, startAdapter as startShellAdapter, stub, until, write } from './support/helpers.mjs';
 
 test('gh launcher discovers bound Git with empty PATH and refreshes after Git rebinding', () => {
@@ -270,7 +270,7 @@ test(`setup ${engine}: install, integrity, interrupted publication, locks, prese
     ok(adapter(f.root,{action:'guide',root:tools}));
     write(join(tools,'INSTALLATION.md'),'old guide'); ok(adapter(f.root,{action:'guide',root:tools}));
     assert.equal(readFileSync(join(tools,'INSTALLATION.md'),'utf8'),
-      readFileSync(new URL('../.agents/skills/gidd/scripts/INSTALLATION.md',import.meta.url),'utf8'));
+      readFileSync(new URL('../.agents/skills/gidd/scripts.powershell/INSTALLATION.md',import.meta.url),'utf8'));
     assert.equal(json(ok(install(tools))).action,'installed'); assert.equal(valid(tools),true);
     assert.equal(existsSync(join(tools,'.cache/bun')),false,'Successful install must remove downloads and extraction');
     assert.equal(existsSync(join(tools,'.cache/install.lock')),false,'Finished installer releases its lock');
