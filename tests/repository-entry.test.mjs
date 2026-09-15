@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import { realpathSync, renameSync, statSync } from 'node:fs';
 import { assertInstallationRepository, checkRepositoryLink, publishRepositoryEntry } from './support/repository.mjs';
-import { inspectRepositoryEntry } from '../.agents/skills/gidd/scripts/repository-check.mjs';
+import { inspectRepositoryEntry } from '../.agents/skills/gidd/scripts.js/repository-check.mjs';
 import { adapter, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, readFileSync, readdirSync, rmSync, run, snapshot, stub, toolsRoot, write } from './support/helpers.mjs';
 
 const quote = value => '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';
@@ -24,7 +24,7 @@ function setup(f) {
   return { git, skill, invoke, create, ensure, link };
 }
 
-test('issue-direct lifecycle uses only the public preparation and repository commands', () => {
+test('issue-direct guidance uses only the public preparation and repository commands', () => {
   const f = fixture();
   try {
     const s = setup(f), target = s.create('issue-direct lifecycle');
@@ -38,17 +38,10 @@ test('issue-direct lifecycle uses only the public preparation and repository com
       ok(run(s.git,['-C',target,'config',key,value]));
     }
     assert.equal(json(ok(invoke(['doctor','--offline']))).status,'local_ready');
-    assert.equal(json(ok(invoke(['spec.current','--json']))).mode,'issue-direct');
-    const template = ok(invoke(['spec.current.issue','--lang','en'])).stdout;
-    const path = join(target,'issue draft.md'); write(path,template);
-    assert.notEqual(invoke(['spec.current.issue.check',path,'--json']).status,0);
-    write(path,template
-      .replace('Describe the problem and the expected outcome.','Use the repository command from another directory.')
-      .replace('List the changes to deliver and work explicitly excluded from this Issue.','Update the command entry and its regression tests.')
-      .replace('Verifiable outcome one','The generated command identifies its own repository.')
-      .replace('Verifiable outcome two','The command works with an empty PATH.')
-      .replace('Provide test commands or inspection steps and the expected results.','Run dev.cmd .test entry and expect every test to pass.'));
-    assert.equal(json(ok(invoke(['spec.current.issue.check',path,'--json']))).status,'passed');
+    assert.match(ok(invoke(['spec.current'])).stdout, /Prompt source: ` .+prompt\.en\.md `/);
+    const form = json(ok(invoke(['spec.current.issue','--lang','en']))).form;
+    assert.deepEqual(form.body.map(field => field.id), ['goal', 'scope', 'acceptance', 'validation', 'delivery']);
+    assert.match(ok(invoke(['spec.current'])).stdout, /spec\.issue-direct\.issue/);
     const config = readFileSync(join(target,'.agents/skills/gidd/config.toml'));
     write(s.link(target),'damaged entry');
     assert.notEqual(s.ensure(target,['--check']).status,0);
@@ -61,7 +54,7 @@ test('issue-direct lifecycle uses only the public preparation and repository com
 test('repository preparation runs entirely in PowerShell; generated commands run entirely in JS', () => {
   const f=fixture();
   try {
-    const s=setup(f), target=s.create('native preparation'), scripts=join(s.skill,'scripts'), bin=join(f.root,'bin');
+    const s=setup(f), target=s.create('native preparation'), scripts=join(s.skill,'scripts.js'), bin=join(f.root,'bin');
     // These runtimes only implement --version: attempting to run JS returns 90.
     for(const name of ['bun','node']) stub(join(f.root,'tool.exe'),join(bin,name+'.exe'));
     const originals=new Map();
@@ -80,7 +73,7 @@ test('repository preparation runs entirely in PowerShell; generated commands run
     // Bind the real test runtime, then remove every native implementation file.
     stub(process.execPath,join(bin,(process.versions.bun?'bun':'node')+'.exe'));
     ok(s.invoke(entry,['--repo',target,'--jsruntime='+(process.versions.bun?'bun':'node')],{env}));
-    const native=join(scripts,'windows');
+    const native=join(s.skill,'scripts.powershell');
     assert.ok(native.startsWith(f.root));rmSync(native,{recursive:true});
     assert.match(ok(s.invoke(s.link(target),['help','en'],{env:{PATH:''}})).stdout,/Check tools, repository and GitHub identity/);
     assert.equal(json(s.invoke(s.link(target),['doctor','--offline'],{env:{PATH:''}})).schema,'gidd.doctor/v1');
@@ -109,7 +102,7 @@ test('native preparation and JS agree on worktree ownership without remote prere
     ok(run(s.git,['-C',target,'remote','set-url','origin','https://github.com/Team/Repo.git']));
     ok(s.ensure(target));const link=s.link(target);
     const race=adapter(f.root,{action:'repository',operation:'publish',repositoryRoot:target,
-      entry:join(s.skill,'scripts/gidd.mjs'),runtime:process.versions.bun?'node':'bun',concurrentText:'concurrent edit'});
+      entry:join(s.skill,'scripts.js/gidd.mjs'),runtime:process.versions.bun?'node':'bun',concurrentText:'concurrent edit'});
     assert.equal(race.status,1);assert.match(race.stderr,/repository_entry_changed/);
     assert.equal(readFileSync(link,'utf8'),'concurrent edit');assert.equal(existsSync(link+'.lock'),false);
   } finally {f.dispose();}
@@ -136,7 +129,7 @@ test('repository ensure help works without tools or a repository and honors lang
     ]) {
       const output = ok(invoke(args, env));
       assert.equal(output.stderr, '');
-      assert.equal(output.stdout.trim(), readFileSync(join(skill, `scripts/help/pre-ensure/${language}.txt`), 'utf8').trim());
+      assert.equal(output.stdout.trim(), readFileSync(join(skill, `scripts.powershell/help/${language}.txt`), 'utf8').trim());
     }
     for (const [args, env, reason] of [
       [['help', 'fr'], {}, 'unsupported_help_language'],
@@ -164,11 +157,11 @@ test('repository installations reject other targets before preparation or native
   const f = fixture();
   try {
     const s = setup(f), target = s.create('owner-other');
-    publishRepositoryEntry(target, join(s.skill, 'scripts/gidd.mjs'));
+    publishRepositoryEntry(target, join(s.skill, 'scripts.js/gidd.mjs'));
     // All fixtures share the same remote: ownership belongs to the local worktree.
     for (const layout of ['.agents', '.claude']) {
       const owner = s.create('owner-' + layout), skill = join(owner, layout, 'skills/gidd'); copySkill(skill);
-      const entry = join(skill, 'gidd.pre.ensure.cmd'), source = join(skill, 'scripts/gidd.mjs');
+      const entry = join(skill, 'gidd.pre.ensure.cmd'), source = join(skill, 'scripts.js/gidd.mjs');
       const before = snapshot(f.root);
       for (const args of [[], ['--check'], ['--force']]) {
         const result = s.ensure(target, args, entry);
@@ -200,7 +193,7 @@ test('ambiguous Git-contained installations fail closed while help remains avail
       const skill = join(owner, location); copySkill(skill);
       // A Git-managed skill collection must not be mistaken for its parent repository.
       if (location === '.agents/skills/gidd') ok(run(s.git, ['-C', join(owner, '.agents'), 'init', '--quiet']));
-      const entry = join(skill, 'gidd.pre.ensure.cmd'), source = join(skill, 'scripts/gidd.mjs');
+      const entry = join(skill, 'gidd.pre.ensure.cmd'), source = join(skill, 'scripts.js/gidd.mjs');
       const before = snapshot(f.root);
       for (const repo of [owner, target]) {
         for (const extra of [[], ['--check']]) {
@@ -214,8 +207,8 @@ test('ambiguous Git-contained installations fail closed while help remains avail
       assert.match(ok(s.invoke(entry, ['help', 'en'], { env: { PATH: '' } })).stdout, /GIDD prerequisites preparation/);
       assert.deepEqual(snapshot(f.root), before);
     }
-    assert.equal(assertInstallationRepository(target, join(s.skill, 'scripts/gidd.mjs')), null);
-    assert.equal(publishRepositoryEntry(target, join(s.skill, 'scripts/gidd.mjs')).location, 'absolute');
+    assert.equal(assertInstallationRepository(target, join(s.skill, 'scripts.js/gidd.mjs')), null);
+    assert.equal(publishRepositoryEntry(target, join(s.skill, 'scripts.js/gidd.mjs')).location, 'absolute');
   } finally { f.dispose(); }
 });
 
@@ -263,7 +256,7 @@ test('repository check reports missing, healthy and damaged state without writes
     assert.equal(inspect().entry.reason, 'repository_entry_locked');
     rmSync(link + '.lock');
     const replacement = join(f.root, 'other skill'); copySkill(replacement);
-    publishRepositoryEntry(target, join(replacement, 'scripts/gidd.mjs'));
+    publishRepositoryEntry(target, join(replacement, 'scripts.js/gidd.mjs'));
     assert.equal(inspect().entry.reason, 'repository_entry_outdated');
     write(link, saved);
     write(join(toolsRoot(f.root), '.cache/previous-gh/pending.txt'), 'do not recover');
@@ -332,9 +325,9 @@ test('repository links repair generated contents and preserve target, arguments 
     assert.ok(second.tools.every(tool => tool.action === 'reused' && tool.binding_action === 'reused'));
     assert.deepEqual(snapshot(f.root), tree); assert.equal(statSync(link).mtimeMs, modified);
     const replacement = join(f.root, 'replacement skill'); copySkill(replacement);
-    assert.equal(publishRepositoryEntry(target, join(replacement, 'scripts/gidd.mjs')).action, 'updated');
+    assert.equal(publishRepositoryEntry(target, join(replacement, 'scripts.js/gidd.mjs')).action, 'updated');
     assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /Check tools, repository and GitHub identity/);
-    assert.equal(publishRepositoryEntry(target, join(s.skill, 'scripts/gidd.mjs')).action, 'updated');
+    assert.equal(publishRepositoryEntry(target, join(s.skill, 'scripts.js/gidd.mjs')).action, 'updated');
     assert.match(ok(s.invoke(link, ['help', 'zh'], { env: { PATH: '' } })).stdout, /显示中文帮助/);
     assert.match(ok(s.invoke(link, [])).stdout, /Check tools, repository and GitHub identity/);
     const other = s.create('other');
@@ -391,11 +384,11 @@ test('repository links repair generated contents and preserve target, arguments 
     assert.equal(json(s.ensure(target)).reason, 'repository_entry_occupied');
     assert.deepEqual(snapshot(f.root), occupied);
     rmSync(link, { recursive: true }); write(link, saved); write(link + '.lock', 'another writer');
-    assert.throws(() => publishRepositoryEntry(target, join(s.skill, 'scripts/gidd.mjs')), /repository_entry_locked/);
+    assert.throws(() => publishRepositoryEntry(target, join(s.skill, 'scripts.js/gidd.mjs')), /repository_entry_locked/);
     assert.equal(readFileSync(link, 'utf8'), saved); rmSync(link + '.lock');
     ok(run(s.git, ['-C', target, 'remote', 'set-url', 'origin', 'https://gitlab.com/Other/Repo']));
     ok(s.ensure(target)); assert.equal(readFileSync(link, 'utf8'), saved);
-    const dispatcher = join(s.skill, 'scripts/gidd.mjs');
+    const dispatcher = join(s.skill, 'scripts.js/gidd.mjs');
     write(dispatcher, `import {readFileSync} from 'node:fs'; export async function main(args, options) { console.log(JSON.stringify({args, options, linkEnvironment:Object.keys(process.env).filter(key=>key.startsWith('GIDD_LINK_')), input:readFileSync(0,'utf8')})); console.error('linked stderr'); return 23; }`);
     const args = ['two words', '', 'a & b', 'a^b', '!literal!', 'two "quotes"', 'tail\\', '--help'];
     const forwarded = s.invoke(link, args, { input: 'linked stdin', cwd: other });
@@ -409,7 +402,7 @@ test('repository links repair generated contents and preserve target, arguments 
     assert.equal(invalid.status, 2);
     assert.equal(json(invalid).reason, 'repository_entry_invalid');
     write(link, generated);
-    rmSync(join(s.skill, 'scripts/gidd.mjs'));
+    rmSync(join(s.skill, 'scripts.js/gidd.mjs'));
     assert.equal(json(s.invoke(link, ['help'])).status, 'error');
   } finally { f.dispose(); }
 });
@@ -435,7 +428,7 @@ test('repository-relative links survive moves and accept Git worktrees', { timeo
     const worktreeSkill = join(worktree, '.agents/skills/gidd'); copySkill(worktreeSkill);
     const worktreeEntry = join(worktreeSkill, 'gidd.pre.ensure.cmd');
     assert.equal(json(s.ensure(parent, ['--check'], worktreeEntry)).reason, 'installation_repository_mismatch');
-    assert.throws(() => publishRepositoryEntry(parent, join(worktreeSkill, 'scripts/gidd.mjs')), /installation_repository_mismatch/);
+    assert.throws(() => publishRepositoryEntry(parent, join(worktreeSkill, 'scripts.js/gidd.mjs')), /installation_repository_mismatch/);
     assert.equal(realpathSync.native(json(ok(s.ensure(worktree, [], worktreeEntry))).entry.target), realpathSync.native(worktree));
     const report = json(s.invoke(s.link(worktree), ['doctor', '--offline'])); assert.equal(report.folder, worktree);
     const nested = join(parent, 'nested'); mkdirSync(nested);

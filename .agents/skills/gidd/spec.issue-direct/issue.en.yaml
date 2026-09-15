@@ -1,0 +1,41 @@
+name: Development task (English)
+description: Record a development task using the issue-direct specification.
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      placeholder: Describe the problem and the expected outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      placeholder: List the changes to deliver and work explicitly excluded from this Issue.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Replace the examples with verifiable outcomes, using a Markdown checkbox for each item.
+      value: |-
+        - [ ] Verifiable outcome one
+        - [ ] Verifiable outcome two
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation
+      placeholder: Provide test commands or inspection steps and the expected results.
+    validations:
+      required: true
+  - type: textarea
+    id: delivery
+    attributes:
+      label: Delivery record
+      description: After delivery, record the target branch, remote commit identifiers, validation results and remaining work. Close only after all acceptance criteria are satisfied.
+    validations:
+      required: false

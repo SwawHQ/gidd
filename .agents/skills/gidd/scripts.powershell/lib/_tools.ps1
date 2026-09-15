@@ -67,7 +67,7 @@ function Find-Tool {
 
 function Invoke-GiddRuntimeCompatibility {
     param([string]$Executable, [ValidateSet('bun','node')][string]$Name)
-    $policy = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../../runtime-policy.json')) | ConvertFrom-Json
+    $policy = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../runtime-policy.json')) | ConvertFrom-Json
     if ($policy.schema -ne 'gidd.runtime-policy/v1') { throw 'invalid_runtime_policy' }
     $minimum = $policy.minimums.$Name
     if ($minimum -cnotmatch '^\d+\.\d+\.\d+$') { throw 'invalid_runtime_policy' }

@@ -1,7 +1,7 @@
 // Test adapters call the native implementation, never a second JS generator.
 import { adapter, code, join, json, run } from './helpers.mjs';
 
-function invoke(operation, repository, entry = join(code,'../gidd.mjs')) {
+function invoke(operation, repository, entry = join(code,'../scripts.js/gidd.mjs')) {
   const result = adapter(repository,{action:'repository',operation,repositoryRoot:repository,entry,runtime:process.versions.bun?'bun':'node'});
   if (result.status !== 0) throw new Error(result.stderr.trim());
   return json(result);

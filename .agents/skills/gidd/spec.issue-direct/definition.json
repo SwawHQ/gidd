@@ -1,9 +1,0 @@
-{
-  "schema": "gidd.spec-definition/v1",
-  "id": "issue-direct",
-  "version": 1,
-  "title": { "zh-CN": "Issue + 直接交付", "en": "Issue + direct delivery" },
-  "prompts": { "zh-CN": "prompt.zh-CN.md", "en": "prompt.en.md" },
-  "templates": { "issue": { "zh-CN": "issue.zh-CN.md", "en": "issue.en.md" } },
-  "checks": { "issue": "issue.json" }
-}

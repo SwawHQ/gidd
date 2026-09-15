@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import { realpathSync, renameSync } from 'node:fs';
-import { configure } from '../.agents/skills/gidd/scripts/config.mjs';
-import { parseConfiguration } from '../.agents/skills/gidd/scripts/storage.mjs';
-import { specCommand, parseSpecArguments } from '../.agents/skills/gidd/scripts/spec.mjs';
+import { configure } from '../.agents/skills/gidd/scripts.js/config.mjs';
+import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/storage.mjs';
+import { specCommand, parseSpecArguments } from '../.agents/skills/gidd/scripts.js/spec.mjs';
 import { publishRepositoryEntry, runRepositoryCommand } from './support/repository.mjs';
-import { loadSpec } from '../.agents/skills/gidd/scripts/specs.mjs';
-import { checkIssueMarkdown } from '../.agents/skills/gidd/scripts/issue-check.mjs';
+import { loadSpec } from '../.agents/skills/gidd/scripts.js/specs.mjs';
+import { parseSpecYaml, validateIssueForms } from '../.agents/skills/gidd/scripts.js/spec-data.mjs';
+import { stringify as stringifyYaml } from '../.agents/skills/gidd/scripts.js/vendor/yaml.mjs';
 import { adapter, assert, bindFixture, compile, copySkill, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok,
-  readFileSync, rmSync, run, snapshot, stub, toolsRoot, write } from './support/helpers.mjs';
+  readFileSync, readdirSync, repo, rmSync, run, snapshot, stub, toolsRoot, write } from './support/helpers.mjs';
 
 const chosen = 'schema_version = 1\n[spec]\nmode = "issue-direct"\n';
 const github = '[repo]\nremote.url = "https://github.com/owner/repo"\nremote.name = "origin"\n';
@@ -18,15 +19,14 @@ function installation(f, config = chosen) {
   copySkill(skill); mkdirSync(join(target, '.git'), { recursive: true }); mkdirSync(elsewhere);
   if (config !== null) write(configPath(target), config);
   ok(adapter(f.root,{action:'bootstrap',repositoryRoot:target,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
-  publishRepositoryEntry(target,join(skill,'scripts/gidd.mjs'));
+  publishRepositoryEntry(target,join(skill,'scripts.js/gidd.mjs'));
   const invoke = (args, options = {}) => runRepositoryCommand(target, args,
     { cwd: elsewhere, ...options, env: { PATH: '', GIDD_LANG: 'en', ...options.env } });
-  const current = (...args) => invoke(['spec.current', '--json', ...args]);
+  const current = (...args) => invoke(['spec.current', ...args]);
   const diagnose = () => json(invoke(['doctor', '--offline']));
   return { skill, target, invoke, current, diagnose };
 }
 const check = (report, id) => report.checks.find(item => item.id === id);
-const validIssue = '## Goal\nShow the selected spec.\n\n## Scope\nUpdate the CLI and its help.\n\n## Acceptance criteria\n- [ ] Listing prints the installed spec names.\n\n## Validation\n```powershell\ndev.cmd .test spec\n```\n\n## Delivery record\n';
 
 test('spec mode editing preserves text while preparation ignores business configuration', () => {
   const f = fixture();
@@ -67,21 +67,26 @@ test('doctor and current agree on absent, missing and unsupported modes and neve
     for (const text of [null, 'schema_version = 1\n', 'schema_version = 1\n[spec]\nmode = "issue-pr"\n']) {
       if (text !== null) write(configPath(s.target), text);
       const before = snapshot(f.root), result = s.current(), report = json(result);
-      assert.equal(result.status, 1); assert.equal(report.mode, undefined);
-      assert.equal(report.checks.length, 1);
-      const mode = check(report, 'config.spec.mode');
-      assert.equal(mode.reason, text?.includes('issue-pr') ? 'spec_mode_unsupported' : 'spec_mode_missing');
-      assert.deepEqual(mode.details.available_modes, ['issue-direct']);
-      assert.deepEqual(mode.commands[0].args, ['config', 'set', 'spec.mode', 'issue-direct']);
+      assert.equal(result.status, 1);
+      assert.equal(report.scope, s.target);
+      assert.equal(report.mode, text?.includes('issue-pr') ? 'issue-pr' : undefined);
+      assert.equal(report.checks, undefined);
+      assert.equal(report.error, text?.includes('issue-pr') ? 'spec_mode_unsupported' : 'spec_mode_missing');
+      assert.match(report.hint, /doctor/);
       const diagnosis = s.diagnose();
-      if (text !== null) assert.equal(check(diagnosis, 'config.spec.mode').reason, mode.reason);
+      if (text !== null) {
+        const mode = check(diagnosis, 'config.spec.mode');
+        assert.equal(mode.reason, report.error);
+        assert.deepEqual(mode.details.available_modes, ['issue-direct']);
+        assert.deepEqual(mode.commands[0].args, ['config', 'set', 'spec.mode', 'issue-direct']);
+      }
       else assert.equal(check(diagnosis, 'config.spec.mode').blocked_by, 'config.toml');
       assert.deepEqual(snapshot(f.root), before);
     }
     configure(s.target, 'set', 'spec.mode', 'issue-direct');
     assert.equal(check(s.diagnose(), 'config.spec.mode').status, 'ready');
-    assert.deepEqual(check(s.diagnose(), 'config.spec.mode').details, { configured: 'issue-direct', version: 1 });
-    assert.equal(json(ok(s.current())).mode, 'issue-direct');
+    assert.deepEqual(check(s.diagnose(), 'config.spec.mode').details, { configured: 'issue-direct' });
+    assert.match(ok(s.current()).stdout, /Prompt source: ` .+prompt\.en\.md `/);
   } finally { f.dispose(); }
 });
 
@@ -102,11 +107,10 @@ test('successful offline doctor guarantees current spec and localized templates 
       assert.equal(diagnosis.status, 'local_ready');
       assert.equal(check(diagnosis, 'config.spec.mode').status, 'ready');
       for (const lang of ['en', 'zh']) {
-        const report = json(ok(s.current('--lang', lang)));
-        assert.equal(report.status, 'ready');
-        assert.ok(report.instructions.trim());
-        assert.ok(ok(s.invoke(['spec.current', '--lang', lang])).stdout.trim());
-        assert.ok(ok(s.invoke(['spec.current.issue', '--lang', lang])).stdout.trim());
+        const result = ok(s.current('--lang', lang));
+        assert.match(result.stdout, /issue-direct/);
+        assert.match(result.stdout, /## 1\./);
+        assert.ok(json(ok(s.invoke(['spec.current.issue', '--lang', lang]))).form.body.length);
       }
       assert.deepEqual(snapshot(f.root), before);
     };
@@ -123,30 +127,36 @@ test('successful offline doctor guarantees current spec and localized templates 
   } finally { f.dispose(); }
 });
 
-test('list and named specs work without selection; current and templates are localized and read-only', () => {
+test('spec readers emit scoped Markdown guidance and preserve native form JSON', () => {
   const f = fixture();
   try {
     const s = installation(f), before = snapshot(f.root);
-    for (const [lang, prompt, template] of [['zh', /不要求开发分支、PR 或独立审批/, /## 验收条件/],
-      ['en', /independent approval are not required/, /## Acceptance criteria/]]) {
-      const report = json(ok(s.current('--lang', lang)));
-      assert.equal(report.read_only, true); assert.equal(report.target.branch, null);
-      assert.match(report.instructions, prompt);
-      assert.equal(Object.hasOwn(report, 'helpers'), false);
-      assert.deepEqual(json(ok(s.invoke(['spec', '--json', '--lang', lang]))).names, ['issue-direct']);
-      assert.match(ok(s.invoke(['spec.current', '--lang', lang])).stdout, prompt);
-      assert.match(ok(s.invoke(['spec.current.issue', '--lang', lang])).stdout, template);
-      assert.match(json(ok(s.invoke(['spec.current.issue', '--json', '--lang', lang]))).content, template);
+    for (const [lang, locale] of [['zh', 'zh-CN'], ['en', 'en']]) {
+      const prompt = readFileSync(join(s.skill, `spec.issue-direct/prompt.${locale}.md`), 'utf8');
+      const form = parseSpecYaml(readFileSync(join(s.skill, `spec.issue-direct/issue.${locale}.yaml`), 'utf8'));
+      for (const route of ['spec.current', 'spec.issue-direct']) {
+        const result = ok(s.invoke([route, '--lang', lang]));
+        const header = (lang === 'zh' ? '适用范围' : 'Scope') + ': ` ' + s.target + ' `  \n' +
+          (lang === 'zh' ? '提示来源' : 'Prompt source') + ': ` ' + realpathSync.native(join(s.skill, `spec.issue-direct/prompt.${locale}.md`)) + ' `\n\n';
+        assert.equal(result.stdout, header + prompt);
+        assert.equal(result.stderr, '');
+      }
+      for (const route of ['spec.current.issue', 'spec.issue-direct.issue']) {
+        const result = ok(s.invoke([route, '--lang', lang])), report = json(result);
+        assert.deepEqual(report, { scope: s.target, mode: 'issue-direct', form });
+        assert.equal(result.stdout.trim(), JSON.stringify(report, null, 2));
+        assert.equal(result.stderr, '');
+      }
     }
-    assert.equal(ok(s.invoke(['spec'])).stdout.trim(), 'issue-direct');
-    assert.match(ok(s.invoke(['spec.current'], { env: { GIDD_LANG: 'zh-CN' } })).stdout, /规范/);
+    assert.deepEqual(json(ok(s.invoke(['spec']))), { scope: s.target, names: ['issue-direct'] });
+    assert.match(ok(s.invoke(['spec.current'], { env: { GIDD_LANG: 'zh-CN' } })).stdout, /关联的 Issue/);
     assert.deepEqual(snapshot(f.root), before);
     for (const text of ['', 'schema_version = 1\n', 'schema_version = 1\n[spec]\nmode = "unavailable"\n']) {
       write(configPath(s.target), text);
       const saved = snapshot(f.root);
-      assert.deepEqual(json(ok(s.invoke(['spec', '--json']))).names, ['issue-direct']);
-      assert.equal(json(ok(s.invoke(['spec.issue-direct', '--json']))).mode, 'issue-direct');
-      assert.match(ok(s.invoke(['spec.issue-direct.issue'])).stdout, /## Acceptance criteria/);
+      assert.deepEqual(json(ok(s.invoke(['spec']))).names, ['issue-direct']);
+      assert.match(ok(s.invoke(['spec.issue-direct'])).stdout, /Prompt source: ` .+prompt\.en\.md `/);
+      assert.equal(json(ok(s.invoke(['spec.issue-direct.issue']))).form.body[2].attributes.label, 'Acceptance criteria');
       assert.deepEqual(snapshot(f.root), saved);
     }
   } finally { f.dispose(); }
@@ -156,27 +166,39 @@ test('unknown arguments and retired names are rejected without changing files', 
   const f = fixture();
   try {
     const s = installation(f), before = snapshot(f.root);
-    for (const args of [['unknown'], ['current', 'extra'], ['current', '--json', '--json'], ['current', '--lang'],
-      ['--json', '--json'], ['--lang'], ['--lang', 'fr'], ['--unknown'], ['--json', 'current'],
+    for (const route of ['spec', 'spec.current', 'spec.issue-direct', 'spec.current.issue',
+      'spec.issue-direct.issue']) {
+      const args = ['--json'];
+      const result = s.invoke([route, ...args]);
+      assert.equal(result.status, 2);
+      assert.deepEqual(Object.keys(json(result)), ['scope', 'error', 'hint']);
+      assert.equal(json(result).scope, s.target);
+      assert.equal(json(result).error, 'invalid_arguments');
+      assert.equal(result.stdout.trim(), JSON.stringify(json(result), null, 2));
+    }
+    for (const args of [['unknown'], ['current', 'extra'], ['current'], ['current', '--lang'],
+      ['--json'], ['--lang'], ['--lang', 'fr'], ['--unknown'], ['--json', 'current'],
       ['current', '--lang', 'fr'], ['current', '--lang', 'en', '--lang', 'zh'], ['template'], ['template', '../secret']]) {
       const result = s.invoke(['spec', ...args]);
       assert.equal(result.status, 2, result.stdout + result.stderr);
-      assert.equal(json(result).schema, 'gidd.spec/v1');
+      assert.equal(json(result).scope, s.target);
+      assert.ok(json(result).error);
     }
     for (const [args, reason] of [
       [['workflow', 'current'], 'unknown_command'],
       [['config', 'set', 'workflow.mode', 'issue-direct'], 'config_unknown_key'],
-      [['spec.current.issue.check'], 'issue_source_required'],
+      [['spec.current.issue.check'], 'invalid_spec_route'],
       [['spec.unknown'], 'spec_mode_unsupported'],
       [['spec.current.issue.check.extra'], 'invalid_spec_route'],
       [['spec..issue'], 'invalid_spec_route'],
       [['spec.current.pr'], 'invalid_spec_route'],
       [['spec.current', '--lang', 'fr'], 'unsupported_help_language'],
-      [['spec.current.issue.check', 'a.md', 'b.md'], 'invalid_arguments'],
+      [['spec.current.issue.check', 'a.md', 'b.md'], 'invalid_spec_route'],
+      [['spec.issue-direct.issue.check', '123'], 'invalid_spec_route'],
     ]) {
-      const result = s.invoke([...args, ...(args[0].startsWith('spec.') ? ['--json'] : [])]);
+      const result = s.invoke(args);
       assert.equal(result.status, 2);
-      assert.equal(json(result).reason, reason);
+      assert.equal(json(result).error ?? json(result).reason, reason);
     }
     assert.throws(() => parseConfiguration('schema_version = 1\n[workflow]\nmode = "issue-direct"\n'), /config_unsupported_syntax_or_field/);
     assert.deepEqual(snapshot(f.root), before);
@@ -188,18 +210,22 @@ test('resource failures require repair and cannot silently fall back to another 
   try {
     const s = installation(f), root = join(s.skill, 'spec.issue-direct');
     const path = join(root, 'prompt.en.md'), saved = readFileSync(path, 'utf8');
-    rmSync(path);
-    assert.equal(check(s.diagnose(), 'config.spec.mode').reason, 'spec_resources_missing');
-    assert.equal(check(json(s.current()), 'config.spec.mode').reason, 'spec_resources_missing');
-    write(path, saved);
-    const definitionPath = join(root, 'definition.json'), original = readFileSync(definitionPath, 'utf8');
-    for (const change of [d => { d.version = 2; },
-      d => { d.prompts.en = '../outside.md'; }, d => { d.id = 'issue-pr'; }, d => { delete d.checks; }]) {
-      const definition = JSON.parse(original); change(definition); write(definitionPath, JSON.stringify(definition));
+    for (const name of ['issue.en.yaml', 'issue.zh-CN.yaml', 'prompt.en.md', 'prompt.zh-CN.md']) {
+      const resourcePath = join(root, name), content = readFileSync(resourcePath);
+      rmSync(resourcePath);
+      assert.equal(check(s.diagnose(), 'config.spec.mode').reason, 'spec_resources_missing', name);
+      assert.equal(json(s.current()).error, 'spec_resources_missing', name);
+      write(resourcePath, content);
+    }
+    const resourcePath = join(root, 'issue.zh-CN.yaml'), original = readFileSync(resourcePath, 'utf8');
+    for (const change of [form => { form.name = ''; }, form => { form.body = []; },
+      form => { form.description = []; }, form => { form.body[1].id = form.body[0].id; }]) {
+      const form = parseSpecYaml(original); change(form); write(resourcePath, stringifyYaml(form));
       const before = snapshot(f.root), result = s.current();
       assert.equal(result.status, 1);
-      const resource = check(json(result), 'config.spec.mode');
-      assert.equal(json(result).checks.length, 1);
+      const resource = check(s.diagnose(), 'config.spec.mode');
+      assert.equal(json(result).checks, undefined);
+      assert.equal(json(result).error, resource.reason);
       assert.equal(resource.status, 'invalid');
       assert.equal(resource.details.configured, 'issue-direct');
       assert.equal(realpathSync.native(resource.details.path), realpathSync.native(root));
@@ -208,45 +234,39 @@ test('resource failures require repair and cannot silently fall back to another 
       assert.equal(check(s.diagnose(), 'config.spec.mode').reason, resource.reason);
       assert.deepEqual(snapshot(f.root), before);
     }
-    write(definitionPath, original); write(path, '');
-    assert.equal(check(json(s.current()), 'config.spec.mode').reason, 'spec_resources_invalid');
+    write(resourcePath, original); write(path, '');
+    assert.equal(json(s.current()).error, 'spec_resources_invalid');
     write(path, saved);
-    assert.equal(json(ok(s.current())).mode, 'issue-direct');
+    assert.match(ok(s.current()).stdout, /Prompt source: ` .+prompt\.en\.md `/);
     // Tool repair understands the configuration even if spec assets are absent.
     renameSync(root, root + '.saved');
     ok(adapter(f.root, { action: 'configuration', repositoryRoot: s.target }, { env: { PATH: '' } }));
   } finally { f.dispose(); }
 });
 
-test('default branch comes only from a local remote HEAD and spec output contains no command helpers', async () => {
+test('spec guidance reads resources without probing tools or the remote default branch', async () => {
   const f = fixture();
   try {
     const s = installation(f, chosen + github), git = findGit();
     write(join(toolsRoot(f.root), 'tool-bindings.json'), JSON.stringify({ schema: 'gidd.tool-bindings/v1', platform: 'windows-x64',
       tools: { git: { path: git, source: 'path', version: '2.49.0' } } }));
-    const before = snapshot(f.root), calls = [];
-    const result = await specCommand(s.target, parseSpecArguments('spec.current', [ '--lang', 'zh']), {
-      execute: async (exe, args) => {
-        calls.push({ exe, args });
-        assert.equal(exe, git); assert.deepEqual(args, ['-C', s.target, 'symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD']);
-        return { ok: true, text: 'refs/remotes/origin/trunk' };
-      },
-    });
-    assert.equal(calls.length, 1);
-    assert.deepEqual(result.report.target, { branch: 'trunk', source: 'local_remote_head', remote_verified: false });
-    assert.equal(Object.hasOwn(result.report, 'helpers'), false);
-    assert.doesNotMatch(result.text, /helper|gh\.exe|required_inputs/i);
-    assert.match(result.text, /本地远程 HEAD 记录，未联网确认/);
+    const before = snapshot(f.root);
+    for (const route of ['spec.current', 'spec.issue-direct', 'spec.current.issue', 'spec.issue-direct.issue']) {
+      const result = specCommand(s.target, parseSpecArguments(route, ['--lang', 'zh']));
+      assert.equal(result.exitCode, 0);
+      if (route.endsWith('.issue')) {
+        assert.equal(result.report.scope, s.target);
+        assert.equal(Object.hasOwn(result.report, 'checks'), false);
+      } else {
+        assert.ok(result.markdown.includes(s.target));
+        assert.ok(result.markdown.includes('## 1.'));
+      }
+    }
     assert.deepEqual(snapshot(f.root), before);
-    const unknown = await specCommand(s.target, parseSpecArguments('spec.current', []), {
-      execute: async () => ({ ok: false, text: '' }),
-    });
-    assert.equal(unknown.report.target.branch, null);
-    const broken = await specCommand(s.target, parseSpecArguments('spec.current', []), {
-      execute: async () => ({ ok: false, reason: 'process_start_failed', text: '' }),
-    });
-    assert.equal(broken.report.status, 'ready', 'A broken Git executable must not hide the spec guidance');
-    assert.equal(broken.report.target.branch, null);
+    write(join(toolsRoot(f.root), 'tool-bindings.json'), 'broken bindings');
+    const result = await specCommand(s.target, parseSpecArguments('spec.current', []));
+    assert.equal(result.exitCode, 0, 'Broken tools must not hide resource-only guidance');
+    assert.match(result.markdown, /## 1\./);
   } finally { f.dispose(); }
 });
 
@@ -254,163 +274,135 @@ test('generated repository link dispatches spec and template commands from any c
   const f = fixture();
   try {
     const s = installation(f);
-    const entry = publishRepositoryEntry(s.target, join(s.skill, 'scripts/gidd.mjs')).path;
+    const entry = publishRepositoryEntry(s.target, join(s.skill, 'scripts.js/gidd.mjs')).path;
     const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
     const invoke = args => run(cmd, ['/d', '/s', '/c', `""${entry}" ${args}"`], {
       windowsVerbatimArguments: true, cwd: f.root, env: { PATH: '', GIDD_LANG: 'en', GIT_DIR: join(f.root, 'unrelated.git') },
     });
-    write(join(f.root, 'issue draft.md'), validIssue);
-    const before = snapshot(f.root), report = json(ok(invoke('spec.current --json')));
-    assert.deepEqual(json(ok(invoke('spec --json'))).names, ['issue-direct']);
-    assert.match(ok(invoke('spec.current')).stdout, /Spec/);
-    assert.equal(realpathSync.native(report.repository), realpathSync.native(s.target));
-    assert.equal(Object.hasOwn(report, 'helpers'), false);
-    assert.match(ok(invoke('spec.current.issue')).stdout, /## Acceptance criteria/);
-    assert.match(ok(invoke('spec.issue-direct.issue')).stdout, /## Acceptance criteria/);
-    assert.equal(json(ok(invoke('spec.current.issue.check "issue draft.md" --json'))).status, 'passed');
+    const before = snapshot(f.root), result = ok(invoke('spec.current'));
+    assert.deepEqual(json(ok(invoke('spec'))).names, ['issue-direct']);
+    const scope = /^Scope: ` (.+) ` {2}\r?$/m.exec(result.stdout)?.[1];
+    assert.ok(scope, result.stdout);
+    assert.equal(realpathSync.native(scope), realpathSync.native(s.target));
+    assert.match(result.stdout, /Prompt source: ` .+prompt\.en\.md `/);
+    assert.match(result.stdout, /## 1\./);
+    assert.equal(json(ok(invoke('spec.current.issue'))).form.body[2].attributes.label, 'Acceptance criteria');
+    assert.equal(json(ok(invoke('spec.issue-direct.issue'))).form.body[2].attributes.label, 'Acceptance criteria');
     assert.equal(json(invoke('spec.current --repository elsewhere')).reason, 'repository_override_forbidden');
     assert.equal(json(invoke('spec --repository elsewhere')).reason, 'repository_override_forbidden');
     assert.deepEqual(snapshot(f.root), before);
   } finally { f.dispose(); }
 });
 
-test('Issue body checks support both templates and distinguish placeholders, empty content and examples', () => {
-  const spec = loadSpec('issue-direct');
-  const errors = body => checkIssueMarkdown(body, spec.issueRules).filter(item => item.status === 'failed');
-  assert.deepEqual(errors(validIssue), []);
-  assert.deepEqual(errors(validIssue.replace('[ ]', '[x]')), []);
-  for (const marker of ['- [ ]\t', '- [X]  ', '1. [x] ', '* [\t] ']) {
-    assert.deepEqual(errors(validIssue.replace('- [ ] ', marker)), [], marker);
-  }
-  for (const marker of ['- [ ]', '- [x]', '- [X]']) {
-    assert.equal(errors(validIssue.replace('- [ ] ', marker))[0].reason, 'acceptance_items_missing', marker);
-  }
-  assert.deepEqual(errors(validIssue.replace('## Goal', 'Goal\n----')), []);
-  const zh = validIssue.replace('## Goal', '## 目标').replace('## Scope', '## 范围')
-    .replace('## Acceptance criteria', '## 验收条件').replace('## Validation', '## 验证方式').replace('## Delivery record', '## 完成记录');
-  assert.deepEqual(errors(zh), []);
-  for (const template of Object.values(spec.templates)) {
-    assert.equal(errors(template).filter(item => item.reason === 'placeholder_remaining').length, 4);
-  }
-  assert.equal(errors('').filter(item => item.reason === 'section_missing').length, 4);
-  for (const example of ['```md\n' + validIssue + '\n```', '~~~md\n' + validIssue + '\n~~~',
-    validIssue.split('\n').map(line => '> ' + line).join('\n'), '<!--\n' + validIssue + '\n-->',
-    validIssue.split('\n').map(line => '    ' + line).join('\n')]) {
-    assert.ok(errors(example).some(item => item.reason === 'section_missing'));
-  }
-  assert.ok(errors('<div>\n' + validIssue.replaceAll('\n\n', '\n').replace(/```[\s\S]*?```/, 'Run the tests.') + '\n</div>').some(item => item.reason === 'section_missing'));
-  const noTasks = validIssue.replace('- [ ] Listing prints the installed spec names.', '```md\n- [ ] Example only\n```');
-  assert.equal(errors(noTasks)[0].reason, 'acceptance_items_missing');
-  assert.equal(errors(validIssue.replace('Show the selected spec.', '<!-- hidden -->'))[0].reason, 'section_empty');
-  assert.equal(errors(validIssue.replace('Show the selected spec.', 'TODO'))[0].line, 2);
-  assert.equal(errors(validIssue.replace('Show the selected spec.', '- [TODO](https://example.test)'))[0].reason, 'placeholder_remaining');
-  assert.ok(errors(validIssue.replace('Listing prints the installed spec names.', '<span></span>')).length);
-  for (const marker of ['[', '<']) assert.equal(errors(validIssue.replace('Show the selected spec.', marker.repeat(30000)))[0].reason, 'section_empty');
-  assert.equal(errors(validIssue + '\n## 目标\nAnother goal\n')[0].reason, 'section_duplicate');
-});
-
-test('local Issue checks resolve relative paths from cwd and return distinct validation and reading exit codes', () => {
-  const f = fixture();
-  try {
-    const s = installation(f), path = join(f.root, 'draft issue.md');
-    write(path, validIssue);
-    const before = snapshot(f.root);
-    const valid = s.invoke(['spec.current.issue.check', '../draft issue.md', '--json']);
-    assert.equal(valid.status, 0);
-    assert.equal(json(valid).status, 'passed');
-    assert.equal(json(valid).scope, 'issue_body');
-    assert.equal(json(valid).source.path, path);
-    assert.equal(json(valid).read_only, true);
-    assert.deepEqual(snapshot(f.root), before);
-    write(path, validIssue.replace('- [ ] ', '- [ ]'));
-    const malformed = s.invoke(['spec.current.issue.check', path, '--json']);
-    assert.equal(malformed.status, 1);
-    assert.ok(json(malformed).checks.some(item => item.reason === 'acceptance_items_missing'));
-    write(path, loadSpec('issue-direct').templates.en);
-    const invalid = s.invoke(['spec.issue-direct.issue.check', path, '--json']);
-    assert.equal(invalid.status, 1); assert.equal(json(invalid).status, 'failed');
-    assert.ok(json(invalid).checks.some(item => item.line && item.hint));
-    for (const source of ['missing.md', s.target, '#0', '#bad', '999999999999999999999']) {
-      const result = s.invoke(['spec.current.issue.check', source, '--json']);
-      assert.equal(result.status, 2, source); assert.equal(json(result).status, 'error');
-    }
-    write(path, Buffer.from([0xff]));
-    assert.equal(json(s.invoke(['spec.current.issue.check', path, '--json'])).reason, 'issue_source_invalid_utf8');
-    write(path, Buffer.alloc(1024 * 1024 + 1));
-    assert.equal(json(s.invoke(['spec.current.issue.check', path, '--json'])).reason, 'issue_source_too_large');
-    write(path, validIssue); write(configPath(s.target), 'broken configuration');
-    assert.equal(s.invoke(['spec.issue-direct.issue.check', path]).status, 0, 'Named local checks do not depend on current selection or GitHub');
-    assert.equal(s.invoke(['spec.current.issue.check', path]).status, 2);
-  } finally { f.dispose(); }
-});
-
-test('rule resources are validated by doctor and template structure stays consistent with rules', () => {
+test('doctor validates both native forms and follows edited labels and placeholders', () => {
   const f = fixture();
   try {
     const s = installation(f), root = join(s.skill, 'spec.issue-direct');
-    const rulesPath = join(root, 'issue.json'), original = readFileSync(rulesPath, 'utf8');
-    rmSync(rulesPath);
+    const path = join(root, 'issue.en.yaml'), original = readFileSync(path, 'utf8');
+    rmSync(path);
     assert.equal(check(s.diagnose(), 'config.spec.mode').reason, 'spec_resources_missing');
-    for (const change of [rules => { rules.sections[0].required = 'yes'; },
-      rules => { rules.sections[1].id = rules.sections[0].id; },
-      rules => { rules.sections[0].headings.en = 'Scope'; }, rules => { rules.sections[2].min_task_items = -1; },
-      rules => { rules.sections[0].requiredd = true; }]) {
-      const rules = JSON.parse(original); change(rules); write(rulesPath, JSON.stringify(rules));
+    for (const change of [form => { form.body[0].validations.required = 'yes'; },
+      form => { form.body[1].id = form.body[0].id; }, form => { form.body[0].attributes.label = 'Scope'; },
+      form => { form.body[2].min_task_items = -1; }, form => { form.body[0].validations.requiredd = true; },
+      form => { form.body.reverse(); }]) {
+      const form = parseSpecYaml(original); change(form); write(path, stringifyYaml(form));
       assert.equal(check(s.diagnose(), 'config.spec.mode').reason, 'spec_resources_invalid');
     }
-    write(rulesPath, original);
-    write(join(root, 'issue.en.md'), '## Goal\nOnly one section');
-    assert.equal(check(s.diagnose(), 'config.spec.mode').reason, 'spec_resources_invalid');
+    const updated = parseSpecYaml(original);
+    updated.body[0].attributes.label = 'Expected outcome';
+    updated.body[0].attributes.placeholder = 'Describe the new expected outcome.';
+    write(path, stringifyYaml(updated));
+    assert.equal(check(s.diagnose(), 'config.spec.mode').status, 'ready');
+    const form = json(ok(s.invoke(['spec.current.issue', '--lang', 'en']))).form;
+    assert.deepEqual(form, updated);
   } finally { f.dispose(); }
 });
 
-test('GitHub Issue checks verify repository and identity, read only, and share the local body validator', async () => {
+test('native YAML forms and localized workflow instructions preserve their structure', () => {
+  const root = join(repo, '.agents/skills/gidd/spec.issue-direct');
+  assert.deepEqual(readdirSync(root).sort(), ['issue.en.yaml', 'issue.zh-CN.yaml', 'prompt.en.md', 'prompt.zh-CN.md']);
+  const spec = loadSpec('issue-direct'), { issueForms } = spec;
+  assert.deepEqual(issueForms.en.body.map(field => field.id), ['goal', 'scope', 'acceptance', 'validation', 'delivery']);
+  for (const lang of ['en', 'zh-CN']) {
+    const form = issueForms[lang];
+    assert.deepEqual(form, parseSpecYaml(readFileSync(join(root, 'issue.' + lang + '.yaml'), 'utf8')));
+    assert.equal(form.body.length, 5);
+    assert.equal(form.body[2].type, 'textarea');
+    assert.ok(form.body[0].attributes.placeholder);
+    assert.ok(form.body.at(-1).attributes.description);
+    assert.equal(form.body[2].attributes.value.split('\n').length, 2);
+    const prompt = readFileSync(join(root, 'prompt.' + lang + '.md'), 'utf8');
+    assert.equal(spec.prompts[lang].content, prompt);
+    assert.equal(realpathSync.native(spec.prompts[lang].path), realpathSync.native(join(root, 'prompt.' + lang + '.md')));
+    assert.match(prompt, /^# /);
+    assert.match(prompt, /gidd\.link spec\.issue-direct\.issue/);
+  }
+  const yaml = '# comment\nurl: https://example.test/a#b\ntext: |-\n  First: # literal\n  Second line\nitems: [one, two]\n';
+  assert.deepEqual(parseSpecYaml(yaml), { url: 'https://example.test/a#b', text: 'First: # literal\nSecond line', items: ['one', 'two'] });
+  for (const text of ['key: one\nkey: two', 'text: [unclosed', '---\none: 1\n---\ntwo: 2',
+    'text: !unknown value', 'first: &shared text\nsecond: *shared', '%YAML 1.1\n---\nvalue: true',
+    '? [one, two]\n: value', 'section:\n\tkey: value']) assert.throws(() => parseSpecYaml(text), undefined, text);
+});
+
+test('forms reject invalid native fields, translation drift and misplaced GIDD checks', () => {
+  const spec = loadSpec('issue-direct');
+  for (const change of [f => { delete f.en; }, f => { f.fr = f.en; },
+    f => { f.en.body[0].attributes.label = ''; }, f => { f.en.body[0].attributes.label = 'Goal\nInjected'; },
+    f => { f.en.body[0].attributes.placeholders = ['typo']; }, f => { f.en.body[0].attributes.value = false; },
+    f => { f.en.body[0].type = 'unknown'; }, f => { f.en.body[0].type = 'input'; },
+    f => { f.en.body[0].validations.required = false; }, f => { f.en.body[0].id = 'bad id'; },
+    f => { f.en.body[0].min_task_items = 1; }, f => { f.en.body[0].validations = null; },
+    f => { f.en.body[0].id = f.en.body[1].id; },
+    f => { f.en.body.reverse(); }, f => { f.en.body.pop(); }, f => { f.en.body = []; },
+    f => { f.en.name = 'x'; }, f => { f.en.name = f['zh-CN'].name; }, f => { f.en.description = ''; },
+    f => { f.en.schema = 'gidd.issue-definition/v1'; }, f => { f.en.labels = false; }]) {
+    const forms = structuredClone(spec.issueForms); change(forms);
+    assert.throws(() => validateIssueForms(forms), /spec_resources_invalid/);
+  }
+});
+
+test('native form validation preserves metadata, input and display-only markdown', () => {
+  const spec = loadSpec('issue-direct'), forms = structuredClone(spec.issueForms);
+  for (const form of Object.values(forms)) {
+    Object.assign(form, { title: '[Task]: ', labels: ['development'], assignees: ['octocat'], projects: ['owner/1'], type: 'Task' });
+    form.body[0].type = 'input'; form.body[0].id = 'Goal_1';
+    form.body[0].attributes.value = 'Useful default';
+    form.body[3].attributes.render = 'shell';
+    form.body.unshift({ type: 'markdown', attributes: { value: '## Visible guidance only' } });
+  }
+  const before = structuredClone(forms);
+  assert.deepEqual(validateIssueForms(forms), before);
+  assert.deepEqual(forms, before);
+});
+
+test('doctor and spec readers reject broken Markdown files and malformed form YAML', () => {
   const f = fixture();
   try {
-    const s = installation(f, chosen + github + 'remote.account = "Octocat"\n');
-    const git = join(f.root, 'git.exe'), gh = join(f.root, 'gh.exe');
-    write(git, 'mock'); write(gh, 'mock');
-    write(join(toolsRoot(f.root), 'tool-bindings.json'), JSON.stringify({ schema: 'gidd.tool-bindings/v1', platform: 'windows-x64',
-      tools: { git: { path: git, source: 'path', version: '2.49.0' }, gh: { path: gh, source: 'path', version: '2.98.0' } } }));
-    let remote = 'https://github.com/owner/repo.git', account = 'Octocat';
-    let issue = { body: validIssue, number: 123, url: 'https://github.com/owner/repo/issues/123' }, issueFailure = false;
-    const calls = [], execute = async (exe, args) => {
-      calls.push({ exe, args });
-      if (exe === git) {
-        assert.deepEqual(args.slice(0, 2), ['-C', s.target]);
-        const key = args.slice(2).join(' ');
-        const replies = { 'rev-parse --is-inside-work-tree': 'true', 'rev-parse --show-toplevel': s.target,
-          remote: 'origin', 'remote get-url --all origin': remote };
-        assert.ok(Object.hasOwn(replies, key), 'Only repository read commands are permitted');
-        return { ok: true, text: replies[key] };
+    const s = installation(f), root = join(s.skill, 'spec.issue-direct');
+    for (const [name, failures] of [
+      ['prompt.en.md', ['', '  \n\t', 'text\0hidden', Buffer.from([0xff]), Buffer.alloc(65537, 0x61)]],
+      ['issue.en.yaml', ['name: one\nname: duplicate', 'body: [unclosed', '---\none: 1\n---\ntwo: 2', 'name: !unknown value']],
+    ]) {
+      const path = join(root, name), original = readFileSync(path);
+      for (const text of failures) {
+        write(path, text);
+        const before = snapshot(f.root);
+        assert.equal(check(s.diagnose(), 'config.spec.mode').reason, 'spec_resources_invalid');
+        for (const route of ['spec.current', 'spec.issue-direct.issue']) {
+          const result = s.invoke([route, '--lang', 'zh']);
+          assert.equal(result.status, route === 'spec.current' ? 1 : 2);
+          assert.equal(result.stderr, '');
+          assert.equal(json(result).error, 'spec_resources_invalid');
+          assert.equal(result.stdout.trim(), JSON.stringify(json(result), null, 2));
+        }
+        assert.deepEqual(snapshot(f.root), before);
       }
-      assert.equal(exe, gh);
-      if (args[0] === 'api') {
-        assert.deepEqual(args, ['api', '--hostname', 'github.com', '--method', 'GET', 'user', '--jq', '.login']);
-        return { ok: true, text: account };
-      }
-      assert.deepEqual(args, ['issue', 'view', '123', '--repo', 'github.com/owner/repo', '--json', 'body,number,url']);
-      return issueFailure ? { ok: false, reason: 'command_failed', text: '' } : { ok: true, text: JSON.stringify(issue) };
-    };
-    const before = snapshot(f.root);
-    const invoke = source => specCommand(s.target, parseSpecArguments('spec.current.issue.check', [source, '--json']), { execute });
-    const result = await invoke('#123');
-    assert.equal(result.exitCode, 0); assert.equal(result.report.status, 'passed');
-    assert.deepEqual(result.report.checks, checkIssueMarkdown(validIssue, loadSpec('issue-direct').issueRules));
-    assert.deepEqual((await invoke('123')).report.checks, result.report.checks);
-    assert.equal(result.report.source.url, issue.url);
-    issue.body = '## Goal\nIncomplete';
-    assert.equal((await invoke('123')).exitCode, 1);
-    issueFailure = true;
-    assert.equal((await invoke('123')).report.reason, 'issue_read_failed');
-    issueFailure = false; issue.number = 999;
-    assert.equal((await invoke('123')).report.reason, 'issue_response_invalid');
-    account = 'OtherAccount'; calls.length = 0;
-    assert.equal((await invoke('123')).report.reason, 'unexpected_account');
-    assert.ok(calls.every(call => call.args[0] !== 'issue'));
-    remote = 'https://github.com/other/repo.git'; calls.length = 0;
-    assert.equal((await invoke('123')).report.reason, 'repository_address_mismatch');
-    assert.ok(calls.every(call => call.exe !== gh));
-    assert.deepEqual(snapshot(f.root), before);
+      write(path, original);
+    }
+    // Markdown is authored freely, including tables, code and headings that differ by language.
+    const prompt = '# Custom guidance\n\n| Step | Action |\n| --- | --- |\n| 1 | Read the Issue |\n\n~~~sh\ngit status\n~~~';
+    write(join(root, 'prompt.en.md'), prompt);
+    assert.equal(check(s.diagnose(), 'config.spec.mode').status, 'ready');
+    assert.ok(ok(s.current('--lang', 'en')).stdout.endsWith(prompt));
   } finally { f.dispose(); }
 });

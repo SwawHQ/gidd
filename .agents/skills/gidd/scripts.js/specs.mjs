@@ -1,8 +1,8 @@
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
-import { isAbsolute, join, resolve, sep } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { plainPath } from './storage.mjs';
-import { validateIssueRules, validateIssueTemplate } from './issue-check.mjs';
+import { parseSpecYaml, specLanguages, validateIssueForms } from './spec-data.mjs';
 
 // Only shipped modes are selectable. Mode names never become arbitrary paths.
 export const specModes = Object.freeze(['issue-direct']);
@@ -11,16 +11,15 @@ export function validateSpecMode(mode) {
   if (!/^[a-z][a-z0-9-]*$/.test(mode || '') || mode === 'current' || !specModes.includes(mode)) throw new Error('spec_mode_unsupported');
 }
 
-function resource(root, relative) {
-  if (typeof relative !== 'string' || isAbsolute(relative) || !relative || /[\\\x00-\x1f]/.test(relative)) throw new Error('spec_resources_invalid');
-  const path = resolve(root, relative);
-  if (!path.startsWith(resolve(root) + sep)) throw new Error('spec_resources_invalid');
+// Names are fixed below; resource files must remain plain files within the skill.
+function resource(root, name) {
+  const path = join(root, name);
   plainPath(path);
   if (!existsSync(path)) throw new Error('spec_resources_missing');
   const stat = lstatSync(path);
   if (!stat.isFile() || stat.size > 65536) throw new Error('spec_resources_invalid');
   const text = new TextDecoder('utf-8', { fatal: true }).decode(readFileSync(path));
-  if (!text.trim()) throw new Error('spec_resources_invalid');
+  if (!text.trim() || text.includes('\0')) throw new Error('spec_resources_invalid');
   return text;
 }
 
@@ -28,18 +27,14 @@ export function loadSpec(mode) {
   validateSpecMode(mode);
   try {
     const root = join(skillRoot, `spec.${mode}`);
-    const definition = JSON.parse(resource(root, 'definition.json'));
-    if (definition.schema !== 'gidd.spec-definition/v1' || definition.id !== mode ||
-        definition.version !== 1) throw new Error('spec_resources_invalid');
-    const issueRules = validateIssueRules(JSON.parse(resource(root, definition.checks?.issue)));
-    const prompts = {}, templates = {};
-    for (const lang of ['zh-CN', 'en']) {
-      if (typeof definition.title?.[lang] !== 'string' || !definition.title[lang].trim()) throw new Error('spec_resources_invalid');
-      prompts[lang] = resource(root, definition.prompts?.[lang]);
-      templates[lang] = resource(root, definition.templates?.issue?.[lang]);
-      validateIssueTemplate(templates[lang], issueRules, lang);
+    const issueForms = validateIssueForms(Object.fromEntries(specLanguages.map(lang =>
+      [lang, parseSpecYaml(resource(root, `issue.${lang}.yaml`))])));
+    const prompts = {};
+    for (const lang of specLanguages) {
+      const name = `prompt.${lang}.md`;
+      prompts[lang] = { path: join(root, name), content: resource(root, name) };
     }
-    return { definition, prompts, templates, issueRules };
+    return { prompts, issueForms };
   } catch (error) {
     throw new Error(error.message === 'spec_resources_missing' ? error.message : 'spec_resources_invalid');
   }
@@ -64,7 +59,6 @@ export function inspectSpec(mode, repository, configurationReady = true) {
   modeCheck.details = { configured: mode };
   try {
     const spec = loadSpec(mode);
-    modeCheck.details.version = spec.definition.version;
     return { checks, spec };
   } catch (error) {
     Object.assign(modeCheck, { status: 'invalid', reason: error.message,

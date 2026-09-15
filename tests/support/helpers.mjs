@@ -14,7 +14,7 @@ after(() => {
 });
 
 export const repo = fileURLToPath(new URL('../../', import.meta.url));
-export const code = join(repo, '.agents/skills/gidd/scripts/windows');
+export const code = join(repo, '.agents/skills/gidd/scripts.powershell');
 export const support = join(repo, 'tests/support');
 export function copySkill(destination) {
   const source = join(repo, '.agents/skills/gidd');

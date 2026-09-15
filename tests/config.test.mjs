@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import { symlinkSync, unlinkSync, realpathSync } from 'node:fs';
-import { configure, editConfiguration, readRemoteConfiguration, normalizeRepositoryIdentity } from '../.agents/skills/gidd/scripts/config.mjs';
-import { parseConfiguration } from '../.agents/skills/gidd/scripts/storage.mjs';
+import { configure, editConfiguration, readRemoteConfiguration, normalizeRepositoryIdentity } from '../.agents/skills/gidd/scripts.js/config.mjs';
+import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/storage.mjs';
 import { prepare, toolsRoot, adapter, assert, compile, existsSync, fixture, hash, join, json, mkdirSync, ok, readFileSync, repo, stub, write } from './support/helpers.mjs';
 
 const configText = 'schema_version = 1\n[repo]\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\nremote.account = "Octocat"\n';
@@ -145,7 +145,7 @@ test('release resolution selects stable versions, verifies upstream hashes and p
         assert.match(resolve(name,'latest',{...data,[endpoint]:JSON.stringify(bad)}).stderr,/invalid_stable_release/);
       }
     }
-    const pinned=JSON.parse(readFileSync(join(repo,'.agents/skills/gidd/scripts/runtimes.json'),'utf8')).tools[0];
+    const pinned=JSON.parse(readFileSync(join(repo,'.agents/skills/gidd/scripts.powershell/runtimes.json'),'utf8')).tools[0];
     const pinnedPath=join(f.root,'pinned.json'); write(pinnedPath,JSON.stringify(pinned));
     const original=hash(pinnedPath);
     const verified=json(ok(resolve('bun',pinned.version,{}, {pinnedPath})));

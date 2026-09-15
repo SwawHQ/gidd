@@ -2,8 +2,8 @@ import { bindFixture, prepare } from './support/helpers.mjs';
 import { test } from 'node:test';
 import { publishRepositoryEntry, runRepositoryCommand } from './support/repository.mjs';
 import { copyFileSync, mkdirSync } from 'node:fs';
-import { runCommand } from '../.agents/skills/gidd/scripts/github.mjs';
-import { authorize } from '../.agents/skills/gidd/scripts/auth.mjs';
+import { runCommand } from '../.agents/skills/gidd/scripts.js/github.mjs';
+import { authorize } from '../.agents/skills/gidd/scripts.js/auth.mjs';
 import { toolsRoot, adapter, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, ok, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
 
 const options = { repository: repo, gh: join(repo, 'fixture-gh.exe'), git: findGit(), account: 'octocat' };
@@ -135,7 +135,7 @@ test('authorization uses bindings, rejects retired gh versions and never discove
     const env = { PATH: [oldBin, dirname(process.execPath)].join(';'), GH_CONFIG_DIR: join(f.root, 'credentials'),
       GH_TOKEN: '', GITHUB_TOKEN: '', GH_ENTERPRISE_TOKEN: '', GITHUB_ENTERPRISE_TOKEN: '' };
     const skill=join(f.root,'.agents/skills/gidd');copySkill(skill);mkdirSync(join(f.root,'.git'));
-    publishRepositoryEntry(f.root,join(skill,'scripts/gidd.mjs'));
+    publishRepositoryEntry(f.root,join(skill,'scripts.js/gidd.mjs'));
     const invoke = () => runRepositoryCommand(f.root,['auth'],{env});
     assert.equal(json(invoke()).reason, 'tool_bindings_missing');
     assert.equal(existsSync(join(toolsRoot(f.root),'gh')), false, 'Missing compatible gh must not trigger installation');
