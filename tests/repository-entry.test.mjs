@@ -30,7 +30,7 @@ test('issue-direct guidance uses only the public preparation and repository comm
     const s = setup(f), target = s.create('issue-direct lifecycle');
     ok(s.ensure(target));
     const invoke = args => s.invoke(s.link(target), args, { env: { PATH: '' } });
-    for (const [key,value] of [['spec.mode','issue-direct'],
+    for (const [key,value] of [['spec.mode','issue-direct'],['git.credential.mode','inherit'],
       ['repo.remote.account','Octocat'],['repo.remote.name','origin'],['repo.remote.url','https://github.com/Team/Repo']]) {
       ok(invoke(['config','set',key,value]));
     }

@@ -40,14 +40,14 @@ export function readConfigurationText(path) {
 // Only repository business settings live in config.toml. Preparation never reads it.
 export function parseConfiguration(text) {
   if (Buffer.byteLength(text) > 16384) throw new Error('config_too_large');
-  const result = { repo: { remote: {} }, spec: {} }, tables = new Set(), seen = new Set();
+  const result = { repo: { remote: {} }, git: { user: {}, credential: {} }, spec: {} }, tables = new Set(), seen = new Set();
   let section = '', schema = false;
   for (const [index, input] of text.replace(/^\uFEFF/, '').split('\n').entries()) {
     const line = input.replace(/\r$/, '');
     if (/[\x00-\x08\x0b-\x1f\x7f]/.test(line)) throw new Error('config_control_character:' + (index + 1));
     if (/^[ \t]*(?:#.*)?$/.test(line)) continue;
     if (/^[ \t]*\[(?:tools|github|bootstrap)(?:\.|\])/.test(line)) throw new Error('config_retired_structure');
-    const table = /^[ \t]*\[(repo|spec)\][ \t]*(?:#.*)?$/.exec(line);
+    const table = /^[ \t]*\[(repo|git|spec)\][ \t]*(?:#.*)?$/.exec(line);
     if (table) {
       section = table[1];
       if (tables.has(section)) throw new Error('config_duplicate_' + section + '_table');
@@ -57,14 +57,17 @@ export function parseConfiguration(text) {
       if (schema) throw new Error('config_duplicate_schema_version');
       schema = true; continue;
     }
-    const names = section === 'repo' ? 'remote\\.(?:name|url|account)' : section === 'spec' ? 'mode' : '(?!)';
+    const names = section === 'repo' ? 'remote\\.(?:name|url|account)' : section === 'git' ? '(?:user\\.(?:name|email)|credential\\.mode)' : section === 'spec' ? 'mode' : '(?!)';
     const field = new RegExp('^[ \\t]*(' + names + ')[ \\t]*=[ \\t]*(' + stringPattern + ')[ \\t]*(?:#.*)?$').exec(line);
     if (!field) throw new Error('config_unsupported_syntax_or_field:' + (index + 1));
     const key = section + '.' + field[1];
     if (seen.has(key)) throw new Error('config_duplicate_key:' + key);
     seen.add(key);
     if (section === 'repo') result.repo.remote[field[1].slice(7)] = decodeString(field[2]);
-    else result.spec.mode = decodeString(field[2]);
+    else if (section === 'git') {
+      const [group, name] = field[1].split('.');
+      result.git[group][name] = decodeString(field[2]);
+    } else result.spec.mode = decodeString(field[2]);
   }
   if (!schema) throw new Error('config_missing_key:schema_version');
   return result;

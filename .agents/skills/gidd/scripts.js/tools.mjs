@@ -6,7 +6,7 @@ import { compareVersions, executableName, managedExecutable, managedToolValid, v
 export const check = (id, status, reason, details = {}) => ({ id, status, reason, details });
 // Runtime discovery here is diagnostic/installation work, not a startup gate.
 // Native preparation checks runtimes against runtime-policy.json.
-export const minimums = { bun: '0.0.0', node: '0.0.0', git: '2.0.0', gh: '2.98.0' };
+export const minimums = { bun: '0.0.0', node: '0.0.0', git: '2.31.0', gh: '2.98.0' };
 export const patterns = { bun: /^(\d+\.\d+\.\d+)$/, node: /^v(\d+\.\d+\.\d+)$/, gh: /^gh version (\d+\.\d+\.\d+)(?:\s|$)/, git: /^git version (\d+\.\d+\.\d+)/ };
 
 export function pathCandidates(name, env = process.env) {

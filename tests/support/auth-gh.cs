@@ -12,6 +12,10 @@ public static class AuthGh {
         if (args.Length == 5 && args[0] == "repo" && args[1] == "view") {
             Console.WriteLine("{\"url\":\"" + args[2] + "\"}"); return 0;
         }
+        if (args.Length > 1 && args[0] == "auth" && args[1] == "token") {
+            if (mode.StartsWith("existing") || File.Exists(exe + ".logged")) { Console.WriteLine("fixture-token"); return 0; }
+            return 1;
+        }
         if (args[0] == "api") {
             if (mode == "existing") { Console.WriteLine("Octocat"); return 0; }
             if (mode == "existing-mismatch") { Console.WriteLine("OtherAccount"); return 0; }

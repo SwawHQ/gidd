@@ -4,11 +4,11 @@ import { doctor } from '../.agents/skills/gidd/scripts.js/doctor.mjs';
 import { configure } from '../.agents/skills/gidd/scripts.js/config.mjs';
 import { bindFixture, diagnosis, toolsRoot, assert, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, readFileSync, repo, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
 
-const configText = 'schema_version = 1\n[spec]\nmode = "issue-direct"\n[repo]\nremote.account = "Octocat"\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\n';
+const configText = 'schema_version = 1\n[git]\ncredential.mode = "inherit"\n[spec]\nmode = "issue-direct"\n[repo]\nremote.account = "Octocat"\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\n';
 const checkOrder = [
   'tool.platform', 'tool.js_runtime', 'tool.git', 'tool.gh',
   'folder.git.worktree', 'folder.git.author',
-  'config.toml', 'config.repo.remote.name', 'config.repo.remote.url', 'config.repo.remote.account', 'config.spec.mode',
+  'config.toml', 'config.repo.remote.name', 'config.repo.remote.url', 'config.repo.remote.account', 'config.git.user', 'config.git.credential.mode', 'config.spec.mode',
   'config.repo.remote.account..online', 'config.repo.remote.url..online',
 ];
 const byId = (report, id) => {
@@ -38,14 +38,14 @@ test('doctor combines independent checks once; offline never invokes network or 
       const calls = [];
       return { calls, execute: async (exe, args, options) => {
         const key = args[0] === '--version' ? exe === git ? 'git' : 'gh' :
-          args[0] === 'api' ? 'api' : args[0] === 'repo' ? 'gh_repo' : args.includes('--is-inside-work-tree') ? 'inside' :
+          args[0] === 'auth' ? 'token' : args[0] === 'api' ? 'api' : args[0] === 'repo' ? 'gh_repo' : args.includes('--is-inside-work-tree') ? 'inside' :
           args.includes('--show-toplevel') ? 'root' : args.includes('--verify') ? 'head' :
           args.includes('symbolic-ref') ? 'symbolic' : args.includes('var') ? 'author' :
           args.includes('get-url') ? 'url' : args.includes('remote') ? 'remotes' : 'read';
         calls.push({key,exe,args,options});
         assert.ok([git,gh].includes(exe),'Only bound executables');
         assert.ok(!args.some(x=>['login','switch','setup-git','push','fetch'].includes(x)));
-        return overrides[key] || success({git:'git version 2.55.0.windows.5',gh:'gh version 2.98.0',api:'Octocat',
+        return overrides[key] || success({git:'git version 2.55.0.windows.5',gh:'gh version 2.98.0',api:'Octocat',token:'fixture-token',
           inside:'true',root:f.root,head:'a'.repeat(40),symbolic:'refs/heads/main',
           author:'Local Author <author@example.test> 1234567890 +0800',remotes:'origin',
           url:'https://github.com/owner/repo.git',read:'',gh_repo:JSON.stringify({url:'https://github.com/owner/repo'})}[key]);
@@ -53,7 +53,7 @@ test('doctor combines independent checks once; offline never invokes network or 
     };
     const accountId='config.repo.remote.account..online', urlId='config.repo.remote.url..online';
     const before=snapshot(f.root), online=scenario(), report=await doctor(f.root,online);
-    assert.equal(report.status,'checks_passed');assert.equal(report.checks.length,12);
+    assert.equal(report.status,'checks_passed');assert.equal(report.checks.length,14);
     assert.equal(report.folder, f.root); assert.equal(Object.hasOwn(report, 'repository'), false);
     assert.equal(report.hint, 'No errors found in local or online checks. Push permission is not checked.');
     assert.deepEqual(report.checks.filter(c=>c.id.startsWith('config.repo.remote')).map(c=>c.id),
@@ -69,7 +69,7 @@ test('doctor combines independent checks once; offline never invokes network or 
     assert.deepEqual(ghRepo.args,['repo','view','https://github.com/owner/repo','--json','url']);
     assert.equal(ghRepo.options.cwd,f.root);assert.equal(ghRepo.options.timeoutMs,15000);
     const offline=scenario(), local=await doctor(f.root,{...offline,offline:true});
-    assert.equal(local.status,'local_ready');assert.ok(!offline.calls.some(c=>['api','read','gh_repo'].includes(c.key)));
+    assert.equal(local.status,'local_ready');assert.ok(!offline.calls.some(c=>['token','api','read','gh_repo'].includes(c.key)));
     for(const id of [accountId,urlId]) assert.equal(byId(local,id).reason,'offline');
     assert.deepEqual(snapshot(f.root),before);
     for(const key of ['api','read','gh_repo']) {
@@ -142,6 +142,16 @@ test('doctor combines independent checks once; offline never invokes network or 
       assert.equal(byId(r,'config.repo.remote.account').blocked_by,'config.toml');
       assert.ok(!sc.calls.some(c=>['api','read','gh_repo'].includes(c.key)));
     }
+    write(config, configText.replace('credential.mode = "inherit"\n', ''));
+    assert.equal(byId(await doctor(f.root, scenario()), 'config.git.credential.mode').reason, 'config_missing_git_credential_mode');
+    write(config, configText.replace('[git]', '[git]\nuser.name = "Configured"'));
+    assert.equal(byId(await doctor(f.root, scenario()), 'config.git.user').reason, 'config_incomplete_git_user');
+    write(config, configText.replace('"inherit"', '"gh"'));
+    const noToken = scenario({ token: { ok: false, reason: 'command_failed', text: 'PRIVATE_TOKEN' } });
+    const failedGh = await doctor(f.root, noToken);
+    assert.equal(byId(failedGh, accountId).reason, 'account_token_unavailable');
+    assert.equal(byId(failedGh, urlId).details.git_remote_read.blocked_by, accountId);
+    assert.ok(!JSON.stringify(failedGh).includes('PRIVATE_TOKEN'));
     rmSync(config); const missing=await doctor(f.root,scenario());
     assert.equal(byId(missing,'config.toml').reason,'config_missing');
     await assert.rejects(doctor('.'),/repository_must_be_absolute/);

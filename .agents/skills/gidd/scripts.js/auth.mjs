@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs';
 import { runCommand, validateOptions } from './github.mjs';
+import { githubEnvironment, selectGitHubAccount } from './execution-env.mjs';
 
 // Platform-neutral orchestration. Windows is the only verified launcher today.
 export async function authorize(input, { execute = runCommand, env = process.env, signal, onEvent = () => {}, timeoutMs = 900000 } = {}) {
@@ -10,20 +11,21 @@ export async function authorize(input, { execute = runCommand, env = process.env
   if (!statSync(options.repository).isDirectory()) throw new Error('repository_unavailable');
   const report = (status, reason, details = {}) => ({ schema: 'gidd.auth/v1', status, reason,
     hostname: options.hostname.toLowerCase(), expected_account: options.account, ...details });
-  const commandOptions = { cwd: options.repository, env, signal };
+  const clean = githubEnvironment({ hostname: options.hostname }, env);
+  const commandOptions = { cwd: options.repository, env: clean, signal };
   const cancelled = () => report('failed', 'cancelled');
   if (signal?.aborted) return cancelled();
   const identity = () => execute(options.gh, ['api', '--hostname', options.hostname, '--method', 'GET', 'user', '--jq', '.login'], commandOptions);
   const matches = login => login.toLowerCase() === options.account.toLowerCase();
   const validLogin = text => /^[a-z0-9][a-z0-9-]{0,99}$/i.test(text);
-  const before = await identity();
-  if (signal?.aborted) return cancelled();
-  if (before.ok && validLogin(before.text)) {
-    return report(matches(before.text) ? 'ready' : 'mismatch', matches(before.text) ? 'already_authenticated' : 'existing_account_mismatch',
-      { login: before.text, credentials_may_have_changed: false });
-  }
-  if (Object.entries(env).some(([key, value]) => /^(GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN)$/i.test(key) && value)) {
-    return report('failed', 'environment_token_active');
+  try {
+    const selected = await selectGitHubAccount({ gh: options.gh, hostname: options.hostname, account: options.account },
+      { ...commandOptions, execute });
+    return report('ready', 'already_authenticated', { login: selected.identity.details.actual, credentials_may_have_changed: false });
+  } catch (error) {
+    if (signal?.aborted) return cancelled();
+    if (error.message !== 'account_token_unavailable') return report(error.identity?.status || 'failed', error.message,
+      { credentials_may_have_changed: false });
   }
   // Bootstrap validates the gh version before publishing the binding.
   let code, url, displayed = false, plaintext = false, protocolFailure = false;

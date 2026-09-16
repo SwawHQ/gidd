@@ -6,8 +6,10 @@ import { githubTarget, configurationHint } from './config.mjs';
 import { remoteFields, inspectRemoteFields, blockCheck, remoteId } from './repository-check.mjs';
 import { minimums, patterns, toolEnvironment } from './tools.mjs';
 import { readBindings } from './bindings.mjs';
-import { runCommand, checkGitHubIdentity, checkGitHubRepository } from './github.mjs';
+import { runCommand, checkGitHubRepository } from './github.mjs';
 import { inspectSpec } from './specs.mjs';
+import { gitSettingChecks, effectiveGitIdentity } from './doctor-git.mjs';
+import { gitEnvironment, selectGitHubAccount } from './execution-env.mjs';
 
 const safeReason = (error, fallback) => /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : fallback;
 // Success describes the useful result; failure adds a stable reason, not raw output.
@@ -56,13 +58,14 @@ function describeCheck(item, root, bindings) {
       reason === 'target_required' ? 'Run the actual skill gidd.pre.ensure.cmd --repo <Git-working-tree-root>, then invoke the generated gidd.link.cmd by its full path.' :
       'Check the reported directory and its Git working-tree metadata. Restore the intended repository or explicitly initialize Git there, then rerun doctor; do not substitute a parent repository.';
   } else if (id === 'folder.git.author') {
-    item.hint = 'Check the local Git author name and email. If missing, set values supplied by the user, then rerun doctor.';
-    if (root && bindings.git) item.commands = ['name', 'email'].map(key => command(bindings.git.path,
-      ['-C', root, 'config', '--local', `user.${key}`, '<value>'], [`user.${key}`]));
+    item.hint = 'Check effective Git author and committer. Set git.user.name and git.user.email together, or use existing Git identity configuration.';
+    if (link) item.commands = ['name', 'email'].map(key => command(link,
+      ['config', 'set', `git.user.${key}`, '<value>'], [`git.user.${key}`]));
   } else if (id === remoteId('account') + '..online') {
     item.hint = reason === 'unexpected_account' ?
-      'The API account differs from repo.remote.account. Review the intended account and active gh credentials; do not accept a changed account automatically.' :
-      'Check connectivity and gh credentials for the configured repository host. A failed API request does not prove login is required.';
+      'The selected token does not belong to repo.remote.account. Review the configured account and saved gh credentials.' :
+      reason === 'account_token_unavailable' ? 'Run gidd.link.cmd auth to authorize the configured account.' :
+      'Check connectivity and saved gh credentials for the configured host/account. A failed API request does not prove login is required.';
   } else if (id === remoteId('url') + '..online') {
     item.hint = 'Inspect details.gh_remote_read and details.git_remote_read. Skipped checks remain unverified; Git reading and API reading do not prove write permission.';
   } else if (id.startsWith('config.repo.remote.')) {
@@ -72,7 +75,8 @@ function describeCheck(item, root, bindings) {
     item.commands = [...remoteCommands];
     if (link) item.commands.push({ ...command(link, ['config', 'set', configKey, '<value>'], [configKey]),
       ...(id === remoteId('url') ? { requires_configuration_review: true } : {}) });
-  } else if (id === 'tool.platform') item.hint = 'Use the currently supported Windows x64 platform.';
+  } else if (id.startsWith('config.git.')) item.hint = configurationHint(reason);
+  else if (id === 'tool.platform') item.hint = 'Use the currently supported Windows x64 platform.';
 }
 
 function inspectConfiguration(root) {
@@ -85,7 +89,7 @@ function inspectConfiguration(root) {
   } catch (error) {
     return { result: check('config.toml', 'invalid', safeReason(error, 'config_unreadable'), { path }), remote: {} };
   }
-  return { remote: settings.repo.remote, spec: settings.spec, result: check('config.toml', 'ready', undefined, { path }) };
+  return { remote: settings.repo.remote, git: settings.git, spec: settings.spec, result: check('config.toml', 'ready', undefined, { path }) };
 }
 
 // These are startup probes of published paths, not tool discovery or installation validation.
@@ -140,7 +144,14 @@ export async function doctor(target, { offline = false, fixedRepository = false,
   const { checks: [modeCheck] } = inspectSpec(configuration.spec?.mode, configRoot || target, configuration.result.status === 'ready');
   if (process.platform !== 'win32' || process.arch !== 'x64') checks.unshift(check('tool.platform', 'unsupported', 'unsupported_platform'));
   const usable = name => checks.find(item => item.id === 'tool.' + name)?.status === 'ready';
-  const env = toolEnvironment(usable('git') ? bindings.git.path : undefined);
+  const gitChecks = gitSettingChecks(configuration.git, configuration.result.status === 'ready');
+  const apiTarget = fields.url.details?.expected && fields.account.status === 'ready' ? githubTarget({ url: fields.url.details.expected,
+    name: fields.name.details?.expected, account: fields.account.details.expected }) : null;
+  let env = toolEnvironment(usable('git') ? bindings.git.path : undefined);
+  try {
+    env = gitEnvironment({ user: gitChecks[0].status === 'ready' ? configuration.git?.user : {},
+      credential: gitChecks[1].status === 'ready' && usable('gh') && apiTarget ? configuration.git.credential : {} }, bindings, apiTarget, env);
+  } catch (error) { gitChecks[0] = check('config.git.user', 'invalid', safeReason(error, 'git_environment_invalid')); }
   const invoke = (args, timeoutMs = 5000) => execute(bindings.git.path, ['-C', target, ...args], { timeoutMs, env });
   let repository;
   if (!target) repository = check('folder.git.worktree', 'not_checked', 'target_required');
@@ -167,10 +178,7 @@ export async function doctor(target, { offline = false, fixedRepository = false,
       repository.reason = symbolic.ok ? 'unborn_branch' : 'head_unreadable';
     }
     // A readable worktree can still supply authors/remotes before its first commit.
-    const author = await invoke(['var', 'GIT_AUTHOR_IDENT']);
-    const match = author.ok && /^(.+) <([^<>\r\n]+)> \d+ [+-]\d{4}$/.exec(author.text);
-    checks.push(match ? check('folder.git.author', 'ready', undefined, { name: match[1], email: match[2] }) :
-      check('folder.git.author', 'failed', author.ok ? 'invalid_author_response' : author.reason));
+    checks.push(await effectiveGitIdentity(invoke));
     fields = await inspectRemoteFields(invoke, fields);
   } else {
     checks.push(check('folder.git.author', 'not_checked', 'repository_unavailable'));
@@ -179,20 +187,23 @@ export async function doctor(target, { offline = false, fixedRepository = false,
   }
   // Stable presentation groups: tools, folders, then local and online config checks.
   // Cross-group prerequisites remain explicit through blocked_by.
-  checks.push(configuration.result, fields.name, fields.url, fields.account, modeCheck);
+  checks.push(configuration.result, fields.name, fields.url, fields.account, ...gitChecks, modeCheck);
   const accountId = remoteId('account') + '..online', urlId = remoteId('url') + '..online';
   if (offline) checks.push(check(accountId, 'not_checked', 'offline'), check(urlId, 'not_checked', 'offline'));
   else {
-    const apiTarget = fields.url.details?.expected ? githubTarget({ url: fields.url.details.expected,
-      name: fields.name.details?.expected, account: fields.account.details?.expected }) : null;
     // API identity is host/account-scoped, independent of local Git health.
     let account;
-    if (!apiTarget || fields.account.status !== 'ready') account = blockCheck(check(accountId, 'ready'), !apiTarget ? fields.url.id : fields.account.id);
+    if (!apiTarget || fields.account.status !== 'ready') account = blockCheck(check(accountId, 'ready'), fields.account.status !== 'ready' ? fields.account.id : fields.url.id);
     else if (!usable('gh')) account = blockCheck(check(accountId, 'ready'), 'tool.gh');
     else {
-      const result = await checkGitHubIdentity({ gh: bindings.gh.path, ...apiTarget },
-        (exe, args) => execute(exe, args, { cwd: targetExists ? target : undefined, env, timeoutMs: 15000 }));
-      account = check(accountId, result.status, result.reason, result.details);
+      try {
+        const selected = await selectGitHubAccount({ gh: bindings.gh.path, ...apiTarget },
+          { env, cwd: targetExists ? target : undefined, execute });
+        env = selected.env;
+        account = check(accountId, 'ready', undefined, selected.identity.details);
+      } catch (error) {
+        account = check(accountId, error.identity?.status || 'failed', safeReason(error, 'identity_check_failed'), error.identity?.details);
+      }
     }
     checks.push(account);
     const blocker = [fields.name, fields.url].find(item => item.status !== 'ready');
@@ -206,6 +217,9 @@ export async function doctor(target, { offline = false, fixedRepository = false,
         probes.gh_remote_read = result;
       }
       if (fields.url.details.protocol !== 'https') probes.git_remote_read = { status: 'not_checked', reason: 'ssh_probe_unsupported' };
+      else if (configuration.git?.credential?.mode === 'gh' && account.status !== 'ready') {
+        probes.git_remote_read = { status: 'not_checked', reason: 'dependency_unavailable', blocked_by: accountId };
+      }
       else {
         const result = await invoke(['-c', 'credential.interactive=false', '-c', 'core.askPass=', 'ls-remote', '--', fields.name.details.expected, 'HEAD'], 15000);
         probes.git_remote_read = { status: result.ok ? 'ready' : 'failed', ...(!result.ok ? { reason: result.reason } : {}) };

@@ -64,16 +64,19 @@ test('GitHub subprocess deadline also covers pipes inherited by descendants', { 
 test('authorization reuses verified identities, rejects mismatches and requires explicit parameters', async () => {
   for (const login of ['Octocat', 'OtherAccount']) {
     let calls = 0;
-    const result = await authorize(options, { execute: async () => { calls++; return success(login); } });
-    assert.equal(calls, 1, 'Existing identities must not start login or switch accounts');
+    const result = await authorize(options, { execute: async (exe, args) => { calls++; return success(args[0] === 'auth' ? 'fixture-token' : login); } });
+    assert.equal(calls, 2, 'Select a saved account and verify it without login or account switching');
     assert.equal(result.status, login === 'Octocat' ? 'ready' : 'mismatch');
     assert.equal(result.credentials_may_have_changed, false);
   }
   for (const patch of [{ account: '' }, { gh: '' }, { repository: '.' }]) {
     await assert.rejects(authorize({ ...options, ...patch }, { execute: () => assert.fail('Invalid request must not execute') }));
   }
-  const token = await authorize(options, { env: { GH_TOKEN: 'PRIVATE_TOKEN' }, execute: async () => ({ ok: false, reason: 'command_failed', text: '' }) });
-  assert.equal(token.reason, 'environment_token_active');
+  const token = await authorize(options, { env: { GH_TOKEN: 'PRIVATE_TOKEN' }, execute: async (exe, args, options) => {
+    assert.equal(options.env.GH_TOKEN, args[0] === 'auth' ? undefined : 'fixture-token');
+    return success(args[0] === 'auth' ? 'fixture-token' : 'Octocat');
+  } });
+  assert.equal(token.reason, 'already_authenticated');
   assert.ok(!JSON.stringify(token).includes('PRIVATE_TOKEN'));
 });
 

@@ -7,6 +7,7 @@ import { toolsRoot } from './storage.mjs';
 import { requireRemoteTarget } from './repository-check.mjs';
 import { boundTools, boundExecutor } from './bindings.mjs';
 import { parseSpecArguments, specCommand, specError } from './spec.mjs';
+import { passthrough } from './passthrough.mjs';
 
 export async function main(args, { boundRepository } = {}) {
   const route = (args.shift() || 'help').toLowerCase();
@@ -20,6 +21,14 @@ export async function main(args, { boundRepository } = {}) {
       if ((args[0] || process.env.GIDD_LANG) && !/^(zh|en)(?:$|[-_])/.test(choice)) throw new Error('unsupported_help_language');
       const language = /^zh(?:$|[-_])/.test(choice) ? 'zh-CN' : 'en';
       console.log(readFileSync(new URL(`./help/${language}.txt`,import.meta.url),'utf8')); return 0;
+    }
+    if (['.gh', '.git'].includes(command)) {
+      if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');
+      if (!boundRepository) throw new Error('repository_binding_required');
+      const controller = new AbortController(), cancel = () => controller.abort();
+      process.on('SIGINT', cancel); process.on('SIGTERM', cancel);
+      try { return await passthrough(boundRepository, command.slice(1), args, { signal: controller.signal }); }
+      finally { process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel); }
     }
     if (!Object.hasOwn(schemas,command)) throw new Error('unknown_command');
     if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');
@@ -78,6 +87,10 @@ export async function main(args, { boundRepository } = {}) {
     }
     if (reason.startsWith('tool_binding')) console.error('Run gidd.pre.ensure.cmd --repo with the target directory to prepare tools and rebuild bindings.');
     const hint = configurationHint(reason); if (hint) console.error(hint);
+    if (['.gh', '.git'].includes(command)) {
+      console.error(JSON.stringify({ schema: 'gidd.exec/v1', status: 'error', reason }));
+      return 2;
+    }
     console.log(JSON.stringify({ schema, status: 'error', reason }));
     return 2;
   }

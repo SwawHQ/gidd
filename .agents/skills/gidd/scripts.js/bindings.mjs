@@ -38,7 +38,7 @@ export function boundTools(root, required = ['git','gh']) {
 export function boundExecutor(bindings, execute = runCommand) {
   const env = toolEnvironment(bindings.git?.path);
   return async (executable,args,options={}) => {
-    const result = await execute(executable,args,{...options,env});
+    const result = await execute(executable,args,{...options,env: options.env ? toolEnvironment(bindings.git?.path, options.env) : env});
     if (result.reason === 'process_start_failed') {
       const name = Object.keys(bindings).find(name=>bindings[name].path === executable);
       throw new Error('tool_binding_unusable:' + (name || 'unknown'));

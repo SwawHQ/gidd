@@ -3,9 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { parseConfiguration, stringPattern } from './storage.mjs';
 import { validateSpecMode, specModes } from './specs.mjs';
+import { validateGitField, validateGitSettings } from './git-settings.mjs';
 
 const initialConfiguration = 'schema_version = 1\n\n[repo]\nremote.name = "origin"\n';
-const editableKey = /^(?:repo\.remote\.(?:name|url|account)|spec\.mode)$/;
+const editableKey = /^(?:repo\.remote\.(?:name|url|account)|git\.(?:user\.(?:name|email)|credential\.mode)|spec\.mode)$/;
 const hostnamePattern = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i;
 
 export function normalizeRepositoryIdentity(value) {
@@ -50,6 +51,7 @@ export function remoteAddress(text) {
 function validateSetting(key, value) {
   if (!editableKey.test(key || '')) throw new Error('config_unknown_key');
   if (key === 'spec.mode') return validateSpecMode(value);
+  if (key.startsWith('git.')) return validateGitField(key.slice(4), value);
   validateRemoteField(key.slice('repo.remote.'.length), value);
 }
 
@@ -110,10 +112,18 @@ export function readRemoteConfiguration(repository, required = []) {
   return validateRemoteSettings(parseConfiguration(readText(path)).repo.remote, required);
 }
 
+export function readConfiguration(repository) {
+  const path = configPath(repository);
+  if (!existsSync(path)) throw new Error('config_missing');
+  return parseConfiguration(readText(path));
+}
+
 export function configurationHint(reason) {
   if (reason === 'spec_mode_unsupported') return 'Available spec modes: ' + specModes.join(', ') + '. Use config set spec.mode <mode>.';
   if (reason === 'config_retired_structure') return 'Replace [github] with [repo] remote.name, remote.url and remote.account; remove hostname and [tools]. Tool sources are internal preparation policy. Preserve unrelated comments and [spec].';
   if (reason === 'config_missing') return 'Create config with: gidd.link.cmd config set repo.remote.account <login>. Then set repo.remote.url and review repo.remote.name.';
+  if (reason === 'config_incomplete_git_user') return 'Set both git.user.name and git.user.email, or remove both to inherit Git identity.';
+  if (/^config_(missing|invalid)_git_credential_mode$/.test(reason)) return 'Set git.credential.mode explicitly to gh or inherit with config set.';
   const field = /^config_(?:missing|invalid)_repo_remote_(name|url|account)$/.exec(reason);
   if (field) return `Run doctor --offline and repair repo.remote.${field[1]} with config set.`;
   if (reason.startsWith('config_')) return 'Check config.toml using config show/set. No configuration fallback or login was performed.';
@@ -126,7 +136,9 @@ export function configure(repository, action, key, value) {
   if (action === 'show') {
     if (!existsSync(path)) throw new Error('config_missing');
     const content = readText(path);
-    validateRemoteSettings(parseConfiguration(content).repo.remote);
+    const settings = parseConfiguration(content);
+    validateRemoteSettings(settings.repo.remote);
+    validateGitSettings(settings.git);
     return { schema: 'gidd.config/v1', status: 'ready', config_path: path, content };
   }
   if (action !== 'set') throw new Error('config_invalid_arguments');

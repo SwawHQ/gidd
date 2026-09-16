@@ -18,6 +18,7 @@ Query GitHub when uncertain; do not assume main or treat the current branch as t
 ## 3. Implement and validate
 
 Implement the Issue's scope while preserving the user's existing changes.
+Use this repository's gidd.link .git / .gh for Git and GitHub commands with the configured defaults; explicit arguments retain native override semantics.
 Review each acceptance criterion, run relevant tests, and record passing, failing and unverified items.
 Review the Issue yourself for completeness, consistency with its form and changes in scope; update it when needed.
 

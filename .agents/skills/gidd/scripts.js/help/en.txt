@@ -11,8 +11,16 @@ GIDD (Windows x64 / PowerShell 5.1)
   gidd.link config set repo.remote.account bornwhy    #(Example) Set repo.remote.account to bornwhy
   gidd.link config set repo.remote.name origin #Select the local remote
   gidd.link config set repo.remote.url https://github.com/swawhq/gidd #Record the expected repository
+  gidd.link config set git.credential.mode gh   #Required gh|inherit; gh supplies the selected account for HTTPS
+  gidd.link config set git.user.name "Commit Name" #Configure name and email together, or omit both
+  gidd.link config set git.user.email "name@example.com"
 
   gidd.link auth                                #Request device authorization using config and wait for confirmation; gh may save credentials
+
+  gidd.link .gh <args...>                       #Supply account, GH_HOST/GH_REPO and Git environment; forward gh arguments
+  gidd.link .git <args...>                      #Supply Git identity and HTTPS credentials; local operations need no login
+  # Start in the entry's repository; explicit arguments follow native Git/gh rules and may select other repositories.
+  # Git environment config overrides the same file settings, below explicit -c. SSH keeps native authentication. Preserve stdio/exit codes.
 
   gidd.link spec                                #List available spec names
   gidd.link spec --lang en                      #Optional --lang zh|en also applies below

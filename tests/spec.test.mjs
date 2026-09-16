@@ -35,7 +35,7 @@ test('spec mode editing preserves text while preparation ignores business config
     assert.throws(() => configure(f.root, 'set', 'spec.mode', 'issue-pr'), /spec_mode_unsupported/);
     assert.equal(existsSync(path), false);
     for (const newline of ['\n', '\r\n']) {
-      const text = '\uFEFF' + ['# 用户注释', 'schema_version = 1', '[spec] # choice',
+      const text = '\uFEFF' + ['# 用户注释', 'schema_version = 1', '[git]', 'credential.mode = "inherit"', '[spec] # choice',
         "  mode = 'unknown-mode' # preserve", '[repo]', 'remote.account = "bad account"', ''].join(newline);
       write(path, text);
       ok(adapter(f.root, { action: 'configuration', repositoryRoot: f.root }, { env: { PATH: '' } }));
@@ -93,7 +93,7 @@ test('doctor and current agree on absent, missing and unsupported modes and neve
 test('successful offline doctor guarantees current spec and localized templates are readable', () => {
   const f = fixture();
   try {
-    const s = installation(f, chosen + github + 'remote.account = "Octocat"\n');
+    const s = installation(f, chosen + github + 'remote.account = "Octocat"\n[git]\ncredential.mode = "inherit"\n');
     const git = findGit(), gh = join(f.root, 'bin/gh.exe');
     stub(compile(f.root), gh);
     bindFixture(f.root, { git, gh });

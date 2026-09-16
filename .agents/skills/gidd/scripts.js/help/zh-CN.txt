@@ -11,8 +11,16 @@ GIDD（Windows x64 / PowerShell 5.1）
   gidd.link config set repo.remote.account bornwhy #(示例) 设置 repo.remote.account 的值为 bornwhy
   gidd.link config set repo.remote.name origin     #选择本地 remote
   gidd.link config set repo.remote.url https://github.com/swawhq/gidd #记录预期仓库
+  gidd.link config set git.credential.mode gh      #必填 gh|inherit；gh 为 HTTPS 提供指定账号凭据
+  gidd.link config set git.user.name "提交署名"     #姓名和邮箱必须成对配置，或均省略
+  gidd.link config set git.user.email "name@example.com"
 
   gidd.link auth                                   #按配置申请设备授权并等待确认；gh 可能保存凭据
+
+  gidd.link .gh <参数...>                          #预设账号、GH_HOST/GH_REPO 和 Git 环境，透传 gh 命令
+  gidd.link .git <参数...>                         #预设 Git 身份及 HTTPS 认证；本地操作不要求登录
+  # 默认使用入口所属仓库目录；显式参数按 Git/gh 原生规则覆盖，不限制目标仓库。
+  # Git 环境配置优先于同名文件配置，低于显式 -c；SSH 使用原生认证。输出、输入和退出码透传。
 
   gidd.link spec                                   #列出已有规范名称（JSON）
   gidd.link spec --lang zh                         #可选参数 --lang zh|en；下同

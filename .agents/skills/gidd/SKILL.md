@@ -23,8 +23,13 @@ GIDD（Windows x64 / PowerShell 5.1）
   gidd.link config set repo.remote.name origin #选择本地 remote
   gidd.link config set repo.remote.url https://github.com/swawhq/gidd #记录预期仓库
   gidd.link config set spec.mode issue-direct   #选择轻量规范
+  gidd.link config set git.credential.mode gh   #必填 gh|inherit；gh 仅配置 HTTPS 凭据助手
+  gidd.link config set git.user.name "提交署名"   #与 git.user.email 成对设置，或均省略
+  gidd.link config set git.user.email "name@example.com"
 
   gidd.link auth                                #按配置申请设备授权并等待确认；gh 可能保存凭据
+  gidd.link .gh issue list                      #按配置预设 GitHub 账号和仓库；原始参数透传
+  gidd.link .git status                         #按配置预设 Git 环境；本地操作不要求登录
 
   gidd.link spec                                #列出已有规范名称（JSON）
   gidd.link spec --lang zh                      #可选参数 --lang zh|en；下同
@@ -59,9 +64,10 @@ gh.link.cmd
 技能安装后，仍需对仓库进行单独的配置后，才会启用，详见`四、GIDD 启用步骤`
 
 1. 确认`<目标仓库根>/.agents/skills/gidd/gidd.link.cmd`已存在（不存在请跳到`四、GIDD 启用步骤`）
-2. 可在任意目录调用`<path-to>/gidd.link.cmd doctor --offline`查看诊断（每个`gidd.link.cmd`都是动态生成，只会操作其自身所属的仓库，不应跨仓库混用）
+2. 可在任意目录调用`<path-to>/gidd.link.cmd doctor --offline`查看诊断（每个入口默认使用自身所属仓库的配置及工作目录；`.gh`/`.git` 的显式参数按原生命令规则覆盖）
 3. 按诊断提示进行修复或配置（有些项目必须要人类协助），并再次运行诊断，直至其退出码为`0`，执行`gidd.link.cmd spec.current`，便可按输出的规范要求开展工作了
 4. `gidd.link.cmd`若损坏，可执行`gidd.pre.ensure.cmd --repo <仓库路径>`重新创建（此命令应存在于本技能的安装目录）
+5. 开发时通过该仓库的 `gidd.link.cmd .gh`、`.git` 使用工具。它们准备默认执行环境，不拦截目标参数或强制执行开发规范。配置、优先级和认证说明见 [execution.md](execution.md)。
 
 ## 四、GIDD 启用步骤
 

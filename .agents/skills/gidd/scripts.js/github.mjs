@@ -3,7 +3,7 @@ import { extname, isAbsolute } from 'node:path';
 
 // One deadline covers process exit AND pipe EOF (including inherited pipes).
 // Arbitrary command diagnostics can contain tokens or credential-bearing URLs.
-export function runCommand(executable, args, { cwd, timeoutMs = 15000, env = process.env, signal, onStderrLine } = {}) {
+export function runCommand(executable, args, { cwd, timeoutMs = 15000, env = process.env, signal, onStderrLine, input } = {}) {
   if (signal?.aborted) return Promise.resolve({ ok: false, reason: 'cancelled', text: '' });
   // Every JS caller supplies a binary path; never discover PATH commands or
   // delegate argument parsing to CMD/PowerShell script wrappers.
@@ -52,7 +52,7 @@ export function runCommand(executable, args, { cwd, timeoutMs = 15000, env = pro
       child = spawn(executable, args, { cwd, env: { ...childEnv, ...overrides },
         windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
       child.stdin.on('error', () => {});
-      child.stdin.end();
+      child.stdin.end(input);
       signal?.addEventListener('abort', cancel, { once: true });
       timer = setTimeout(() => abort('process_timeout'), timeoutMs);
       child.stdout.setEncoding('utf8');

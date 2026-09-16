@@ -5,7 +5,7 @@ import { configure, editConfiguration, readRemoteConfiguration, normalizeReposit
 import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/storage.mjs';
 import { prepare, toolsRoot, adapter, assert, compile, existsSync, fixture, hash, join, json, mkdirSync, ok, readFileSync, repo, stub, write } from './support/helpers.mjs';
 
-const configText = 'schema_version = 1\n[repo]\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\nremote.account = "Octocat"\n';
+const configText = 'schema_version = 1\n[git]\ncredential.mode = "inherit"\n[repo]\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\nremote.account = "Octocat"\n';
 
 test('repository config uses three dotted fields and rejects retired or conflicting structure without writes', () => {
   const f = fixture();
@@ -39,7 +39,7 @@ test('config editing repairs fields independently and preserves comments, BOM, l
     configure(f.root,'set','repo.remote.url','https://GitHub.com/Owner/Repo.git/');
     assert.equal(readRemoteConfiguration(f.root).url,'https://github.com/owner/repo');
     for (const newline of ['\n','\r\n']) {
-      const original='\uFEFF'+['# 保留','schema_version = 1','[repo] # target',"  remote.account = 'bad account' # 注释",'remote.url = "bad url"','[spec]','mode = "issue-direct"',''].join(newline);
+      const original='\uFEFF'+['# 保留','schema_version = 1','[git]','credential.mode = "inherit"','[repo] # target',"  remote.account = 'bad account' # 注释",'remote.url = "bad url"','[spec]','mode = "issue-direct"',''].join(newline);
       write(path,original);
       configure(f.root,'set','repo.remote.account','Octocat');
       assert.equal(readFileSync(path,'utf8'),original.replace("'bad account'",'"Octocat"'));

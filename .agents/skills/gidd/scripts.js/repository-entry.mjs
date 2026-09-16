@@ -23,7 +23,7 @@ export async function runLink(directory, spec, args) {
     const entry = resolve(directory, spec.entry);
     // Verify we entered the very skill named by the link, not another copied helper.
     if (!samePath(entry, sourceEntry)) throw new Error('repository_entry_target_mismatch');
-    if (args.some(arg => arg === '--repository' || arg.startsWith('--repository='))) throw new Error('repository_override_forbidden');
+    if (!['.gh', '.git'].includes(args[0]?.toLowerCase()) && args.some(arg => arg === '--repository' || arg.startsWith('--repository='))) throw new Error('repository_override_forbidden');
     const { main } = await import('./gidd.mjs');
     return await main([...args], { boundRepository: repository });
   } catch (error) {

@@ -108,7 +108,7 @@ function Invoke-GiddPrepareTools {
                 if (-not $CheckOnly) { Restore-GiddInterruptedTool $root $name }
                 $extra = @()
                 try { $bound = (Read-GiddBindings $root).tools.$name; if ($bound.source -eq 'path') { $extra += $bound.path } } catch { }
-                $minimum = if ($name -eq 'git') { [version]'2.0.0' } else { [version]'2.98.0' }
+                $minimum = if ($name -eq 'git') { [version]'2.31.0' } else { [version]'2.98.0' }
                 $pattern = if ($name -eq 'git') { '^git version (\d+\.\d+\.\d+)' } else { '^gh version (\d+\.\d+\.\d+)(?:\s|$)' }
                 $managed = Join-Path $root ($name + '/' + (Get-GiddExecutableName $name))
                 $candidate = Find-Tool $name $minimum $pattern $managed -ExtraPaths $extra
