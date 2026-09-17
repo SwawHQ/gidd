@@ -400,7 +400,7 @@ test('shell doctor and auth preserve JavaScript results, events and exit codes',
   try {
     const s = installation(f), git = findGit();
     const config = join(s.target,'.agents/skills/gidd/config.toml');
-    const configured = 'schema_version = 1\n[git]\ncredential.mode = "inherit"\n[spec]\nmode = "issue-direct"\n[repo]\nremote.account = "Octocat"\nremote.name = "fixture"\nremote.url = "https://github.com/owner/repo"\n';
+    const configured = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[spec]\nmode = "issue-direct"\n[repo]\nremote.account = "Octocat"\nremote.name = "fixture"\nremote.url = "https://github.com/owner/repo"\n';
     write(config,configured);
     for (const args of [['init'], ['config','user.name','Fixture Author'], ['config','user.email','author@example.test'],
       ['remote','add','fixture','git@github.com:owner/repo.git']]) ok(run(git, ['-C',s.target,...args]));
@@ -463,6 +463,7 @@ test('config shell command creates and edits defaults; auth rejects missing conf
       assert.equal(result.key,`repo.remote.${key}`);
     }
     assert.ok(readFileSync(config,'utf8').startsWith(original));
+    ok(s.invoke(['config','set','git.user.mode','inherit'],env));
     ok(s.invoke(['config','set','git.credential.mode','inherit'],env));
     assert.equal(json(ok(s.invoke(['config','show'],env))).content,readFileSync(config,'utf8'));
     const before = snapshot(s.target);
@@ -483,6 +484,7 @@ test('config shell command creates and edits defaults; auth rejects missing conf
     assert.equal(s.invoke(['config','set','tools.directory','custom'],env).status,2);
     const direct = s.invoke(['config','set','repo.remote.url','https://github.example.test/owner/repo'],env);
     assert.equal(json(ok(direct)).value,'https://github.example.test/owner/repo');
+    ok(s.invoke(['config','set','git.user.mode','inherit'],env));
     ok(s.invoke(['config','set','git.credential.mode','inherit'],env));
     ok(s.invoke(['config','show'],env));
   } finally { f.dispose(); }

@@ -58,9 +58,9 @@ function describeCheck(item, root, bindings) {
       reason === 'target_required' ? 'Run the actual skill gidd.pre.ensure.cmd --repo <Git-working-tree-root>, then invoke the generated gidd.link.cmd by its full path.' :
       'Check the reported directory and its Git working-tree metadata. Restore the intended repository or explicitly initialize Git there, then rerun doctor; do not substitute a parent repository.';
   } else if (id === 'folder.git.author') {
-    item.hint = 'Check effective Git author and committer. Set git.user.name and git.user.email together, or use existing Git identity configuration.';
-    if (link) item.commands = ['name', 'email'].map(key => command(link,
-      ['config', 'set', `git.user.${key}`, '<value>'], [`git.user.${key}`]));
+    item.hint = 'Check effective Git author and committer. Repair inherited Git identity, or select git.user.mode=managed and set both git.user.name and git.user.email.';
+    if (link) item.commands = [command(link, ['config', 'set', 'git.user.mode', 'managed']),
+      ...['name', 'email'].map(key => command(link, ['config', 'set', `git.user.${key}`, '<value>'], [`git.user.${key}`]))];
   } else if (id === remoteId('account') + '..online') {
     item.hint = reason === 'unexpected_account' ?
       'The selected token does not belong to repo.remote.account. Review the configured account and saved gh credentials.' :
@@ -178,7 +178,8 @@ export async function doctor(target, { offline = false, fixedRepository = false,
       repository.reason = symbolic.ok ? 'unborn_branch' : 'head_unreadable';
     }
     // A readable worktree can still supply authors/remotes before its first commit.
-    checks.push(await effectiveGitIdentity(invoke));
+    checks.push(gitChecks[0].status === 'ready' ? await effectiveGitIdentity(invoke) :
+      blockCheck(check('folder.git.author', 'ready'), 'config.git.user'));
     fields = await inspectRemoteFields(invoke, fields);
   } else {
     checks.push(check('folder.git.author', 'not_checked', 'repository_unavailable'));

@@ -6,7 +6,7 @@ import { validateSpecMode, specModes } from './specs.mjs';
 import { validateGitField, validateGitSettings } from './git-settings.mjs';
 
 const initialConfiguration = 'schema_version = 1\n\n[repo]\nremote.name = "origin"\n';
-const editableKey = /^(?:repo\.remote\.(?:name|url|account)|git\.(?:user\.(?:name|email)|credential\.mode)|spec\.mode)$/;
+const editableKey = /^(?:repo\.remote\.(?:name|url|account)|git\.(?:user\.(?:mode|name|email)|credential\.mode)|spec\.mode)$/;
 const hostnamePattern = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i;
 
 export function normalizeRepositoryIdentity(value) {
@@ -122,7 +122,9 @@ export function configurationHint(reason) {
   if (reason === 'spec_mode_unsupported') return 'Available spec modes: ' + specModes.join(', ') + '. Use config set spec.mode <mode>.';
   if (reason === 'config_retired_structure') return 'Replace [github] with [repo] remote.name, remote.url and remote.account; remove hostname and [tools]. Tool sources are internal preparation policy. Preserve unrelated comments and [spec].';
   if (reason === 'config_missing') return 'Create config with: gidd.link.cmd config set repo.remote.account <login>. Then set repo.remote.url and review repo.remote.name.';
-  if (reason === 'config_incomplete_git_user') return 'Set both git.user.name and git.user.email, or remove both to inherit Git identity.';
+  if (/^config_(missing|invalid)_git_user_mode$/.test(reason)) return 'Set git.user.mode explicitly to managed or inherit with config set.';
+  if (reason === 'config_incomplete_git_user') return 'Managed identity requires both git.user.name and git.user.email. Set both, or choose inherit and remove both from config.toml.';
+  if (reason === 'config_git_user_inherit_conflict') return 'Remove git.user.name and git.user.email from config.toml to inherit Git identity, or select managed and complete both fields.';
   if (/^config_(missing|invalid)_git_credential_mode$/.test(reason)) return 'Set git.credential.mode explicitly to gh or inherit with config set.';
   const field = /^config_(?:missing|invalid)_repo_remote_(name|url|account)$/.exec(reason);
   if (field) return `Run doctor --offline and repair repo.remote.${field[1]} with config set.`;

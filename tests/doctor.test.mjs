@@ -4,7 +4,7 @@ import { doctor } from '../.agents/skills/gidd/scripts.js/doctor.mjs';
 import { configure } from '../.agents/skills/gidd/scripts.js/config.mjs';
 import { bindFixture, diagnosis, toolsRoot, assert, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, readFileSync, repo, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
 
-const configText = 'schema_version = 1\n[git]\ncredential.mode = "inherit"\n[spec]\nmode = "issue-direct"\n[repo]\nremote.account = "Octocat"\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\n';
+const configText = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[spec]\nmode = "issue-direct"\n[repo]\nremote.account = "Octocat"\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\n';
 const checkOrder = [
   'tool.platform', 'tool.js_runtime', 'tool.git', 'tool.gh',
   'folder.git.worktree', 'folder.git.author',
@@ -54,6 +54,7 @@ test('doctor combines independent checks once; offline never invokes network or 
     const accountId='config.repo.remote.account..online', urlId='config.repo.remote.url..online';
     const before=snapshot(f.root), online=scenario(), report=await doctor(f.root,online);
     assert.equal(report.status,'checks_passed');assert.equal(report.checks.length,14);
+    assert.deepEqual(byId(report, 'config.git.user').details, { mode: 'inherit', source: 'git' });
     assert.equal(report.folder, f.root); assert.equal(Object.hasOwn(report, 'repository'), false);
     assert.equal(report.hint, 'No errors found in local or online checks. Push permission is not checked.');
     assert.deepEqual(report.checks.filter(c=>c.id.startsWith('config.repo.remote')).map(c=>c.id),
@@ -144,9 +145,24 @@ test('doctor combines independent checks once; offline never invokes network or 
     }
     write(config, configText.replace('credential.mode = "inherit"\n', ''));
     assert.equal(byId(await doctor(f.root, scenario()), 'config.git.credential.mode').reason, 'config_missing_git_credential_mode');
-    write(config, configText.replace('[git]', '[git]\nuser.name = "Configured"'));
-    assert.equal(byId(await doctor(f.root, scenario()), 'config.git.user').reason, 'config_incomplete_git_user');
-    write(config, configText.replace('"inherit"', '"gh"'));
+    for (const [user, reason] of [
+      ['', 'config_missing_git_user_mode'],
+      ['user.mode = "config"\n', 'config_invalid_git_user_mode'],
+      ['user.mode = "managed"\n', 'config_incomplete_git_user'],
+      ['user.mode = "managed"\nuser.name = "Configured"\n', 'config_incomplete_git_user'],
+      ['user.mode = "inherit"\nuser.name = "Configured"\n', 'config_git_user_inherit_conflict'],
+    ]) {
+      write(config, configText.replace('user.mode = "inherit"\n', user));
+      const sc = scenario(), r = await doctor(f.root, { ...sc, offline: true });
+      assert.equal(r.status, 'needs_attention');
+      assert.equal(byId(r, 'config.git.user').reason, reason);
+      assert.equal(byId(r, 'config.git.user').severity, 'error');
+      assert.ok(byId(r, 'config.git.user').hint);
+      assert.equal(byId(r, 'folder.git.author').status, 'not_checked');
+      assert.equal(byId(r, 'folder.git.author').blocked_by, 'config.git.user');
+      assert.ok(!sc.calls.some(c => c.key === 'author'));
+    }
+    write(config, configText.replace('credential.mode = "inherit"', 'credential.mode = "gh"'));
     const noToken = scenario({ token: { ok: false, reason: 'command_failed', text: 'PRIVATE_TOKEN' } });
     const failedGh = await doctor(f.root, noToken);
     assert.equal(byId(failedGh, accountId).reason, 'account_token_unavailable');

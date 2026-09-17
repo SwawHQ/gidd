@@ -11,7 +11,7 @@ import { assert, fixture, findGit, join, mkdirSync, write, run, ok, compile, bin
 
 const code = pathToFileURL(join(repo, '.agents/skills/gidd/scripts.js/gidd.mjs')).href;
 const driver = `const {main}=await import(${JSON.stringify(code)});process.exitCode=await main(JSON.parse(process.argv[1]),{boundRepository:process.argv[2]});`;
-const settings = { user: { name: 'Configured 姓名', email: 'configured@example.test' }, credential: { mode: 'gh' } };
+const settings = { user: { mode: 'managed', name: 'Configured 姓名', email: 'configured@example.test' }, credential: { mode: 'gh' } };
 function setup(f) {
   const git = findGit(), gh = compile(f.root, 'wrapper-gh.cs');
   bindFixture(f.root, { git, gh });
@@ -20,7 +20,7 @@ function setup(f) {
   ok(run(git, ['init', '--quiet', target]));
   const config = join(target, '.agents/skills/gidd/config.toml');
   const text = 'schema_version = 1\n[repo]\nremote.url = "https://github.com/owner/repo"\nremote.account = "Octocat"\n' +
-    '[git]\nuser.name = "Configured 姓名"\nuser.email = "configured@example.test"\ncredential.mode = "gh"\n';
+    '[git]\nuser.mode = "managed"\nuser.name = "Configured 姓名"\nuser.email = "configured@example.test"\ncredential.mode = "gh"\n';
   write(config, text);
   const env = { GIT_CONFIG_GLOBAL: 'NUL', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: '', GIT_AUTHOR_EMAIL: '',
     GIT_COMMITTER_NAME: '', GIT_COMMITTER_EMAIL: '', GH_CONFIG_DIR: join(f.root, 'credentials') };
@@ -34,15 +34,31 @@ function setup(f) {
 test('Git settings require an explicit mode and a complete identity; fields remain independently repairable', () => {
   const f = fixture();
   try {
-    assert.throws(() => validateGitSettings({}), /config_missing_git_credential_mode/);
-    assert.throws(() => validateGitSettings({ user: { name: 'one' }, credential: { mode: 'inherit' } }), /config_incomplete_git_user/);
-    for (const mode of ['', 'auto', 'true']) assert.throws(() => validateGitSettings({ credential: { mode } }), /config_invalid_git_credential_mode/);
+    assert.throws(() => validateGitSettings({}), /config_missing_git_user_mode/);
+    assert.throws(() => validateGitSettings({ user: { mode: 'inherit' } }), /config_missing_git_credential_mode/);
+    for (const mode of ['', 'config', 'auto', 'true']) {
+      assert.throws(() => validateGitSettings({ user: { mode } }), /config_invalid_git_user_mode/);
+      assert.throws(() => configure(f.root, 'set', 'git.user.mode', mode), /config_invalid_git_user_mode/);
+    }
+    for (const user of [{}, { name: 'one' }, { email: 'one@example.test' }]) {
+      assert.throws(() => validateGitSettings({ user: { mode: 'managed', ...user } }), /config_incomplete_git_user/);
+    }
+    for (const user of [{ name: 'one' }, { email: 'one@example.test' }, { name: 'one', email: 'one@example.test' }]) {
+      assert.throws(() => validateGitSettings({ user: { mode: 'inherit', ...user } }), /config_git_user_inherit_conflict/);
+    }
+    for (const mode of ['', 'auto', 'true']) assert.throws(() => validateGitSettings({ user: { mode: 'inherit' }, credential: { mode } }), /config_invalid_git_credential_mode/);
     configure(f.root, 'set', 'git.credential.mode', 'inherit');
+    configure(f.root, 'set', 'git.user.mode', 'managed');
+    assert.throws(() => configure(f.root, 'show'), /config_incomplete_git_user/);
     configure(f.root, 'set', 'git.user.name', 'Name "quotes" & 中文');
     assert.throws(() => validateGitSettings(readConfiguration(f.root).git), /config_incomplete_git_user/);
     configure(f.root, 'set', 'git.user.email', 'person@example.test');
     assert.equal(validateGitSettings(readConfiguration(f.root).git).user.name, 'Name "quotes" & 中文');
-    assert.equal(validateGitSettings({ credential: { mode: 'inherit' } }).credential.mode, 'inherit');
+    configure(f.root, 'set', 'git.user.mode', 'inherit');
+    assert.throws(() => configure(f.root, 'show'), /config_git_user_inherit_conflict/);
+    configure(f.root, 'set', 'git.user.mode', 'managed');
+    assert.ok(configure(f.root, 'show').content.includes('user.mode = "managed"'));
+    assert.equal(validateGitSettings({ user: { mode: 'inherit' }, credential: { mode: 'inherit' } }).user.mode, 'inherit');
   } finally { f.dispose(); }
 });
 
@@ -57,9 +73,49 @@ test('runtime Git config beats files, preserves native overrides and reaches Git
     assert.match(ok(s.invoke(['.git', 'var', 'GIT_AUTHOR_IDENT'], { env: { GIT_AUTHOR_NAME: 'Environment Author' } })).stdout,
       /^Environment Author <configured@example.test>/);
     const diagnostic = JSON.parse(s.invoke(['doctor', '--offline']).stdout);
+    assert.deepEqual(diagnostic.checks.find(item => item.id === 'config.git.user').details,
+      { mode: 'managed', source: 'config.toml', defaults: { name: settings.user.name, email: settings.user.email } });
     assert.equal(diagnostic.checks.find(item => item.id === 'folder.git.author').details.name, settings.user.name);
     assert.equal(diagnostic.checks.find(item => item.id === 'folder.git.author').details.committer.email, settings.user.email);
     assert.equal(s.invoke(['.git', '-C', s.elsewhere, 'rev-parse', '--is-inside-work-tree']).status, 128);
+    const inherited = s.text.replace('user.mode = "managed"', 'user.mode = "inherit"').replace(/^user\.(?:name|email) = .*\n/gm, '');
+    write(s.config, inherited);
+    assert.equal(ok(s.invoke(['.git', 'config', '--get', 'user.name'])).stdout.trim(), 'Local Name');
+    assert.equal(ok(s.invoke(['.gh', 'child-git'])).stdout.trim(), 'Local Name');
+    const localReport = JSON.parse(s.invoke(['doctor', '--offline']).stdout);
+    assert.deepEqual(localReport.checks.find(item => item.id === 'config.git.user').details, { mode: 'inherit', source: 'git' });
+    assert.equal(localReport.checks.find(item => item.id === 'folder.git.author').details.email, 'local@example.test');
+    const globalConfig = join(f.root, 'global.gitconfig');
+    write(globalConfig, '[user]\nname = Global Name\nemail = global@example.test\n');
+    for (const key of ['name', 'email']) ok(run(s.git, ['-C', s.target, 'config', '--unset', 'user.' + key]));
+    const globalEnv = { GIT_CONFIG_GLOBAL: globalConfig };
+    assert.match(ok(s.invoke(['.git', 'var', 'GIT_AUTHOR_IDENT'], { env: globalEnv })).stdout, /^Global Name <global@example.test>/);
+    assert.equal(ok(s.invoke(['.gh', 'child-git'], { env: globalEnv })).stdout.trim(), 'Global Name');
+  } finally { f.dispose(); }
+});
+
+test('invalid identity modes block both wrappers and cannot report a fallback identity as ready', () => {
+  const f = fixture();
+  try {
+    const s = setup(f);
+    for (const [text, reason] of [
+      [s.text.replace('user.mode = "managed"\n', ''), 'config_missing_git_user_mode'],
+      [s.text.replace('"managed"', '"config"'), 'config_invalid_git_user_mode'],
+      [s.text.replace(/^user\.(?:name|email) = .*\n/gm, ''), 'config_incomplete_git_user'],
+      [s.text.replace('"managed"', '"inherit"'), 'config_git_user_inherit_conflict'],
+      [s.text.replace(settings.user.email, ' '), 'config_invalid_git_user_email'],
+    ]) {
+      write(s.config, text);
+      for (const tool of ['.git', '.gh']) {
+        const failed = s.invoke([tool, '--version']);
+        assert.equal(failed.status, 2); assert.equal(failed.stdout, '');
+        assert.match(failed.stderr, new RegExp(reason));
+      }
+      assert.equal(s.invoke(['config', 'show']).status, 2);
+      const report = JSON.parse(s.invoke(['doctor', '--offline']).stdout);
+      assert.equal(report.checks.find(item => item.id === 'config.git.user').reason, reason);
+      assert.equal(report.checks.find(item => item.id === 'folder.git.author').blocked_by, 'config.git.user');
+    }
   } finally { f.dispose(); }
 });
 

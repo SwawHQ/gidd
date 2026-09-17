@@ -39,7 +39,7 @@ const shellQuote = value => "'" + value.replaceAll('\\', '/').replaceAll("'", "'
 
 export function gitEnvironment(settings, bindings, target, env = process.env) {
   const pairs = [];
-  if (settings.user?.name !== undefined) pairs.push(['user.name', settings.user.name], ['user.email', settings.user.email]);
+  if (settings.user?.mode === 'managed') pairs.push(['user.name', settings.user.name], ['user.email', settings.user.email]);
   if (settings.credential?.mode === 'gh') {
     // Lazy authentication: local Git operations do not need a token or network.
     // Git invokes this broker only when it needs HTTPS credentials for this host.

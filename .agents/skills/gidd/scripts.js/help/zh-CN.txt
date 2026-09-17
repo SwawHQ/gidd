@@ -12,7 +12,8 @@ GIDD（Windows x64 / PowerShell 5.1）
   gidd.link config set repo.remote.name origin     #选择本地 remote
   gidd.link config set repo.remote.url https://github.com/swawhq/gidd #记录预期仓库
   gidd.link config set git.credential.mode gh      #必填 gh|inherit；gh 为 HTTPS 提供指定账号凭据
-  gidd.link config set git.user.name "提交署名"     #姓名和邮箱必须成对配置，或均省略
+  gidd.link config set git.user.mode managed     #必填 managed|inherit；inherit 要求姓名、邮箱均省略
+  gidd.link config set git.user.name "提交署名"     #managed 模式下姓名和邮箱两项必填
   gidd.link config set git.user.email "name@example.com"
 
   gidd.link auth                                   #按配置申请设备授权并等待确认；gh 可能保存凭据

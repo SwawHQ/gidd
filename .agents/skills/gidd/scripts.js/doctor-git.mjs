@@ -7,7 +7,8 @@ export function gitSettingChecks(settings, available) {
     try {
       if (key === 'user') {
         const user = validateGitUser(settings?.user);
-        return { id, status: 'ready', details: { source: user.name ? 'config.toml' : 'git', ...(user.name ? { defaults: user } : {}) } };
+        return { id, status: 'ready', details: { mode: user.mode, source: user.mode === 'managed' ? 'config.toml' : 'git',
+          ...(user.mode === 'managed' ? { defaults: { name: user.name, email: user.email } } : {}) } };
       }
       if (settings?.credential?.mode === undefined) throw new Error('config_missing_git_credential_mode');
       validateGitField(key, settings.credential.mode);

@@ -12,7 +12,8 @@ GIDD (Windows x64 / PowerShell 5.1)
   gidd.link config set repo.remote.name origin #Select the local remote
   gidd.link config set repo.remote.url https://github.com/swawhq/gidd #Record the expected repository
   gidd.link config set git.credential.mode gh   #Required gh|inherit; gh supplies the selected account for HTTPS
-  gidd.link config set git.user.name "Commit Name" #Configure name and email together, or omit both
+  gidd.link config set git.user.mode managed   #Required managed|inherit; inherit requires name/email to be absent
+  gidd.link config set git.user.name "Commit Name" #Both name and email are required in managed mode
   gidd.link config set git.user.email "name@example.com"
 
   gidd.link auth                                #Request device authorization using config and wait for confirmation; gh may save credentials
