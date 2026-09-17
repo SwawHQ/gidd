@@ -132,6 +132,7 @@ test('spec readers emit scoped Markdown guidance and preserve native form JSON',
   try {
     const s = installation(f), before = snapshot(f.root);
     for (const [lang, locale] of [['zh', 'zh-CN'], ['en', 'en']]) {
+      assert.deepEqual(json(ok(s.invoke(['spec.list', '--lang', lang]))), { scope: s.target, names: ['issue-direct'] });
       const prompt = readFileSync(join(s.skill, `spec.issue-direct/prompt.${locale}.md`), 'utf8');
       const form = parseSpecYaml(readFileSync(join(s.skill, `spec.issue-direct/issue.${locale}.yaml`), 'utf8'));
       for (const route of ['spec.current', 'spec.issue-direct']) {
@@ -148,13 +149,13 @@ test('spec readers emit scoped Markdown guidance and preserve native form JSON',
         assert.equal(result.stderr, '');
       }
     }
-    assert.deepEqual(json(ok(s.invoke(['spec']))), { scope: s.target, names: ['issue-direct'] });
+    assert.deepEqual(json(ok(s.invoke(['spec.list']))), { scope: s.target, names: ['issue-direct'] });
     assert.match(ok(s.invoke(['spec.current'], { env: { GIDD_LANG: 'zh-CN' } })).stdout, /关联的 Issue/);
     assert.deepEqual(snapshot(f.root), before);
     for (const text of ['', 'schema_version = 1\n', 'schema_version = 1\n[spec]\nmode = "unavailable"\n']) {
       write(configPath(s.target), text);
       const saved = snapshot(f.root);
-      assert.deepEqual(json(ok(s.invoke(['spec']))).names, ['issue-direct']);
+      assert.deepEqual(json(ok(s.invoke(['spec.list']))).names, ['issue-direct']);
       assert.match(ok(s.invoke(['spec.issue-direct'])).stdout, /Prompt source: ` .+prompt\.en\.md `/);
       assert.equal(json(ok(s.invoke(['spec.issue-direct.issue']))).form.body[2].attributes.label, 'Acceptance criteria');
       assert.deepEqual(snapshot(f.root), saved);
@@ -166,7 +167,7 @@ test('unknown arguments and retired names are rejected without changing files', 
   const f = fixture();
   try {
     const s = installation(f), before = snapshot(f.root);
-    for (const route of ['spec', 'spec.current', 'spec.issue-direct', 'spec.current.issue',
+    for (const route of ['spec.list', 'spec.current', 'spec.issue-direct', 'spec.current.issue',
       'spec.issue-direct.issue']) {
       const args = ['--json'];
       const result = s.invoke([route, ...args]);
@@ -179,12 +180,15 @@ test('unknown arguments and retired names are rejected without changing files', 
     for (const args of [['unknown'], ['current', 'extra'], ['current'], ['current', '--lang'],
       ['--json'], ['--lang'], ['--lang', 'fr'], ['--unknown'], ['--json', 'current'],
       ['current', '--lang', 'fr'], ['current', '--lang', 'en', '--lang', 'zh'], ['template'], ['template', '../secret']]) {
-      const result = s.invoke(['spec', ...args]);
+      const result = s.invoke(['spec.list', ...args]);
       assert.equal(result.status, 2, result.stdout + result.stderr);
       assert.equal(json(result).scope, s.target);
       assert.ok(json(result).error);
     }
     for (const [args, reason] of [
+      [['spec'], 'invalid_spec_route'],
+      [['spec', '--lang', 'en'], 'invalid_spec_route'],
+      [['spec.list.issue'], 'invalid_spec_route'],
       [['workflow', 'current'], 'unknown_command'],
       [['set', 'workflow.mode', 'issue-direct'], 'config_unknown_key'],
       [['spec.current.issue.check'], 'invalid_spec_route'],
@@ -280,7 +284,7 @@ test('generated repository link dispatches spec and template commands from any c
       windowsVerbatimArguments: true, cwd: f.root, env: { PATH: '', GIDD_LANG: 'en', GIT_DIR: join(f.root, 'unrelated.git') },
     });
     const before = snapshot(f.root), result = ok(invoke('spec.current'));
-    assert.deepEqual(json(ok(invoke('spec'))).names, ['issue-direct']);
+    assert.deepEqual(json(ok(invoke('spec.list'))).names, ['issue-direct']);
     const scope = /^Scope: ` (.+) ` {2}\r?$/m.exec(result.stdout)?.[1];
     assert.ok(scope, result.stdout);
     assert.equal(realpathSync.native(scope), realpathSync.native(s.target));
@@ -289,7 +293,7 @@ test('generated repository link dispatches spec and template commands from any c
     assert.equal(json(ok(invoke('spec.current.issue'))).form.body[2].attributes.label, 'Acceptance criteria');
     assert.equal(json(ok(invoke('spec.issue-direct.issue'))).form.body[2].attributes.label, 'Acceptance criteria');
     assert.equal(json(invoke('spec.current --repository elsewhere')).reason, 'repository_override_forbidden');
-    assert.equal(json(invoke('spec --repository elsewhere')).reason, 'repository_override_forbidden');
+    assert.equal(json(invoke('spec.list --repository elsewhere')).reason, 'repository_override_forbidden');
     assert.deepEqual(snapshot(f.root), before);
   } finally { f.dispose(); }
 });

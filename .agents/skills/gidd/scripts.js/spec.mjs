@@ -10,10 +10,10 @@ function language(explicit) {
 
 export function parseSpecArguments(route, args) {
   const input = [...args];
-  const match = /^spec(?:\.([a-z][a-z0-9-]*)(?:\.(issue))?)?$/.exec(route);
-  if (!match) throw new Error('invalid_spec_route');
+  const match = /^spec\.([a-z][a-z0-9-]*)(?:\.(issue))?$/.exec(route);
+  if (!match || match[1] === 'list' && match[2]) throw new Error('invalid_spec_route');
   const selector = match[1];
-  const action = !selector ? 'list' : match[2] ? 'issue' : 'show';
+  const action = selector === 'list' ? 'list' : match[2] ? 'issue' : 'show';
   let lang;
   while (input.length) {
     const flag = input.shift();
