@@ -16,7 +16,7 @@ gidd.link set <key> <value>
 gidd.link clear <key>
 ```
 
-Bare `gidd.link set` prints localized usage, editable fields and requirements without reading or modifying configuration, including when the file is missing or invalid. It uses the same language selection as help (`GIDD_LANG`, then locale). The `show` and `config` commands have been removed; `set show`, `del` and `delete` are not supported. Configuration results retain the `gidd.config/v1` JSON schema and doctor IDs retain the `config.` prefix.
+Bare `gidd.link set` displays the same localized main help as `gidd.link help`, without reading or modifying configuration, including when the file is missing or invalid. It uses the same language selection as help (`GIDD_LANG`, then locale). The `show` and `config` commands have been removed; `set show`, `del` and `delete` are not supported. Configuration results retain the `gidd.config/v1` JSON schema and doctor IDs retain the `config.` prefix.
 
 ```toml
 schema_version = 1
@@ -72,7 +72,7 @@ gidd.link set git.user.mode inherit
 
 授权读取入口绑定目录的 `config.toml`，直接从 `repo.remote.url` 提取主机，使用 `repo.remote.account` 指定账号；仅要求 URL/account 字段有效及 gh 绑定版本符合要求。不要求 Git、`.git` 工作区、`repo.remote.name`、本地远端地址一致或 Git 身份/凭据配置完整；配置文件和工具绑定记录仍须能正常解析。doctor 继续诊断本地仓库及远端，授权成功不代表仓库访问权限或就绪状态。已有 token 核验失败时直接报告错误，不自动重新登录。
 
-配置命令为 `gidd.link set.show`、`gidd.link set <字段> <值>`、`gidd.link clear <字段>`。不带参数的 `gidd.link set` 显示本地化用法、可编辑字段及要求，不读取或修改配置，配置缺失或损坏时也可查看；语言选择与 help 一致（优先 `GIDD_LANG`，再按系统语言）。旧 `show` 和 `config` 入口已移除，不支持 `set show`、`del` 或 `delete`。配置结果仍使用 `gidd.config/v1` JSON 格式，doctor 的 `config.` 字段 ID 保持不变。
+配置命令为 `gidd.link set.show`、`gidd.link set <字段> <值>`、`gidd.link clear <字段>`。不带参数的 `gidd.link set` 显示与 `gidd.link help` 相同的本地化主帮助，不读取或修改配置，配置缺失或损坏时也可查看；语言选择与 help 一致（优先 `GIDD_LANG`，再按系统语言）。旧 `show` 和 `config` 入口已移除，不支持 `set show`、`del` 或 `delete`。配置结果仍使用 `gidd.config/v1` JSON 格式，doctor 的 `config.` 字段 ID 保持不变。
 
 两入口提供默认环境，显式参数交给 Git/gh 处理。`git.user.mode` 必须填写 `managed` 或 `inherit`：前者要求姓名和邮箱两项必填，后者要求两项均省略；缺失模式或冲突配置均报错。独立的 `git.credential.mode` 必须填写 `gh` 或 `inherit`。`.gh` 从配置 URL 设置默认 host/repo，并使用指定账号已保存的 token；`.git` 在 managed 模式下用环境配置覆盖同名文件配置，保留 `-c`、`--author`、历史作者及签名的原生语义。
 

@@ -555,7 +555,7 @@ test('top-level configuration commands create and edit defaults; .gh.auth reject
   } finally { f.dispose(); }
 });
 
-test('bare set provides bilingual guidance without configuration; old commands and malformed arguments do not mutate files', { timeout: 30000 }, () => {
+test('bare set shares main bilingual help without configuration; old commands and malformed arguments do not mutate files', { timeout: 30000 }, () => {
   const f = fixture();
   try {
     const s = installation(f), config = join(s.target, '.agents/skills/gidd/config.toml');
@@ -567,9 +567,10 @@ test('bare set provides bilingual guidance without configuration; old commands a
       const stat = content === null ? undefined : statSync(config, { bigint: true });
       for (const language of ['en', 'zh']) {
         const help = ok(s.invoke(['set'], { GIDD_LANG: language })).stdout;
-        assert.match(help, language === 'zh' ? /可编辑字段/ : /Editable fields/);
+        assert.equal(help, ok(s.invoke(['help'], { GIDD_LANG: language })).stdout);
         for (const field of fields) assert.ok(help.includes(field));
-        for (const syntax of ['managed|inherit', 'gh|inherit', 'gidd.link set.show', 'gidd.link set', 'gidd.link clear']) assert.ok(help.includes(syntax));
+        for (const syntax of ['managed', 'inherit', 'gh|inherit', 'gidd.link set.show', 'gidd.link set', 'gidd.link clear']) assert.ok(help.includes(syntax));
+        assert.doesNotMatch(help, /^\s*gidd\.link set\s*(?:#.*)?$/m);
         assert.doesNotMatch(help, /gidd\.link config/);
       }
       for (const args of [['show'], ['config'], ['config', 'show'], ['config', 'set', 'git.user.mode', 'inherit'],

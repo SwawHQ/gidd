@@ -1,35 +1,27 @@
 GIDD (Windows x64 / PowerShell 5.1)
 
-  gidd.link help en                             #Show English help
-  gidd.link help zh                             #Show Chinese help
-  gidd.link doctor                              #Check tools, repository and GitHub identity (includes network checks)
-  gidd.link doctor --offline                    #Check local tools, config and repository without network requests
-
-  gidd.link set.show                         #Show current config.toml contents
-  gidd.link set                          #Show editable fields and requirements without reading or changing config
-  gidd.link set <key> <value>             #Set a field in config.toml
-  gidd.link clear <key>                   #Remove a field; absent fields succeed. Empty strings do not mean removal
-  gidd.link set spec.mode issue-direct   #Select the lightweight spec
-  gidd.link set repo.remote.account bornwhy    #(Example) Set repo.remote.account to bornwhy
-  gidd.link set repo.remote.name origin #Select the local remote
-  gidd.link set repo.remote.url https://github.com/swawhq/gidd #Record the expected repository
-  gidd.link set git.credential.mode gh   #Required gh|inherit; gh supplies the selected account for HTTPS
-  gidd.link set git.user.mode managed   #Required managed|inherit; inherit requires name/email to be absent
-  gidd.link set git.user.name "Commit Name" #Both name and email are required in managed mode
-  gidd.link set git.user.email "name@example.com"
-  gidd.link clear git.user.name           #Example: remove name; also clear git.user.email when switching to inherit
-
-  gidd.link .gh.auth                                #Check the configured account; authorize if credentials are missing, then verify identity; gh stores credentials
-  # Auth uses the host from repo.remote.url and repo.remote.account; local Git/remote readiness is not required.
-
-  gidd.link .gh <args...>                       #Supply account, GH_HOST/GH_REPO and Git environment; forward gh arguments
-  gidd.link .git <args...>                      #Supply Git identity and HTTPS credentials; local operations need no login
-  # Start in the entry's repository; explicit arguments follow native Git/gh rules and may select other repositories.
-  # Git environment config overrides the same file settings, below explicit -c. SSH keeps native authentication. Preserve stdio/exit codes.
-
-  gidd.link spec                                #List available spec names
-  gidd.link spec --lang en                      #Optional --lang zh|en also applies below
-  gidd.link spec.current                        #Print Markdown guidance for the configured spec
-  gidd.link spec.issue-direct                   #Print Markdown guidance for a named spec
-  gidd.link spec.current.issue                  #Print the current spec's GitHub Issue form (JSON)
-  gidd.link spec.issue-direct.issue             #Print a named spec's GitHub Issue form (JSON)
+  gidd.link help en          #Show English help
+  gidd.link help zh          #Show Chinese help
+  gidd.link doctor           #Check tools, repository and GitHub identity (includes network checks)
+  gidd.link doctor --offline #Check local tools, configuration and repository without network requests
+  gidd.link set.show         #Show the current contents of config.toml
+  gidd.link set <key> <value> #Set a field in config.toml
+  gidd.link set spec.mode issue-direct  #(Example) Set the current spec; list available specs: gidd.link spec
+  gidd.link set repo.remote.account bornwhy #(Example) Set repo.remote.account to bornwhy
+  gidd.link set repo.remote.name origin #(Example) Record the remote name used for the local repository
+  gidd.link set repo.remote.url <url>   #Record the remote URL used for the local repository
+  gidd.link set git.credential.mode gh  #(Example) Required; how to supply credentials for the remote URL: gh|inherit
+  gidd.link set git.user.mode managed   #(Example) Required; how to set Git commit identity: managed|inherit
+  gidd.link set git.user.name <user>    #Required in managed mode; remove with clear in inherit mode; sets git user.name
+  gidd.link set git.user.email <email>  #Required in managed mode; remove with clear in inherit mode; sets git user.email
+  gidd.link clear <key>             #Remove a field from config.toml
+  gidd.link clear git.user.name     #(Example) Remove git.user.name (inherit mode also requires removing git.user.email)
+  gidd.link spec                    #List available specs; select the current spec: set spec.mode <name>
+  gidd.link spec.current            #Print the current spec
+  gidd.link spec.current --lang zh  #As above, with a specified language: zh|en; also applies below
+  gidd.link spec.issue-direct       #Print the spec named issue-direct
+  gidd.link spec.current.issue      #Print the GitHub Issue template required by the current spec
+  gidd.link spec.issue-direct.issue #As above, for the issue-direct spec
+  gidd.link .gh.auth            #Check the configured account's credentials; start interactive login if missing (credentials managed by gh)
+  gidd.link .gh <native gh args>   #Supply the configured environment: account token/GH_HOST/GH_REPO/Git (priority < explicit arguments), then forward to gh
+  gidd.link .git <native git args> #Supply the configured environment: identity/HTTPS credential helper (priority > .git/config, < arguments), then forward to git

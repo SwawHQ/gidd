@@ -8,11 +8,11 @@ import { boundTools, boundExecutor } from './bindings.mjs';
 import { parseSpecArguments, specCommand, specError } from './spec.mjs';
 import { passthrough } from './passthrough.mjs';
 
-function printHelp(requestedLanguage, topic = '') {
+function printHelp(requestedLanguage) {
   const choice = requestedLanguage || process.env.GIDD_LANG || process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || Intl.DateTimeFormat().resolvedOptions().locale;
   if ((requestedLanguage || process.env.GIDD_LANG) && !/^(zh|en)(?:$|[-_])/.test(choice)) throw new Error('unsupported_help_language');
   const language = /^zh(?:$|[-_])/.test(choice) ? 'zh-CN' : 'en';
-  console.log(readFileSync(new URL(`./help/${topic}${language}.txt`, import.meta.url), 'utf8'));
+  console.log(readFileSync(new URL(`./help/${language}.txt`, import.meta.url), 'utf8'));
 }
 
 export async function main(args, { boundRepository } = {}) {
@@ -27,7 +27,7 @@ export async function main(args, { boundRepository } = {}) {
       printHelp(args[0]); return 0;
     }
     if (command === 'set' && args.length === 0) {
-      printHelp(undefined, 'set.'); return 0;
+      printHelp(); return 0;
     }
     if (['.gh', '.git'].includes(command)) {
       if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');
