@@ -81,3 +81,8 @@ gh.link.cmd
 
 1. 针对仓库停用本技能，删除`<目标仓库根>/.agents/skills/gidd/gidd.link.cmd`即可（后续仍可能触发是否启用 GIDD）
 2. 完整卸载（所有仓库不再使用本技能）应包含：技能安装目录、`<仓库根>/.agents/skills/gidd/`目录和共享工具目录`~/.agents/skills.tools/gidd/`
+
+## 命令帮助
+
+- gidd.link：[中文](reference/gidd.link.help.zh-CN.md) / [English](reference/gidd.link.help.en.md)
+- gidd.pre.ensure：[中文](reference/gidd.pre.ensure.help.zh-CN.md) / [English](reference/gidd.pre.ensure.help.en.md)

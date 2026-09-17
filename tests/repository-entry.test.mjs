@@ -129,7 +129,7 @@ test('repository ensure help works without tools or a repository and honors lang
     ]) {
       const output = ok(invoke(args, env));
       assert.equal(output.stderr, '');
-      assert.equal(output.stdout.trim(), readFileSync(join(skill, `scripts.powershell/help/${language}.txt`), 'utf8').trim());
+      assert.equal(output.stdout.trim(), readFileSync(join(skill, `reference/gidd.pre.ensure.help.${language}.md`), 'utf8').trim());
     }
     for (const [args, env, reason] of [
       [['help', 'fr'], {}, 'unsupported_help_language'],

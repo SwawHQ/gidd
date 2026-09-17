@@ -332,6 +332,7 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
     assert.match(ok(s.invoke(['help','en'], { GIDD_LANG: 'zh' })).stdout, /Check tools, repository and GitHub identity/);
     for (const language of ['en', 'zh']) {
       const help = ok(s.invoke(['help', language])).stdout;
+      assert.equal(help.trim(), readFileSync(join(s.skill, `reference/gidd.link.help.${language === 'zh' ? 'zh-CN' : 'en'}.md`), 'utf8').trim());
       assert.match(help, /gidd\.link \.gh\.auth/);
       assert.doesNotMatch(help, /gidd\.link auth\b/);
     }

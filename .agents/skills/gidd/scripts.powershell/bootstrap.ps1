@@ -13,7 +13,7 @@ try {
         $choice = @($explicitLanguage,$env:LC_ALL,$env:LC_MESSAGES,$env:LANG,[Globalization.CultureInfo]::CurrentUICulture.Name) |
             Where-Object { $_ } | Select-Object -First 1
         $language = if ($choice -cmatch '^zh(?:$|[-_])') { 'zh-CN' } else { 'en' }
-        [Console]::WriteLine([IO.File]::ReadAllText((Join-Path $PSScriptRoot "help/$language.txt"), [Text.Encoding]::UTF8))
+        [Console]::WriteLine([IO.File]::ReadAllText((Join-Path $PSScriptRoot "../reference/gidd.pre.ensure.help.$language.md"), [Text.Encoding]::UTF8))
         exit 0
     }
     for ($i=0; $i -lt $inputArgs.Count; $i++) {
