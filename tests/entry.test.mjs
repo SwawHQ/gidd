@@ -529,9 +529,9 @@ test('top-level configuration commands create and edit defaults; .gh.auth reject
     assert.ok(readFileSync(config,'utf8').startsWith(original));
     ok(s.invoke(['set','git.user.mode','inherit'],env));
     ok(s.invoke(['set','git.credential.mode','inherit'],env));
-    const shown = json(ok(s.invoke(['set.show'],env)));
-    assert.equal(shown.schema, 'gidd.config/v1');
-    assert.equal(shown.content,readFileSync(config,'utf8'));
+    const shown = ok(s.invoke(['set.show'],env));
+    assert.equal(shown.stderr, '');
+    assert.equal(shown.stdout,readFileSync(config,'utf8'));
     const before = snapshot(s.target);
     for (const [key,value] of [['repo.remote.account','bad name'],['github.token','secret'],['schema_version','2']]) {
       assert.equal(s.invoke(['set',key,value],env).status,2);
@@ -553,6 +553,35 @@ test('top-level configuration commands create and edit defaults; .gh.auth reject
     ok(s.invoke(['set','git.user.mode','inherit'],env));
     ok(s.invoke(['set','git.credential.mode','inherit'],env));
     ok(s.invoke(['set.show'],env));
+  } finally { f.dispose(); }
+});
+
+test('set.show prints exact TOML including invalid configuration and reports read errors only on stderr', { timeout: 30000 }, () => {
+  const f = fixture();
+  try {
+    const s = installation(f), config = join(s.target, '.agents/skills/gidd/config.toml');
+    for (const content of ['', 'schema_version = 1\n', 'broken TOML',
+      '\uFEFF# 中文注释\r\n[git]\r\nuser.mode = "invalid"\r\n',
+      '# comment\n[repo]\nremote.url = "bad url"\nremote.account = "bad account"']) {
+      write(config, content);
+      const before = snapshot(f.root), stat = statSync(config, { bigint: true });
+      const result = ok(s.invoke(['set.show']));
+      assert.equal(result.stdout, content); assert.equal(result.stderr, '');
+      assert.deepEqual(snapshot(f.root), before);
+      assert.equal(statSync(config, { bigint: true }).mtimeNs, stat.mtimeNs);
+    }
+    for (const [content, reason] of [[null, 'config_missing'], [Buffer.from([255]), 'config_invalid_utf8'],
+      ['#'.repeat(16385), 'config_too_large']]) {
+      if (content === null) rmSync(config); else write(config, content);
+      const before = snapshot(f.root), result = s.invoke(['set.show']);
+      assert.equal(result.status, 2); assert.equal(result.stdout, '');
+      assert.equal(JSON.parse(result.stderr.trim().split(/\r?\n/).at(-1)).reason, reason);
+      assert.deepEqual(snapshot(f.root), before);
+    }
+    rmSync(config); mkdirSync(config);
+    const result = s.invoke(['set.show']);
+    assert.equal(result.status, 2); assert.equal(result.stdout, '');
+    assert.match(result.stderr, /config_not_a_file/);
   } finally { f.dispose(); }
 });
 
@@ -580,7 +609,9 @@ test('bare set shares main bilingual help without configuration; old commands an
         ['set.show', 'extra'], ['clear'], ['clear', 'git.user.name', 'extra']]) {
         const result = s.invoke(args);
         assert.equal(result.status, 2);
-        assert.equal(json(result).reason, ['show', 'config', 'del', 'delete'].includes(args[0]) ? 'unknown_command' : 'invalid_arguments');
+        const report = args[0] === 'set.show' ? JSON.parse(result.stderr) : json(result);
+        if (args[0] === 'set.show') assert.equal(result.stdout, '');
+        assert.equal(report.reason, ['show', 'config', 'del', 'delete'].includes(args[0]) ? 'unknown_command' : 'invalid_arguments');
       }
       assert.deepEqual(snapshot(f.root), before);
       if (stat) {

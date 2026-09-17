@@ -82,7 +82,8 @@ export async function main(args, { boundRepository } = {}) {
       try { report = await authorize(options,{ execute, signal: controller.signal, onEvent: event => console.error(JSON.stringify(event)) }); }
       finally { process.removeListener('SIGINT',cancel); process.removeListener('SIGTERM',cancel); }
     }
-    console.log(JSON.stringify(report));
+    if (command === 'set.show') process.stdout.write(report.content);
+    else console.log(JSON.stringify(report));
     return ['ready','local_ready','checks_passed','checks_incomplete'].includes(report.status) ? 0 : 1;
   } catch (error) {
     const reason = /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : 'operation_failed';
@@ -96,7 +97,9 @@ export async function main(args, { boundRepository } = {}) {
       console.error(JSON.stringify({ schema: 'gidd.exec/v1', status: 'error', reason }));
       return 2;
     }
-    console.log(JSON.stringify({ schema, status: 'error', reason }));
+    const errorReport = JSON.stringify({ schema, status: 'error', reason });
+    if (command === 'set.show') console.error(errorReport);
+    else console.log(errorReport);
     return 2;
   }
 }

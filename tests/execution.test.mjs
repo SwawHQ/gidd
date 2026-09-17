@@ -49,13 +49,15 @@ test('Git settings require an explicit mode and a complete identity; fields rema
     for (const mode of ['', 'auto', 'true']) assert.throws(() => validateGitSettings({ user: { mode: 'inherit' }, credential: { mode } }), /config_invalid_git_credential_mode/);
     configure(f.root, 'set', 'git.credential.mode', 'inherit');
     configure(f.root, 'set', 'git.user.mode', 'managed');
-    assert.throws(() => configure(f.root, 'show'), /config_incomplete_git_user/);
+    assert.throws(() => validateGitSettings(readConfiguration(f.root).git), /config_incomplete_git_user/);
+    assert.match(configure(f.root, 'show').content, /user.mode = "managed"/);
     configure(f.root, 'set', 'git.user.name', 'Name "quotes" & 中文');
     assert.throws(() => validateGitSettings(readConfiguration(f.root).git), /config_incomplete_git_user/);
     configure(f.root, 'set', 'git.user.email', 'person@example.test');
     assert.equal(validateGitSettings(readConfiguration(f.root).git).user.name, 'Name "quotes" & 中文');
     configure(f.root, 'set', 'git.user.mode', 'inherit');
-    assert.throws(() => configure(f.root, 'show'), /config_git_user_inherit_conflict/);
+    assert.throws(() => validateGitSettings(readConfiguration(f.root).git), /config_git_user_inherit_conflict/);
+    assert.match(configure(f.root, 'show').content, /user.mode = "inherit"/);
     configure(f.root, 'set', 'git.user.mode', 'managed');
     assert.ok(configure(f.root, 'show').content.includes('user.mode = "managed"'));
     assert.equal(validateGitSettings({ user: { mode: 'inherit' }, credential: { mode: 'inherit' } }).user.mode, 'inherit');
@@ -114,7 +116,8 @@ test('invalid identity modes block both wrappers and cannot report a fallback id
         assert.equal(failed.status, 2); assert.equal(failed.stdout, '');
         assert.match(failed.stderr, new RegExp(reason));
       }
-      assert.equal(s.invoke(['set.show']).status, 2);
+      const shown = ok(s.invoke(['set.show']));
+      assert.equal(shown.stdout, text); assert.equal(shown.stderr, '');
       const report = JSON.parse(s.invoke(['doctor', '--offline']).stdout);
       assert.equal(report.checks.find(item => item.id === 'config.git.user.' + field).reason, diagnosticReason);
       assert.equal(report.checks.find(item => item.id === 'folder.git.author').blocked_by, 'config.git.user.' + field);

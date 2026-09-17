@@ -16,7 +16,7 @@ gidd.link set <key> <value>
 gidd.link clear <key>
 ```
 
-Bare `gidd.link set` displays the same localized main help as `gidd.link help`, without reading or modifying configuration, including when the file is missing or invalid. It uses the same language selection as help (`GIDD_LANG`, then locale). The `show` and `config` commands have been removed; `set show`, `del` and `delete` are not supported. Configuration results retain the `gidd.config/v1` JSON schema and doctor IDs retain the `config.` prefix.
+Bare `gidd.link set` displays the same localized main help as `gidd.link help`, without reading or modifying configuration, including when the file is missing or invalid. It uses the same language selection as help (`GIDD_LANG`, then locale). The `show` and `config` commands have been removed; `set show`, `del` and `delete` are not supported. `set.show` writes the original TOML directly to stdout, preserving comments, BOM and line endings without adding a newline. It does not parse or validate configuration, so incomplete or malformed TOML remains readable. Missing files or read errors produce stderr diagnostics and a nonzero exit code; file type, path, UTF-8 and size checks still apply. `set` and `clear` results retain the `gidd.config/v1` JSON schema and doctor IDs retain the `config.` prefix.
 
 ```toml
 schema_version = 1
@@ -46,7 +46,7 @@ Both Git modes are required and independent:
 - `git.user.mode = "inherit"` uses Git's existing identity rules and requires both name/email fields to be absent. Keeping either field is a configuration error. Here `managed` refers to identity defaults supplied by GIDD, independently of whether the Git executable is GIDD-managed.
 - `git.credential.mode = "gh"` supplies gh-backed credentials for the configured HTTPS host; `inherit` leaves Git authentication unchanged.
 
-No migration or implicit mode is provided. `set` and `clear` can repair one field at a time; complete the selected mode's requirements before invoking wrappers or `set.show`. No tokens are stored in this file.
+No migration or implicit mode is provided. `set` and `clear` can repair one field at a time; complete the selected mode's requirements before invoking wrappers. No tokens are stored in this file.
 
 `gidd.link clear <key>` removes the assignment for any field accepted by `set`, preserving other contents, BOM, line endings and comments (an inline comment becomes a standalone comment). Unknown fields are errors. An absent field succeeds without rewriting the file; an absent config file succeeds without creating a file or directory. The JSON result includes `action: "clear"`, `key` and `changed: true|false`, without the removed value. Required fields may be cleared; doctor and execution checks then report the incomplete configuration. Empty strings still undergo normal `set` validation and never mean removal. Clear uses the same configuration lock and atomic replacement protections as set.
 
@@ -80,11 +80,11 @@ gidd.link set git.user.mode inherit
 
 授权读取入口绑定目录的 `config.toml`，直接从 `repo.remote.url` 提取主机，使用 `repo.remote.account` 指定账号；仅要求 URL/account 字段有效及 gh 绑定版本符合要求。不要求 Git、`.git` 工作区、`repo.remote.name`、本地远端地址一致或 Git 身份/凭据配置完整；配置文件和工具绑定记录仍须能正常解析。doctor 继续诊断本地仓库及远端，授权成功不代表仓库访问权限或就绪状态。已有 token 核验失败时直接报告错误，不自动重新登录。
 
-配置命令为 `gidd.link set.show`、`gidd.link set <字段> <值>`、`gidd.link clear <字段>`。不带参数的 `gidd.link set` 显示与 `gidd.link help` 相同的本地化主帮助，不读取或修改配置，配置缺失或损坏时也可查看；语言选择与 help 一致（优先 `GIDD_LANG`，再按系统语言）。旧 `show` 和 `config` 入口已移除，不支持 `set show`、`del` 或 `delete`。配置结果仍使用 `gidd.config/v1` JSON 格式，doctor 的 `config.` 字段 ID 保持不变。
+配置命令为 `gidd.link set.show`、`gidd.link set <字段> <值>`、`gidd.link clear <字段>`。不带参数的 `gidd.link set` 显示与 `gidd.link help` 相同的本地化主帮助，不读取或修改配置，配置缺失或损坏时也可查看；语言选择与 help 一致（优先 `GIDD_LANG`，再按系统语言）。旧 `show` 和 `config` 入口已移除，不支持 `set show`、`del` 或 `delete`。`set.show` 向 stdout 原样输出 TOML，保留注释、BOM 和换行，不额外追加换行；不解析或校验配置，不完整或有语法错误时也能查看。文件不存在或读取失败时向 stderr 输出诊断并返回非零退出码；仍检查文件类型、路径、UTF-8 和大小。`set`、`clear` 结果仍使用 `gidd.config/v1` JSON 格式，doctor 的 `config.` 字段 ID 保持不变。
 
 两入口提供默认环境，显式参数交给 Git/gh 处理。`git.user.mode` 必须填写 `managed` 或 `inherit`：前者要求姓名和邮箱两项必填，后者要求两项均省略；缺失模式或冲突配置均报错。独立的 `git.credential.mode` 必须填写 `gh` 或 `inherit`。`.gh` 从配置 URL 设置默认 host/repo，并使用指定账号已保存的 token；`.git` 在 managed 模式下用环境配置覆盖同名文件配置，保留 `-c`、`--author`、历史作者及签名的原生语义。
 
-`set` 和 `clear` 允许逐字段修复；`.git` / `.gh` 包装和 `set.show` 要求配置完整。切换为 inherit 时，先执行 `clear git.user.name`、`clear git.user.email`，再执行 `set git.user.mode inherit`。clear 删除赋值，不写入空字符串；字段已不存在则成功且不重写配置，配置文件不存在也不会创建文件或目录。未知字段报错；必填字段允许清除，之后由 doctor/执行入口报告缺失。保留其余内容、BOM、换行和注释，行内注释转为独立注释，沿用 set 的文件锁和原子替换保护；结果以 `changed` 表示是否修改。
+`set` 和 `clear` 允许逐字段修复；`.git` / `.gh` 包装要求配置完整。切换为 inherit 时，先执行 `clear git.user.name`、`clear git.user.email`，再执行 `set git.user.mode inherit`。clear 删除赋值，不写入空字符串；字段已不存在则成功且不重写配置，配置文件不存在也不会创建文件或目录。未知字段报错；必填字段允许清除，之后由 doctor/执行入口报告缺失。保留其余内容、BOM、换行和注释，行内注释转为独立注释，沿用 set 的文件锁和原子替换保护；结果以 `changed` 表示是否修改。
 
 doctor 的 `config.git.user.mode` 报告模式和来源，`config.git.user.name`、`config.git.user.email` 分别检查对应字段：managed 下报告配置值，inherit 下省略为正常、填写为冲突。模式无效时，姓名和邮箱检查受阻并指向模式项；`folder.git.author` 报告实际生效身份，署名配置无效时指向首个失败字段，不将回退身份误报为就绪。
 

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { parseConfiguration, stringPattern } from './storage.mjs';
 import { validateSpecName, specSelectionHint, specCatalogHint } from './specs.mjs';
-import { validateGitField, validateGitSettings } from './git-settings.mjs';
+import { validateGitField } from './git-settings.mjs';
 
 const initialConfiguration = 'schema_version = 1\n\n[repo]\nremote.name = "origin"\n';
 const editableKey = /^(?:repo\.remote\.(?:name|url|account)|git\.(?:user\.(?:mode|name|email)|credential\.mode)|spec\.current)$/;
@@ -161,9 +161,6 @@ export function configure(repository, action, key, value) {
   if (action === 'show') {
     if (!existsSync(path)) throw new Error('config_missing');
     const content = readText(path);
-    const settings = parseConfiguration(content);
-    validateRemoteSettings(settings.repo.remote);
-    validateGitSettings(settings.git);
     return { schema: 'gidd.config/v1', status: 'ready', config_path: path, content };
   }
   if (!['set', 'clear'].includes(action) || action === 'clear' && value !== undefined) throw new Error('config_invalid_arguments');

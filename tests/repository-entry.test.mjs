@@ -354,7 +354,9 @@ test('repository links repair generated contents and preserve target, arguments 
       assert.ok(repositoryCheck.hint);
       assert.equal(diagnosis.checks.find(c => c.id === 'config.toml').details.path, join(target, '.agents/skills/gidd/config.toml'));
       assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /Check tools, repository and GitHub identity/);
-      assert.equal(json(s.invoke(link, ['set.show'])).reason, 'not_git_repository_root');
+      const shown = s.invoke(link, ['set.show']);
+      assert.equal(shown.status, 2); assert.equal(shown.stdout, '');
+      assert.equal(JSON.parse(shown.stderr).reason, 'not_git_repository_root');
     } finally { renameSync(savedMarker, gitMarker); }
     const beforeRemoved = snapshot(f.root);
     for (const args of [['tools'], ['tools','--check'], ['tools','--ensure']]) {

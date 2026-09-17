@@ -4,7 +4,7 @@ GIDD (Windows x64 / PowerShell 5.1)
   gidd.link help en           #Show English help
   gidd.link doctor            #Check tools, repository and GitHub identity (includes network checks)
   gidd.link doctor --offline  #Check local tools, configuration and repository without network requests
-  gidd.link set.show          #Show the current contents of config.toml
+  gidd.link set.show          #Print config.toml as-is (TOML)
   gidd.link set <key> <value> #Set a field in config.toml
   gidd.link set spec.current issue-direct  #(Example) Set the current spec; list available specs: gidd.link spec.list
   gidd.link set repo.remote.account bornwhy #(Example) Set repo.remote.account to bornwhy

@@ -18,7 +18,8 @@ test('repository config uses three dotted fields and rejects retired or conflict
       assert.equal(readFileSync(path,'utf8'), configText);
     }
     for (const text of ['schema_version = 1\n[github]\naccount="Octocat"\n', 'schema_version = 1\n[tools]\n', 'schema_version = 1\n[bootstrap]\n']) {
-      write(path, text); assert.throws(() => configure(f.root,'show'), /config_retired_structure/);
+      write(path, text); assert.throws(() => parseConfiguration(text), /config_retired_structure/);
+      assert.equal(configure(f.root,'show').content, text);
       assert.equal(readFileSync(path,'utf8'), text);
     }
     for (const suffix of ['remote.url.account = "a"\n','remote.name = "other"\n','hostname = "github.com"\n','[repo]\n','remote.token = "secret"\n']) {
@@ -111,7 +112,7 @@ test('clear preserves other bytes and comments and is idempotent for every edita
       assert.equal(key.split('.').reduce((object, part) => object?.[part], parseConfiguration(readFileSync(path, 'utf8'))), undefined);
     }
     assert.match(readFileSync(path, 'utf8'), /^schema_version = 1/);
-    assert.throws(() => configure(f.root, 'show'), /config_missing_git_user_mode/);
+    assert.equal(configure(f.root, 'show').content, readFileSync(path, 'utf8'));
   } finally { f.dispose(); }
 });
 
