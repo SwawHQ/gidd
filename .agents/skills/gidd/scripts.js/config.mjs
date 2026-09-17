@@ -129,6 +129,15 @@ export function readConfiguration(repository) {
   return parseConfiguration(readText(path));
 }
 
+export function readAuthorizationConfiguration(repository) {
+  const { remote } = readConfiguration(repository).repo;
+  for (const key of ['url', 'account']) {
+    if (!Object.hasOwn(remote, key)) throw new Error('config_missing_repo_remote_' + key);
+    validateRemoteField(key, remote[key]);
+  }
+  return { hostname: new URL(normalizeRepositoryIdentity(remote.url)).hostname, account: remote.account };
+}
+
 export function configurationHint(reason) {
   if (reason === 'spec_mode_unsupported') return 'Available spec modes: ' + specModes.join(', ') + '. Use gidd.link set spec.mode <mode>.';
   if (reason === 'config_retired_structure') return 'Replace [github] with [repo] remote.name, remote.url and remote.account; remove hostname and [tools]. Tool sources are internal preparation policy. Preserve unrelated comments and [spec].';

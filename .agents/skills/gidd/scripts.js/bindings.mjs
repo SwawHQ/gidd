@@ -29,8 +29,8 @@ export function readBindings(root) {
 export function boundTools(root, required = ['git','gh']) {
   const {tools} = readBindings(root);
   for (const name of required) if (!tools[name]) throw new Error('tool_binding_missing:' + name);
-  for (const [name,tool] of Object.entries(tools)) {
-    if (compareVersions(tool.version,minimums[name]) < 0) throw new Error('tool_binding_incompatible:' + name);
+  for (const name of required) {
+    if (compareVersions(tools[name].version,minimums[name]) < 0) throw new Error('tool_binding_incompatible:' + name);
   }
   return tools;
 }

@@ -356,7 +356,7 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
     for (const command of [['.gh.auth']]) {
       const missing = s.invoke([...command]);
       assert.equal(missing.status, 2);
-      assert.equal(json(missing).reason, 'config_missing_repo_remote_name');
+      assert.equal(json(missing).reason, 'config_missing_repo_remote_url');
     }
     assert.deepEqual(snapshot(f.root), before, 'Help, invalid commands and missing dependencies must not write or install');
   } finally { f.dispose(); }
@@ -433,17 +433,24 @@ test('shell doctor and .gh.auth preserve JavaScript results, events and exit cod
     assert.ok(report.checks.every(c => c.severity !== 'error'));
     assert.equal(json(ok(s.invoke(['.gh.auth'],env))).reason,'already_authenticated');
     write(config,configured.replace('remote.name = "fixture"\n',''));
-    assert.equal(json(s.invoke(['.gh.auth'],env)).reason,'config_missing_repo_remote_name');
+    assert.equal(json(ok(s.invoke(['.gh.auth'],env))).reason,'already_authenticated');
     assert.equal(json(s.invoke(['doctor'],env)).checks.find(c=>c.id==='config.repo.remote.name').reason,'config_missing_repo_remote_name');
     for (const [text,reason] of [
       [configured.replace('remote.url = "https://github.com/owner/repo"\n',''),'config_missing_repo_remote_url'],
       [configured.replace('remote.account = "Octocat"\n',''),'config_missing_repo_remote_account'],
-      [configured.replace('https://github.com/owner/repo','https://github.com/other/repo'),'repository_address_mismatch'],
+      [configured.replace('https://github.com/owner/repo','invalid-url'),'config_invalid_repo_remote_url'],
+      [configured.replace('"Octocat"','"bad account"'),'config_invalid_repo_remote_account'],
     ]) {
       write(config,text);
       assert.equal(json(s.invoke(['.gh.auth'],env)).reason,reason);
       assert.equal(existsSync(gh + '.started'),false,'Invalid configuration must never start login');
     }
+    write(config,configured.replace('https://github.com/owner/repo','https://github.com/other/repo'));
+    assert.equal(json(ok(s.invoke(['.gh.auth'],env))).reason,'already_authenticated');
+    assert.equal(json(s.invoke(['doctor','--offline'],env)).checks.find(c=>c.id==='config.repo.remote.url').reason,'repository_address_mismatch');
+    write(config,configured.replace('remote.name = "fixture"','remote.name = "absent"'));
+    assert.equal(json(ok(s.invoke(['.gh.auth'],env))).reason,'already_authenticated');
+    assert.equal(json(s.invoke(['doctor','--offline'],env)).checks.find(c=>c.id==='config.repo.remote.name').reason,'configured_remote_missing');
     write(config,configured.replace('"Octocat"','"OtherAccount"'));
     const mismatch = s.invoke(['.gh.auth'],env);
     assert.equal(mismatch.status,1);
@@ -459,6 +466,48 @@ test('shell doctor and .gh.auth preserve JavaScript results, events and exit cod
   } finally { f.dispose(); }
 });
 
+test('shell .gh.auth needs only URL, account and gh even without a usable Git repository', { timeout: 30000 }, () => {
+  const f = fixture();
+  try {
+    const s = installation(f), config = join(s.target,'.agents/skills/gidd/config.toml');
+    const gh = compile(f.root,'auth-gh.cs');
+    write(gh + '.mode','existing');
+    bindFixture(f.root,{gh});
+    const env = { PATH: dirname(process.execPath), GH_CONFIG_DIR: join(f.root,'credentials') };
+    const minimal = 'schema_version = 1\n[repo]\nremote.url = "https://GHE.example.test/Another/Project.git"\nremote.account = "Octocat"\n';
+    // The fixture rejects token/API calls sent to any other host or account.
+    write(gh + '.hostname','ghe.example.test');
+    write(gh + '.account','Octocat');
+    rmSync(join(s.target,'.git'),{recursive:true});
+    for (const extra of ['', 'remote.name = "bad remote name"\n[git]\nuser.mode = "invalid"\ncredential.mode = "invalid"\n']) {
+      write(config,minimal + extra);
+      const before = snapshot(s.target);
+      const report = json(ok(s.invoke(['.gh.auth'],env)));
+      assert.equal(report.reason,'already_authenticated');
+      assert.equal(report.hostname,'ghe.example.test');
+      assert.equal(report.expected_account,'Octocat');
+      assert.deepEqual(snapshot(s.target),before);
+    }
+    // Even a recorded but obsolete/unavailable Git must not block gh authorization.
+    const binding = join(toolsRoot(f.root),'tool-bindings.json');
+    const record = JSON.parse(readFileSync(binding,'utf8'));
+    record.tools.git = { path: join(f.root,'missing/git.exe'), source: 'path', version: '2.0.0' };
+    write(binding,JSON.stringify(record));
+    write(join(s.target,'.git'),'not a worktree');
+    assert.equal(json(ok(s.invoke(['.gh.auth'],env))).reason,'already_authenticated');
+    // Device authorization also works before Git is ready.
+    write(config,minimal.replace('GHE.example.test','github.com'));
+    write(gh + '.hostname','github.com');
+    write(gh + '.mode','success');
+    const auth = ok(s.invoke(['.gh.auth'],env));
+    assert.equal(json(auth).reason,'authenticated');
+    assert.equal(JSON.parse(auth.stderr.trim()).type,'authorization_required');
+    record.tools.gh.version = '2.97.0';
+    write(binding,JSON.stringify(record));
+    assert.equal(json(s.invoke(['.gh.auth'],env)).reason,'tool_binding_incompatible:gh');
+  } finally { f.dispose(); }
+});
+
 test('top-level configuration commands create and edit defaults; .gh.auth rejects missing config and overrides', { timeout: 30000 }, () => {
   const f = fixture();
   try {
@@ -466,7 +515,7 @@ test('top-level configuration commands create and edit defaults; .gh.auth reject
     const config = join(s.target,'.agents/skills/gidd/config.toml');
     const original = readFileSync(config,'utf8');
     const missing = s.invoke(['.gh.auth'],env);
-    assert.equal(json(missing).reason,'config_missing_repo_remote_name');
+    assert.equal(json(missing).reason,'config_missing_repo_remote_url');
     for (const args of [['.gh.auth','--account','Octocat'],['.gh.auth','--hostname','github.com'],['.gh.auth','--remote','origin'],['.gh.auth','Octocat']]) {
       assert.equal(json(s.invoke([...args],env)).reason,'github_parameters_moved_to_config');
     }

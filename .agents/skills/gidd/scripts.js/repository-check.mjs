@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { plainPath } from './storage.mjs';
-import { remoteAddress, normalizeRepositoryIdentity, validateRemoteField, readRemoteConfiguration, githubTarget } from './config.mjs';
+import { remoteAddress, normalizeRepositoryIdentity, validateRemoteField } from './config.mjs';
 import { runCommand } from './github.mjs';
 
 export const remoteId = key => 'config.repo.remote.' + key;
@@ -61,13 +61,4 @@ export async function inspectRepositoryEntry(repository, git, execute = runComma
   if (!inside.ok || inside.text !== 'true' || !top.ok) throw new Error('not_readable_worktree');
   if (realpathSync.native(repository).toLowerCase() !== realpathSync.native(top.text).toLowerCase()) throw new Error('repository_root_mismatch');
   return { status: 'ready', path: repository };
-}
-
-export async function requireRemoteTarget(repository, git, execute = runCommand) {
-  const remote = readRemoteConfiguration(repository, ['name', 'url', 'account']);
-  await inspectRepositoryEntry(repository, git, execute);
-  const fields = await inspectRemoteFields(args => execute(git, ['-C', repository, ...args], { timeoutMs: 5000 }), remoteFields(remote));
-  const failure = Object.values(fields).find(item => item.status !== 'ready');
-  if (failure) throw new Error(failure.reason);
-  return githubTarget(remote);
 }

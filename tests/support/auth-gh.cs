@@ -13,10 +13,12 @@ public static class AuthGh {
             Console.WriteLine("{\"url\":\"" + args[2] + "\"}"); return 0;
         }
         if (args.Length > 1 && args[0] == "auth" && args[1] == "token") {
+            if (File.Exists(exe + ".hostname") && (args.Length != 6 || args[2] != "--hostname" || args[3] != File.ReadAllText(exe + ".hostname") || args[4] != "--user" || args[5] != File.ReadAllText(exe + ".account"))) return 96;
             if (mode.StartsWith("existing") || File.Exists(exe + ".logged")) { Console.WriteLine("fixture-token"); return 0; }
             return 1;
         }
         if (args[0] == "api") {
+            if (File.Exists(exe + ".hostname") && (args.Length < 3 || args[1] != "--hostname" || args[2] != File.ReadAllText(exe + ".hostname"))) return 97;
             if (mode == "existing") { Console.WriteLine("Octocat"); return 0; }
             if (mode == "existing-mismatch") { Console.WriteLine("OtherAccount"); return 0; }
             if (!File.Exists(exe + ".logged") || mode == "verify-fail") { Console.Error.WriteLine("ghp_PRIVATE_TOKEN"); return 1; }

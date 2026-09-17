@@ -1,10 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-import { configure, configurationHint, readRemoteConfiguration } from './config.mjs';
+import { configure, configurationHint, readAuthorizationConfiguration } from './config.mjs';
 import { doctor } from './doctor.mjs';
 import { authorize } from './auth.mjs';
 import { toolsRoot } from './storage.mjs';
-import { requireRemoteTarget } from './repository-check.mjs';
 import { boundTools, boundExecutor } from './bindings.mjs';
 import { parseSpecArguments, specCommand, specError } from './spec.mjs';
 import { passthrough } from './passthrough.mjs';
@@ -62,7 +61,7 @@ export async function main(args, { boundRepository } = {}) {
     if (!boundRepository) throw new Error('repository_binding_required');
     const repository = boundRepository;
     if (!isAbsolute(repository)) throw new Error('repository_must_be_absolute');
-    if (command !== 'doctor' && !existsSync(resolve(repository, '.git'))) throw new Error('not_git_repository_root');
+    if (!['doctor', '.gh.auth'].includes(command) && !existsSync(resolve(repository, '.git'))) throw new Error('not_git_repository_root');
     schema = schemas[command];
     if (command === 'spec') {
       const result = await specCommand(repository, specOptions);
@@ -74,12 +73,10 @@ export async function main(args, { boundRepository } = {}) {
     if (command === 'doctor') report = await doctor(repository, { offline, fixedRepository: true });
     else if (configurationCommand) report = configure(repository,command === 'set.show' ? 'show' : command,key,value);
     else {
-      readRemoteConfiguration(repository, ['name', 'url', 'account']);
-      const bindings = boundTools(toolsRoot());
-      const execute = boundExecutor(bindings);
-      const github = await requireRemoteTarget(repository, bindings.git.path, execute);
-      const options = { repository, hostname: github.hostname, account: github.account,
-        gh: bindings.gh.path, git: bindings.git.path };
+      const github = readAuthorizationConfiguration(repository);
+      const { gh } = boundTools(toolsRoot(), ['gh']);
+      const execute = boundExecutor({ gh });
+      const options = { repository, ...github, gh: gh.path };
       const controller = new AbortController(), cancel = () => controller.abort();
       process.on('SIGINT',cancel); process.on('SIGTERM',cancel);
       try { report = await authorize(options,{ execute, signal: controller.signal, onEvent: event => console.error(JSON.stringify(event)) }); }
