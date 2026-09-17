@@ -39,8 +39,9 @@ export async function main(args, { boundRepository } = {}) {
       args = [];
     }
     if (command === 'config') {
-      action = args.shift(); if (!['show','set'].includes(action)) throw new Error('invalid_arguments');
-      if (action === 'set') { key = args.shift(); value = args.shift(); if (value === undefined) throw new Error('invalid_arguments'); }
+      action = args.shift(); if (!['show','set','clear'].includes(action)) throw new Error('invalid_arguments');
+      if (action !== 'show') { key = args.shift(); if (key === undefined) throw new Error('invalid_arguments'); }
+      if (action === 'set') { value = args.shift(); if (value === undefined) throw new Error('invalid_arguments'); }
     }
     if (command === 'auth' && args.some(arg => ['--hostname','--account','--remote'].includes(arg) || !arg.startsWith('--') && args.indexOf(arg) === 0)) throw new Error('github_parameters_moved_to_config');
     let offline = false;

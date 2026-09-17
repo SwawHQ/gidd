@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
-import { symlinkSync, unlinkSync, realpathSync } from 'node:fs';
+import { symlinkSync, unlinkSync, realpathSync, statSync } from 'node:fs';
 import { configure, editConfiguration, readRemoteConfiguration, normalizeRepositoryIdentity } from '../.agents/skills/gidd/scripts.js/config.mjs';
 import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/storage.mjs';
-import { prepare, toolsRoot, adapter, assert, compile, existsSync, fixture, hash, join, json, mkdirSync, ok, readFileSync, repo, stub, write } from './support/helpers.mjs';
+import { prepare, toolsRoot, adapter, assert, compile, existsSync, fixture, hash, join, json, mkdirSync, ok, readFileSync, repo, snapshot, stub, write } from './support/helpers.mjs';
 
 const configText = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[repo]\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\nremote.account = "Octocat"\n';
 
@@ -64,6 +64,85 @@ test('config editing repairs fields independently and preserves comments, BOM, l
     }
     assert.throws(() => editConfiguration('broken','repo.remote.name','origin'),/config_/);
     assert.equal(normalizeRepositoryIdentity('https://GitHub.com/OWNER/Repo/'),'https://github.com/owner/repo');
+  } finally { f.dispose(); }
+});
+
+test('config clear preserves other bytes and comments and is idempotent for every editable field', () => {
+  const f = fixture();
+  try {
+    const path = join(f.root, '.agents/skills/gidd/config.toml'), before = snapshot(f.root);
+    assert.equal(configure(f.root, 'clear', 'git.user.name').changed, false);
+    assert.deepEqual(snapshot(f.root), before, 'Missing config must not create files or directories');
+    for (const newline of ['\n', '\r\n']) for (const bom of ['', '\uFEFF']) {
+      for (const value of [JSON.stringify('A # "quoted" \\ name'), "'Literal # name'", '""']) for (const comment of ['', '  # 保留行内注释']) {
+        const assignment = '  user.name = ' + value + comment;
+        const text = bom + ['schema_version = 1', '[git] # section', '# nearby', assignment,
+          'user.email = "keep@example.test"', '[repo]', 'remote.name = "origin"', ''].join(newline);
+        write(path, text);
+        const result = configure(f.root, 'clear', 'git.user.name');
+        assert.equal(result.action, 'clear'); assert.equal(result.key, 'git.user.name');
+        assert.equal(result.changed, true); assert.equal(Object.hasOwn(result, 'value'), false);
+        const expected = text.replace(assignment + newline, comment ? '  ' + comment.trimStart() + newline : '');
+        assert.equal(readFileSync(path, 'utf8'), expected);
+        assert.equal(Object.hasOwn(parseConfiguration(expected).git.user, 'name'), false);
+        const saved = statSync(path, { bigint: true }), unchanged = snapshot(f.root);
+        assert.equal(configure(f.root, 'clear', 'git.user.name').changed, false);
+        assert.deepEqual(snapshot(f.root), unchanged);
+        assert.equal(statSync(path, { bigint: true }).mtimeNs, saved.mtimeNs);
+        assert.equal(statSync(path, { bigint: true }).ino, saved.ino);
+      }
+      const prefix = bom + ['schema_version = 1', '[git]', ''].join(newline);
+      for (const tail of ['user.name = "last"', 'user.name = "last"' + newline]) {
+        write(path, prefix + tail);
+        configure(f.root, 'clear', 'git.user.name');
+        assert.equal(readFileSync(path, 'utf8'), prefix);
+      }
+      write(path, prefix + 'user.name = "last" # last comment');
+      configure(f.root, 'clear', 'git.user.name');
+      assert.equal(readFileSync(path, 'utf8'), prefix + '# last comment');
+    }
+    write(path, 'schema_version = 1\n');
+    const fields = { 'repo.remote.name': 'origin', 'repo.remote.url': 'https://github.com/owner/repo',
+      'repo.remote.account': 'Octocat', 'git.user.mode': 'managed', 'git.user.name': 'Name',
+      'git.user.email': 'name@example.test', 'git.credential.mode': 'gh', 'spec.mode': 'issue-direct' };
+    for (const [key, value] of Object.entries(fields)) configure(f.root, 'set', key, value);
+    for (const key of Object.keys(fields)) {
+      assert.equal(configure(f.root, 'clear', key).changed, true);
+      assert.equal(key.split('.').reduce((object, part) => object?.[part], parseConfiguration(readFileSync(path, 'utf8'))), undefined);
+    }
+    assert.match(readFileSync(path, 'utf8'), /^schema_version = 1/);
+    assert.throws(() => configure(f.root, 'show'), /config_missing_git_user_mode/);
+  } finally { f.dispose(); }
+});
+
+test('config clear rejects invalid requests, unsafe paths and broken files without changing them', () => {
+  const f = fixture();
+  try {
+    const path = join(f.root, '.agents/skills/gidd/config.toml');
+    write(path, configText);
+    const before = snapshot(f.root);
+    for (const key of ['', undefined, 'schema_version', 'git.user', 'git.user.mod', 'repo.remote.unknown']) {
+      assert.throws(() => configure(f.root, 'clear', key), /config_unknown_key/);
+    }
+    assert.throws(() => configure(f.root, 'clear', 'git.user.name', ''), /config_invalid_arguments/);
+    assert.deepEqual(snapshot(f.root), before);
+    write(path + '.lock', 'another writer');
+    assert.throws(() => configure(f.root, 'clear', 'repo.remote.name'), /config_locked/);
+    assert.equal(readFileSync(path + '.lock', 'utf8'), 'another writer');
+    unlinkSync(path + '.lock');
+    assert.deepEqual(snapshot(f.root), before);
+    for (const bytes of ['broken TOML', configText + 'remote.name = "duplicate"\n', Buffer.from([255]), '#'.repeat(16385)]) {
+      write(path, bytes); const broken = snapshot(f.root);
+      assert.throws(() => configure(f.root, 'clear', 'repo.remote.name'), /config_/);
+      assert.deepEqual(snapshot(f.root), broken);
+    }
+    unlinkSync(path); mkdirSync(path);
+    assert.throws(() => configure(f.root, 'clear', 'repo.remote.name'), /config_not_a_file/);
+    assert.equal(existsSync(path + '.lock'), false);
+    const outside = join(f.root, 'outside'), linked = join(f.root, 'linked'); mkdirSync(outside); mkdirSync(linked);
+    symlinkSync(outside, join(linked, '.agents'), 'junction');
+    assert.throws(() => configure(linked, 'clear', 'git.user.name'), /config_reparse_path/);
+    assert.equal(existsSync(join(outside, 'skills')), false);
   } finally { f.dispose(); }
 });
 

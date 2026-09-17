@@ -238,5 +238,33 @@ test('generated CMD forwards .git/.gh with literal arguments and bound working d
     const credential = ok(runRepositoryCommand(s.target, ['.git', 'credential', 'fill'],
       { cwd: s.elsewhere, input: 'protocol=https\nhost=github.com\n\n', env: s.env }));
     assert.match(credential.stdout, /password=fixture-Octocat/);
+    const invoke = args => runRepositoryCommand(s.target, args, { cwd: s.elsewhere, env: s.env });
+    const original = readFileSync(s.config, 'utf8');
+    for (const args of [['config', 'clear'], ['config', 'clear', 'git.user.name', 'extra'],
+      ['config', 'clear', 'git.user.name', ''], ['config', 'clear', 'git.user'],
+      ['config', 'clear', 'schema_version'], ['config', 'set', 'git.user.name', '']]) {
+      assert.equal(invoke(args).status, 2);
+      assert.equal(readFileSync(s.config, 'utf8'), original);
+    }
+    for (const [key, value] of [['name', 'Inherited Name'], ['email', 'inherited@example.test']]) {
+      ok(run(s.git, ['-C', s.target, 'config', 'user.' + key, value]));
+    }
+    for (const field of ['name', 'email']) {
+      const cleared = JSON.parse(ok(invoke(['config', 'clear', 'git.user.' + field])).stdout);
+      assert.equal(cleared.action, 'clear'); assert.equal(cleared.changed, true);
+    }
+    assert.equal(invoke(['.git', '--version']).status, 2, 'Managed identity stays incomplete until repaired');
+    ok(invoke(['config', 'set', 'git.user.mode', 'inherit']));
+    ok(invoke(['config', 'show']));
+    assert.equal(ok(invoke(['.git', 'config', '--get', 'user.name'])).stdout.trim(), 'Inherited Name');
+    assert.equal(JSON.parse(ok(invoke(['config', 'clear', 'git.user.name'])).stdout).changed, false);
+    const report = JSON.parse(invoke(['doctor', '--offline']).stdout);
+    assert.deepEqual(report.checks.find(item => item.id === 'config.git.user.name').details, { omitted: true });
+    assert.equal(report.checks.find(item => item.id === 'folder.git.author').details.email, 'inherited@example.test');
+    ok(invoke(['config', 'clear', 'git.user.mode']));
+    const missingMode = JSON.parse(invoke(['doctor', '--offline']).stdout);
+    assert.equal(missingMode.checks.find(item => item.id === 'config.git.user.mode').reason, 'config_missing_git_user_mode');
+    assert.equal(invoke(['.git', '--version']).status, 2);
+    for (const lang of ['en', 'zh']) assert.match(ok(invoke(['help', lang])).stdout, /gidd.link config clear/);
   } finally { f.dispose(); }
 });

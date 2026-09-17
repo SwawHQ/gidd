@@ -1,31 +1,29 @@
 GIDD（Windows x64 / PowerShell 5.1）
 
-  gidd.link help en                                #Show English help
-  gidd.link help zh                                #显示中文帮助
-  gidd.link doctor                                 #检查工具、仓库及 GitHub 身份（含联网检查）
-  gidd.link doctor --offline                       #仅检查本地工具、配置和仓库，不联网
-
+  gidd.link help en                 #Show English help
+  gidd.link help zh                 #显示中文帮助
+  gidd.link doctor                  #检查工具、仓库及 GitHub 身份（含联网检查）
+  gidd.link doctor --offline        #仅检查本地工具、配置和仓库，不联网
   gidd.link config show                            #列出 config.toml 当前内容
-  gidd.link config set <字段> <值>                 #设置 config.toml 中指定字段的值
-  gidd.link config set spec.mode issue-direct      #选择轻量规范
-  gidd.link config set repo.remote.account bornwhy #(示例) 设置 repo.remote.account 的值为 bornwhy
-  gidd.link config set repo.remote.name origin     #选择本地 remote
-  gidd.link config set repo.remote.url https://github.com/swawhq/gidd #记录预期仓库
-  gidd.link config set git.credential.mode gh      #必填 gh|inherit；gh 为 HTTPS 提供指定账号凭据
-  gidd.link config set git.user.mode managed     #必填 managed|inherit；inherit 要求姓名、邮箱均省略
-  gidd.link config set git.user.name "提交署名"     #managed 模式下姓名和邮箱两项必填
-  gidd.link config set git.user.email "name@example.com"
-
-  gidd.link auth                                   #按配置申请设备授权并等待确认；gh 可能保存凭据
-
-  gidd.link .gh <参数...>                          #预设账号、GH_HOST/GH_REPO 和 Git 环境，透传 gh 命令
-  gidd.link .git <参数...>                         #预设 Git 身份及 HTTPS 认证；本地操作不要求登录
+  gidd.link config set <字段> <值>                 #设置 config.toml 中指定字段
+  gidd.link config clear <字段>                    #删除指定字段；已不存在则成功，不用空字符串代替删除
+  gidd.link config set spec.mode issue-direct      #(示例)设置当前的规范；列出可用规范：gidd.link spec
+  gidd.link config set repo.remote.account bornwhy #(示例)设置 repo.remote.account 的值为 bornwhy
+  gidd.link config set repo.remote.name origin     #(示例)记录对本地仓库使用的远端名
+  gidd.link config set repo.remote.url https://github.com/swawhq/gidd #(示例)记录对本地仓库使用的远端 url
+  gidd.link config set git.credential.mode gh      #(示例)必填;如何为远端 url 提供凭据，可选：gh|inherit
+  gidd.link config set git.user.mode managed       #(示例)必填;如何为 git 指定署名信息，可选：managed|inherit
+  gidd.link config set git.user.name <user>        #managed 模式必填，inherit 用 config clear 删除；指定 git user.name
+  gidd.link config set git.user.email <email>      #managed 模式必填，inherit 用 config clear 删除；指定 git user.email
+  gidd.link config clear git.user.name             #(示例)删除署名姓名；切换 inherit 时也需清除 git.user.email
+  gidd.link auth                    #按配置申请设备授权并等待确认；gh 可能保存凭据
+  gidd.link .gh <参数...>           #预设账号、GH_HOST/GH_REPO 和 Git 环境，透传 gh 命令
+  gidd.link .git <参数...>          #预设 Git 身份及 HTTPS 认证；本地操作不要求登录
   # 默认使用入口所属仓库目录；显式参数按 Git/gh 原生规则覆盖，不限制目标仓库。
   # Git 环境配置优先于同名文件配置，低于显式 -c；SSH 使用原生认证。输出、输入和退出码透传。
-
-  gidd.link spec                                   #列出已有规范名称（JSON）
-  gidd.link spec --lang zh                         #可选参数 --lang zh|en；下同
-  gidd.link spec.current                           #输出当前规范的 Markdown 流程提示
-  gidd.link spec.issue-direct                      #输出指定规范的 Markdown 流程提示
-  gidd.link spec.current.issue                     #输出当前规范的 GitHub Issue 表单（JSON）
-  gidd.link spec.issue-direct.issue                #输出指定规范的 GitHub Issue 表单（JSON）
+  gidd.link spec                    #列出已有规范；要应用为当前规范: config set spec.mode <规范名>
+  gidd.link spec.current            #打印当前应用的规范
+  gidd.link spec.current --lang zh  #同上，但指定语言，可选 zh|en，下同
+  gidd.link spec.issue-direct       #打印名为 issue-direct 的规范
+  gidd.link spec.current.issue      #打印当前规范要求的 GitHub Issue 模板
+  gidd.link spec.issue-direct.issue #同上，但目标规范被指定为 issue-direct

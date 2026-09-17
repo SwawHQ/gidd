@@ -48,17 +48,21 @@ export function remoteAddress(text) {
   } catch { return null; }
 }
 
-function validateSetting(key, value) {
+function validateKey(key) {
   if (!editableKey.test(key || '')) throw new Error('config_unknown_key');
+}
+
+function validateSetting(key, value) {
+  validateKey(key);
   if (key === 'spec.mode') return validateSpecMode(value);
   if (key.startsWith('git.')) return validateGitField(key.slice(4), value);
   validateRemoteField(key.slice('repo.remote.'.length), value);
 }
 
-export function editConfiguration(text, key, value) {
-  validateSetting(key, value);
+export function editConfiguration(text, key, value, { clear = false } = {}) {
+  if (clear) validateKey(key); else validateSetting(key, value);
   parseConfiguration(text); // Other invalid values remain independently repairable.
-  if (key === 'repo.remote.url') value = normalizeRepositoryIdentity(value);
+  if (!clear && key === 'repo.remote.url') value = normalizeRepositoryIdentity(value);
   const [section, ...parts] = key.split('.'), field = parts.join('.');
   const lines = text.split('\n'), newline = text.includes('\r\n') ? '\r\n' : '\n';
   let start = -1, end = lines.length;
@@ -73,10 +77,17 @@ export function editConfiguration(text, key, value) {
     if (start < 0) continue;
     const match = new RegExp('^([ \\t]*' + field.replaceAll('.', '\\.') + '[ \\t]*=[ \\t]*)(' + stringPattern + ')([ \\t]*(?:#.*)?)$').exec(line);
     if (match) {
-      lines[i] = match[1] + JSON.stringify(value) + match[3] + (lines[i].endsWith('\r') ? '\r' : '');
+      const ending = lines[i].endsWith('\r') ? '\r' : '';
+      if (clear) {
+        const comment = match[3].trimStart();
+        if (comment) lines[i] = /^[ \t]*/.exec(line)[0] + comment + ending;
+        else if (i === lines.length - 1) lines[i] = '';
+        else lines.splice(i, 1);
+      } else lines[i] = match[1] + JSON.stringify(value) + match[3] + ending;
       return lines.join('\n');
     }
   }
+  if (clear) return text;
   const setting = field + ' = ' + JSON.stringify(value) + newline;
   if (start < 0) return text + (text.endsWith('\n') ? '' : newline) + newline + '[' + section + ']' + newline + setting;
   const offset = Math.min(text.length, lines.slice(0, end).reduce((sum, line) => sum + line.length + 1, 0));
@@ -125,12 +136,12 @@ export function configurationHint(reason) {
   if (/^config_(missing|invalid)_git_user_mode$/.test(reason)) return 'Set git.user.mode explicitly to managed or inherit with config set.';
   const userField = /^config_(?:missing|invalid)_git_user_(name|email)$/.exec(reason);
   if (userField) return `Set a valid git.user.${userField[1]} with config set; managed mode requires both name and email.`;
-  if (reason === 'config_incomplete_git_user') return 'Managed identity requires both git.user.name and git.user.email. Set both, or choose inherit and remove both from config.toml.';
-  if (reason === 'config_git_user_inherit_conflict') return 'Remove git.user.name and git.user.email from config.toml to inherit Git identity, or select managed and complete both fields.';
+  if (reason === 'config_incomplete_git_user') return 'Managed identity requires both git.user.name and git.user.email. Set both, or choose inherit and remove both with config clear.';
+  if (reason === 'config_git_user_inherit_conflict') return 'Use config clear git.user.name and config clear git.user.email to inherit Git identity, or select managed and complete both fields.';
   if (/^config_(missing|invalid)_git_credential_mode$/.test(reason)) return 'Set git.credential.mode explicitly to gh or inherit with config set.';
   const field = /^config_(?:missing|invalid)_repo_remote_(name|url|account)$/.exec(reason);
   if (field) return `Run doctor --offline and repair repo.remote.${field[1]} with config set.`;
-  if (reason.startsWith('config_')) return 'Check config.toml using config show/set. No configuration fallback or login was performed.';
+  if (reason.startsWith('config_')) return 'Check config.toml using config show/set/clear. No configuration fallback or login was performed.';
   return '';
 }
 
@@ -145,10 +156,13 @@ export function configure(repository, action, key, value) {
     validateGitSettings(settings.git);
     return { schema: 'gidd.config/v1', status: 'ready', config_path: path, content };
   }
-  if (action !== 'set') throw new Error('config_invalid_arguments');
-  if (key === 'repo.remote.url') value = normalizeRepositoryIdentity(value);
-  validateSetting(key, value);
-  mkdirSync(dirname(path), { recursive: true });
+  if (!['set', 'clear'].includes(action) || action === 'clear' && value !== undefined) throw new Error('config_invalid_arguments');
+  const clear = action === 'clear';
+  if (!clear && key === 'repo.remote.url') value = normalizeRepositoryIdentity(value);
+  if (clear) validateKey(key); else validateSetting(key, value);
+  const report = { schema: 'gidd.config/v1', status: 'ready', config_path: path, action, key, ...(!clear ? { value } : {}) };
+  if (clear && !existsSync(path)) return { ...report, changed: false };
+  if (!clear) mkdirSync(dirname(path), { recursive: true });
   plainPath(path);
   const lockPath = path + '.lock', temporary = path + '.' + randomUUID() + '.tmp';
   let lock;
@@ -156,15 +170,17 @@ export function configure(repository, action, key, value) {
     try { lock = openSync(lockPath, 'wx'); }
     catch (error) { if (error.code === 'EEXIST') throw new Error('config_locked'); throw error; }
     const original = existsSync(path) ? readText(path) : null;
+    if (clear && original === null) return { ...report, changed: false };
     const text = original ?? initialConfiguration;
-    const result = editConfiguration(text, key, value);
+    const result = editConfiguration(text, key, value, { clear });
+    if (clear && result === original) return { ...report, changed: false };
     parseConfiguration(result);
     const fd = openSync(temporary, 'wx');
     try { writeFileSync(fd, result, 'utf8'); fsyncSync(fd); } finally { closeSync(fd); }
     plainPath(path);
     if ((existsSync(path) ? readText(path) : null) !== original) throw new Error('config_changed_during_edit');
     renameSync(temporary, path);
-    return { schema: 'gidd.config/v1', status: 'ready', config_path: path, action: 'set', key, value };
+    return { ...report, ...(clear ? { changed: true } : {}) };
   } finally {
     if (existsSync(temporary)) unlinkSync(temporary);
     if (lock !== undefined) { closeSync(lock); unlinkSync(lockPath); }

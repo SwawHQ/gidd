@@ -172,6 +172,9 @@ test('doctor combines independent checks once; offline never invokes network or 
         if (errors[field]) {
           assert.equal(item.reason, errors[field]); assert.equal(item.severity, 'error');
           assert.ok(item.hint.includes('git.user.' + field));
+          if (errors[field] === 'config_git_user_inherit_conflict') {
+            assert.deepEqual(item.commands[0].args, ['config', 'clear', 'git.user.' + field]);
+          }
         } else if (errors.mode) {
           assert.equal(item.status, 'not_checked'); assert.equal(item.severity, 'info');
           assert.equal(item.blocked_by, 'config.git.user.mode');

@@ -7,6 +7,7 @@ GIDD (Windows x64 / PowerShell 5.1)
 
   gidd.link config show                         #Show current config.toml contents
   gidd.link config set <key> <value>             #Set a field in config.toml
+  gidd.link config clear <key>                   #Remove a field; absent fields succeed. Empty strings do not mean removal
   gidd.link config set spec.mode issue-direct   #Select the lightweight spec
   gidd.link config set repo.remote.account bornwhy    #(Example) Set repo.remote.account to bornwhy
   gidd.link config set repo.remote.name origin #Select the local remote
@@ -15,6 +16,7 @@ GIDD (Windows x64 / PowerShell 5.1)
   gidd.link config set git.user.mode managed   #Required managed|inherit; inherit requires name/email to be absent
   gidd.link config set git.user.name "Commit Name" #Both name and email are required in managed mode
   gidd.link config set git.user.email "name@example.com"
+  gidd.link config clear git.user.name           #Example: remove name; also clear git.user.email when switching to inherit
 
   gidd.link auth                                #Request device authorization using config and wait for confirmation; gh may save credentials
 

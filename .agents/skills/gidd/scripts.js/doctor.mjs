@@ -77,7 +77,8 @@ function describeCheck(item, root, bindings) {
       ...(id === remoteId('url') ? { requires_configuration_review: true } : {}) });
   } else if (id.startsWith('config.git.')) {
     item.hint = reason === 'config_git_user_inherit_conflict' ?
-      `Remove ${configKey} from config.toml in inherit mode, or select managed and provide both name and email.` : configurationHint(reason);
+      `Run gidd.link.cmd config clear ${configKey} in inherit mode, or select managed and provide both name and email.` : configurationHint(reason);
+    if (link && reason === 'config_git_user_inherit_conflict') item.commands = [command(link, ['config', 'clear', configKey])];
   }
   else if (id === 'tool.platform') item.hint = 'Use the currently supported Windows x64 platform.';
 }
