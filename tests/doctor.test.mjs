@@ -8,7 +8,8 @@ const configText = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential
 const checkOrder = [
   'tool.platform', 'tool.js_runtime', 'tool.git', 'tool.gh',
   'folder.git.worktree', 'folder.git.author',
-  'config.toml', 'config.repo.remote.name', 'config.repo.remote.url', 'config.repo.remote.account', 'config.git.user', 'config.git.credential.mode', 'config.spec.mode',
+  'config.toml', 'config.repo.remote.name', 'config.repo.remote.url', 'config.repo.remote.account',
+  'config.git.user.mode', 'config.git.user.name', 'config.git.user.email', 'config.git.credential.mode', 'config.spec.mode',
   'config.repo.remote.account..online', 'config.repo.remote.url..online',
 ];
 const byId = (report, id) => {
@@ -53,8 +54,12 @@ test('doctor combines independent checks once; offline never invokes network or 
     };
     const accountId='config.repo.remote.account..online', urlId='config.repo.remote.url..online';
     const before=snapshot(f.root), online=scenario(), report=await doctor(f.root,online);
-    assert.equal(report.status,'checks_passed');assert.equal(report.checks.length,14);
-    assert.deepEqual(byId(report, 'config.git.user').details, { mode: 'inherit', source: 'git' });
+    assert.equal(report.status,'checks_passed');assert.equal(report.checks.length,16);
+    assert.deepEqual(byId(report, 'config.git.user.mode').details, { mode: 'inherit', source: 'git' });
+    for (const field of ['name', 'email']) {
+      assert.equal(byId(report, 'config.git.user.' + field).status, 'ready');
+      assert.deepEqual(byId(report, 'config.git.user.' + field).details, { omitted: true });
+    }
     assert.equal(report.folder, f.root); assert.equal(Object.hasOwn(report, 'repository'), false);
     assert.equal(report.hint, 'No errors found in local or online checks. Push permission is not checked.');
     assert.deepEqual(report.checks.filter(c=>c.id.startsWith('config.repo.remote')).map(c=>c.id),
@@ -141,25 +146,40 @@ test('doctor combines independent checks once; offline never invokes network or 
       write(config,text);const sc=scenario(), r=await doctor(f.root,sc);
       assert.equal(byId(r,'config.toml').status,'invalid');
       assert.equal(byId(r,'config.repo.remote.account').blocked_by,'config.toml');
+      for (const field of ['mode', 'name', 'email']) assert.equal(byId(r, 'config.git.user.' + field).blocked_by, 'config.toml');
       assert.ok(!sc.calls.some(c=>['api','read','gh_repo'].includes(c.key)));
     }
     write(config, configText.replace('credential.mode = "inherit"\n', ''));
     assert.equal(byId(await doctor(f.root, scenario()), 'config.git.credential.mode').reason, 'config_missing_git_credential_mode');
-    for (const [user, reason] of [
-      ['', 'config_missing_git_user_mode'],
-      ['user.mode = "config"\n', 'config_invalid_git_user_mode'],
-      ['user.mode = "managed"\n', 'config_incomplete_git_user'],
-      ['user.mode = "managed"\nuser.name = "Configured"\n', 'config_incomplete_git_user'],
-      ['user.mode = "inherit"\nuser.name = "Configured"\n', 'config_git_user_inherit_conflict'],
+    for (const [user, errors, blocker] of [
+      ['', { mode: 'config_missing_git_user_mode' }, 'mode'],
+      ['user.mode = "config"\n', { mode: 'config_invalid_git_user_mode' }, 'mode'],
+      ['user.mode = "managed"\n', { name: 'config_missing_git_user_name', email: 'config_missing_git_user_email' }, 'name'],
+      ['user.mode = "managed"\nuser.name = "Configured"\n', { email: 'config_missing_git_user_email' }, 'email'],
+      ['user.mode = "managed"\nuser.email = "configured@example.test"\n', { name: 'config_missing_git_user_name' }, 'name'],
+      ['user.mode = "managed"\nuser.name = "PRIVATE_TOKEN<name>"\nuser.email = "PRIVATE_TOKEN<email>"\n',
+        { name: 'config_invalid_git_user_name', email: 'config_invalid_git_user_email' }, 'name'],
+      ['user.mode = "inherit"\nuser.name = "Configured"\n', { name: 'config_git_user_inherit_conflict' }, 'name'],
+      ['user.mode = "inherit"\nuser.email = "configured@example.test"\n', { email: 'config_git_user_inherit_conflict' }, 'email'],
+      ['user.mode = "inherit"\nuser.name = "Configured"\nuser.email = "configured@example.test"\n',
+        { name: 'config_git_user_inherit_conflict', email: 'config_git_user_inherit_conflict' }, 'name'],
     ]) {
       write(config, configText.replace('user.mode = "inherit"\n', user));
       const sc = scenario(), r = await doctor(f.root, { ...sc, offline: true });
       assert.equal(r.status, 'needs_attention');
-      assert.equal(byId(r, 'config.git.user').reason, reason);
-      assert.equal(byId(r, 'config.git.user').severity, 'error');
-      assert.ok(byId(r, 'config.git.user').hint);
+      for (const field of ['mode', 'name', 'email']) {
+        const item = byId(r, 'config.git.user.' + field);
+        if (errors[field]) {
+          assert.equal(item.reason, errors[field]); assert.equal(item.severity, 'error');
+          assert.ok(item.hint.includes('git.user.' + field));
+        } else if (errors.mode) {
+          assert.equal(item.status, 'not_checked'); assert.equal(item.severity, 'info');
+          assert.equal(item.blocked_by, 'config.git.user.mode');
+        } else assert.equal(item.status, 'ready');
+      }
+      assert.ok(!JSON.stringify(r).includes('PRIVATE_TOKEN'));
       assert.equal(byId(r, 'folder.git.author').status, 'not_checked');
-      assert.equal(byId(r, 'folder.git.author').blocked_by, 'config.git.user');
+      assert.equal(byId(r, 'folder.git.author').blocked_by, 'config.git.user.' + blocker);
       assert.ok(!sc.calls.some(c => c.key === 'author'));
     }
     write(config, configText.replace('credential.mode = "inherit"', 'credential.mode = "gh"'));

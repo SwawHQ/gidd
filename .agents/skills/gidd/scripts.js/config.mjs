@@ -123,6 +123,8 @@ export function configurationHint(reason) {
   if (reason === 'config_retired_structure') return 'Replace [github] with [repo] remote.name, remote.url and remote.account; remove hostname and [tools]. Tool sources are internal preparation policy. Preserve unrelated comments and [spec].';
   if (reason === 'config_missing') return 'Create config with: gidd.link.cmd config set repo.remote.account <login>. Then set repo.remote.url and review repo.remote.name.';
   if (/^config_(missing|invalid)_git_user_mode$/.test(reason)) return 'Set git.user.mode explicitly to managed or inherit with config set.';
+  const userField = /^config_(?:missing|invalid)_git_user_(name|email)$/.exec(reason);
+  if (userField) return `Set a valid git.user.${userField[1]} with config set; managed mode requires both name and email.`;
   if (reason === 'config_incomplete_git_user') return 'Managed identity requires both git.user.name and git.user.email. Set both, or choose inherit and remove both from config.toml.';
   if (reason === 'config_git_user_inherit_conflict') return 'Remove git.user.name and git.user.email from config.toml to inherit Git identity, or select managed and complete both fields.';
   if (/^config_(missing|invalid)_git_credential_mode$/.test(reason)) return 'Set git.credential.mode explicitly to gh or inherit with config set.';

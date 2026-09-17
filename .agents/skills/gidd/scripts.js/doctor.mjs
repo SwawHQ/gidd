@@ -75,7 +75,10 @@ function describeCheck(item, root, bindings) {
     item.commands = [...remoteCommands];
     if (link) item.commands.push({ ...command(link, ['config', 'set', configKey, '<value>'], [configKey]),
       ...(id === remoteId('url') ? { requires_configuration_review: true } : {}) });
-  } else if (id.startsWith('config.git.')) item.hint = configurationHint(reason);
+  } else if (id.startsWith('config.git.')) {
+    item.hint = reason === 'config_git_user_inherit_conflict' ?
+      `Remove ${configKey} from config.toml in inherit mode, or select managed and provide both name and email.` : configurationHint(reason);
+  }
   else if (id === 'tool.platform') item.hint = 'Use the currently supported Windows x64 platform.';
 }
 
@@ -145,13 +148,16 @@ export async function doctor(target, { offline = false, fixedRepository = false,
   if (process.platform !== 'win32' || process.arch !== 'x64') checks.unshift(check('tool.platform', 'unsupported', 'unsupported_platform'));
   const usable = name => checks.find(item => item.id === 'tool.' + name)?.status === 'ready';
   const gitChecks = gitSettingChecks(configuration.git, configuration.result.status === 'ready');
+  const userBlocker = gitChecks.find(item => item.id.startsWith('config.git.user.') && item.status !== 'ready');
+  const credentialCheck = gitChecks.find(item => item.id === 'config.git.credential.mode');
   const apiTarget = fields.url.details?.expected && fields.account.status === 'ready' ? githubTarget({ url: fields.url.details.expected,
     name: fields.name.details?.expected, account: fields.account.details.expected }) : null;
   let env = toolEnvironment(usable('git') ? bindings.git.path : undefined);
+  let environmentError;
   try {
-    env = gitEnvironment({ user: gitChecks[0].status === 'ready' ? configuration.git?.user : {},
-      credential: gitChecks[1].status === 'ready' && usable('gh') && apiTarget ? configuration.git.credential : {} }, bindings, apiTarget, env);
-  } catch (error) { gitChecks[0] = check('config.git.user', 'invalid', safeReason(error, 'git_environment_invalid')); }
+    env = gitEnvironment({ user: !userBlocker ? configuration.git?.user : {},
+      credential: credentialCheck.status === 'ready' && usable('gh') && apiTarget ? configuration.git.credential : {} }, bindings, apiTarget, env);
+  } catch (error) { environmentError = safeReason(error, 'git_environment_invalid'); }
   const invoke = (args, timeoutMs = 5000) => execute(bindings.git.path, ['-C', target, ...args], { timeoutMs, env });
   let repository;
   if (!target) repository = check('folder.git.worktree', 'not_checked', 'target_required');
@@ -178,8 +184,8 @@ export async function doctor(target, { offline = false, fixedRepository = false,
       repository.reason = symbolic.ok ? 'unborn_branch' : 'head_unreadable';
     }
     // A readable worktree can still supply authors/remotes before its first commit.
-    checks.push(gitChecks[0].status === 'ready' ? await effectiveGitIdentity(invoke) :
-      blockCheck(check('folder.git.author', 'ready'), 'config.git.user'));
+    checks.push(userBlocker ? blockCheck(check('folder.git.author', 'ready'), userBlocker.id) :
+      environmentError ? check('folder.git.author', 'failed', environmentError) : await effectiveGitIdentity(invoke));
     fields = await inspectRemoteFields(invoke, fields);
   } else {
     checks.push(check('folder.git.author', 'not_checked', 'repository_unavailable'));

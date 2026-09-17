@@ -30,7 +30,7 @@ Both modes are required and independent:
 
 No migration or implicit mode is provided. `config set` can repair one field at a time; complete the selected mode's requirements before invoking wrappers or `config show`. To switch from managed to inherited identity, remove both name/email fields from `config.toml` and set `user.mode = "inherit"`. No tokens are stored in this file.
 
-`doctor` reports the identity policy under `config.git.user`, including `details.mode`, `details.source` (`config.toml` or `git`), and managed name/email defaults. `folder.git.author` reports the effective author and committer under that policy. Invalid identity configuration blocks that check instead of reporting an inherited fallback as ready.
+`doctor` reports the identity policy under `config.git.user.mode`, including `details.mode` and `details.source` (`config.toml` or `git`). Separate `config.git.user.name` and `config.git.user.email` checks report managed values in `details.configured`; in inherit mode, omitted fields are ready with `details.omitted: true`, while present fields are errors. An invalid mode blocks both field checks. `folder.git.author` reports the effective author and committer; invalid identity configuration blocks it with a reference to the first failing field instead of reporting an inherited fallback as ready.
 
 ## Execution and priority
 
@@ -46,6 +46,6 @@ No migration or implicit mode is provided. `config set` can repair one field at 
 
 两入口提供默认环境，显式参数交给 Git/gh 处理。`git.user.mode` 必须填写 `managed` 或 `inherit`：前者要求姓名和邮箱两项必填，后者要求两项均省略；缺失模式或冲突配置均报错。独立的 `git.credential.mode` 必须填写 `gh` 或 `inherit`。`.gh` 从配置 URL 设置默认 host/repo，并使用指定账号已保存的 token；`.git` 在 managed 模式下用环境配置覆盖同名文件配置，保留 `-c`、`--author`、历史作者及签名的原生语义。
 
-`config set` 允许逐字段修复；执行入口和 `config show` 要求配置完整。切换为 inherit 时，需从配置文件删除姓名、邮箱两项。doctor 的 `config.git.user` 明确报告模式、来源及 managed 默认署名；`folder.git.author` 报告实际生效身份，署名配置无效时标为受阻，不将回退身份误报为就绪。
+`config set` 允许逐字段修复；执行入口和 `config show` 要求配置完整。切换为 inherit 时，需从配置文件删除姓名、邮箱两项。doctor 的 `config.git.user.mode` 报告模式和来源，`config.git.user.name`、`config.git.user.email` 分别检查对应字段：managed 下报告配置值，inherit 下省略为正常、填写为冲突。模式无效时，姓名和邮箱检查受阻并指向模式项；`folder.git.author` 报告实际生效身份，署名配置无效时指向首个失败字段，不将回退身份误报为就绪。
 
 `gh` 模式仅为指定 HTTPS host 配置按需认证助手，不禁止 SSH。Git 本地操作不需要登录；缺少凭据时，在实际请求凭据的阶段失败。两入口不会限制跨仓库参数，也不修改全局身份或切换共享活动账号。`doctor` 用于诊断配置和实际生效身份，不能证明推送账号或权限。

@@ -73,8 +73,11 @@ test('runtime Git config beats files, preserves native overrides and reaches Git
     assert.match(ok(s.invoke(['.git', 'var', 'GIT_AUTHOR_IDENT'], { env: { GIT_AUTHOR_NAME: 'Environment Author' } })).stdout,
       /^Environment Author <configured@example.test>/);
     const diagnostic = JSON.parse(s.invoke(['doctor', '--offline']).stdout);
-    assert.deepEqual(diagnostic.checks.find(item => item.id === 'config.git.user').details,
-      { mode: 'managed', source: 'config.toml', defaults: { name: settings.user.name, email: settings.user.email } });
+    assert.deepEqual(diagnostic.checks.find(item => item.id === 'config.git.user.mode').details,
+      { mode: 'managed', source: 'config.toml' });
+    for (const field of ['name', 'email']) {
+      assert.deepEqual(diagnostic.checks.find(item => item.id === 'config.git.user.' + field).details, { configured: settings.user[field] });
+    }
     assert.equal(diagnostic.checks.find(item => item.id === 'folder.git.author').details.name, settings.user.name);
     assert.equal(diagnostic.checks.find(item => item.id === 'folder.git.author').details.committer.email, settings.user.email);
     assert.equal(s.invoke(['.git', '-C', s.elsewhere, 'rev-parse', '--is-inside-work-tree']).status, 128);
@@ -83,7 +86,7 @@ test('runtime Git config beats files, preserves native overrides and reaches Git
     assert.equal(ok(s.invoke(['.git', 'config', '--get', 'user.name'])).stdout.trim(), 'Local Name');
     assert.equal(ok(s.invoke(['.gh', 'child-git'])).stdout.trim(), 'Local Name');
     const localReport = JSON.parse(s.invoke(['doctor', '--offline']).stdout);
-    assert.deepEqual(localReport.checks.find(item => item.id === 'config.git.user').details, { mode: 'inherit', source: 'git' });
+    assert.deepEqual(localReport.checks.find(item => item.id === 'config.git.user.mode').details, { mode: 'inherit', source: 'git' });
     assert.equal(localReport.checks.find(item => item.id === 'folder.git.author').details.email, 'local@example.test');
     const globalConfig = join(f.root, 'global.gitconfig');
     write(globalConfig, '[user]\nname = Global Name\nemail = global@example.test\n');
@@ -98,12 +101,12 @@ test('invalid identity modes block both wrappers and cannot report a fallback id
   const f = fixture();
   try {
     const s = setup(f);
-    for (const [text, reason] of [
-      [s.text.replace('user.mode = "managed"\n', ''), 'config_missing_git_user_mode'],
-      [s.text.replace('"managed"', '"config"'), 'config_invalid_git_user_mode'],
-      [s.text.replace(/^user\.(?:name|email) = .*\n/gm, ''), 'config_incomplete_git_user'],
-      [s.text.replace('"managed"', '"inherit"'), 'config_git_user_inherit_conflict'],
-      [s.text.replace(settings.user.email, ' '), 'config_invalid_git_user_email'],
+    for (const [text, reason, field, diagnosticReason = reason] of [
+      [s.text.replace('user.mode = "managed"\n', ''), 'config_missing_git_user_mode', 'mode'],
+      [s.text.replace('"managed"', '"config"'), 'config_invalid_git_user_mode', 'mode'],
+      [s.text.replace(/^user\.(?:name|email) = .*\n/gm, ''), 'config_incomplete_git_user', 'name', 'config_missing_git_user_name'],
+      [s.text.replace('"managed"', '"inherit"'), 'config_git_user_inherit_conflict', 'name'],
+      [s.text.replace(settings.user.email, ' '), 'config_invalid_git_user_email', 'email'],
     ]) {
       write(s.config, text);
       for (const tool of ['.git', '.gh']) {
@@ -113,8 +116,8 @@ test('invalid identity modes block both wrappers and cannot report a fallback id
       }
       assert.equal(s.invoke(['config', 'show']).status, 2);
       const report = JSON.parse(s.invoke(['doctor', '--offline']).stdout);
-      assert.equal(report.checks.find(item => item.id === 'config.git.user').reason, reason);
-      assert.equal(report.checks.find(item => item.id === 'folder.git.author').blocked_by, 'config.git.user');
+      assert.equal(report.checks.find(item => item.id === 'config.git.user.' + field).reason, diagnosticReason);
+      assert.equal(report.checks.find(item => item.id === 'folder.git.author').blocked_by, 'config.git.user.' + field);
     }
   } finally { f.dispose(); }
 });

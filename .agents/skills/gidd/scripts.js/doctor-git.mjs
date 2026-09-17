@@ -1,14 +1,29 @@
-import { validateGitUser, validateGitField } from './git-settings.mjs';
+import { validateGitField } from './git-settings.mjs';
 
 export function gitSettingChecks(settings, available) {
-  return ['user', 'credential.mode'].map(key => {
+  let modeReady = false;
+  return ['user.mode', 'user.name', 'user.email', 'credential.mode'].map(key => {
     const id = 'config.git.' + key;
     if (!available) return { id, status: 'not_checked', reason: 'configuration_unavailable', blocked_by: 'config.toml' };
+    const identityField = ['user.name', 'user.email'].includes(key);
+    if (identityField && !modeReady) return { id, status: 'not_checked', reason: 'dependency_unavailable', blocked_by: 'config.git.user.mode' };
     try {
-      if (key === 'user') {
-        const user = validateGitUser(settings?.user);
-        return { id, status: 'ready', details: { mode: user.mode, source: user.mode === 'managed' ? 'config.toml' : 'git',
-          ...(user.mode === 'managed' ? { defaults: { name: user.name, email: user.email } } : {}) } };
+      const user = settings?.user || {};
+      if (key === 'user.mode') {
+        if (user.mode === undefined) throw new Error('config_missing_git_user_mode');
+        validateGitField(key, user.mode);
+        modeReady = true;
+        return { id, status: 'ready', details: { mode: user.mode, source: user.mode === 'managed' ? 'config.toml' : 'git' } };
+      }
+      if (identityField) {
+        const field = key.slice(5), present = Object.hasOwn(user, field);
+        if (user.mode === 'inherit') {
+          if (present) throw new Error('config_git_user_inherit_conflict');
+          return { id, status: 'ready', details: { omitted: true } };
+        }
+        if (!present) throw new Error('config_missing_git_user_' + field);
+        validateGitField(key, user[field]);
+        return { id, status: 'ready', details: { configured: user[field] } };
       }
       if (settings?.credential?.mode === undefined) throw new Error('config_missing_git_credential_mode');
       validateGitField(key, settings.credential.mode);
