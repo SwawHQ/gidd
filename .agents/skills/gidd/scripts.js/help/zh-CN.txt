@@ -17,7 +17,7 @@ GIDD（Windows x64 / PowerShell 5.1）
   gidd.link set git.user.email <email>      #managed 模式必填，inherit 用 clear 删除；指定 git user.email
   gidd.link clear <字段>                    #删除 config.toml 中指定字段
   gidd.link clear git.user.name             #(示例)删除 git.user.name（inherit 模式还必须删除 git.user.email）
-  gidd.link auth                    #按配置申请设备授权并等待确认；gh 可能保存凭据
+  gidd.link .gh.auth                #检查配置账号的凭据；缺失时发起设备授权并核验账号；凭据由 gh 保存
   gidd.link .gh <参数...>           #预设账号、GH_HOST/GH_REPO 和 Git 环境，透传 gh 命令
   gidd.link .git <参数...>          #预设 Git 身份及 HTTPS 认证；本地操作不要求登录
   # 默认使用入口所属仓库目录；显式参数按 Git/gh 原生规则覆盖，不限制目标仓库。

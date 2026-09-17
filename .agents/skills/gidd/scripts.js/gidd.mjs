@@ -20,7 +20,7 @@ export async function main(args, { boundRepository } = {}) {
   const route = (args.shift() || 'help').toLowerCase();
   const command = route.startsWith('spec.') ? 'spec' : route;
   const configurationCommand = ['set.show', 'set', 'clear'].includes(command);
-  const schemas = { 'set.show': 'gidd.config/v1', set: 'gidd.config/v1', clear: 'gidd.config/v1', doctor: 'gidd.doctor/v1', auth: 'gidd.auth/v1', spec: 'gidd.spec/v1' };
+  const schemas = { 'set.show': 'gidd.config/v1', set: 'gidd.config/v1', clear: 'gidd.config/v1', doctor: 'gidd.doctor/v1', '.gh.auth': 'gidd.auth/v1', spec: 'gidd.spec/v1' };
   let schema = 'gidd.cli/v1';
   try {
     if (['help','--help','-h'].includes(command)) {
@@ -50,7 +50,7 @@ export async function main(args, { boundRepository } = {}) {
       if (command !== 'set.show') { key = args.shift(); if (key === undefined) throw new Error('invalid_arguments'); }
       if (command === 'set') { value = args.shift(); if (value === undefined) throw new Error('invalid_arguments'); }
     }
-    if (command === 'auth' && args.some(arg => ['--hostname','--account','--remote'].includes(arg) || !arg.startsWith('--') && args.indexOf(arg) === 0)) throw new Error('github_parameters_moved_to_config');
+    if (command === '.gh.auth' && args.some(arg => ['--hostname','--account','--remote'].includes(arg) || !arg.startsWith('--') && args.indexOf(arg) === 0)) throw new Error('github_parameters_moved_to_config');
     let offline = false;
     if (command === 'doctor') {
       const flags = args.filter(arg => arg === '--offline');

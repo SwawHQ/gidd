@@ -64,7 +64,7 @@ function describeCheck(item, root, bindings) {
   } else if (id === remoteId('account') + '..online') {
     item.hint = reason === 'unexpected_account' ?
       'The selected token does not belong to repo.remote.account. Review the configured account and saved gh credentials.' :
-      reason === 'account_token_unavailable' ? 'Run gidd.link.cmd auth to authorize the configured account.' :
+      reason === 'account_token_unavailable' ? 'Run gidd.link.cmd .gh.auth to authorize the configured account.' :
       'Check connectivity and saved gh credentials for the configured host/account. A failed API request does not prove login is required.';
   } else if (id === remoteId('url') + '..online') {
     item.hint = 'Inspect details.gh_remote_read and details.git_remote_read. Skipped checks remain unverified; Git reading and API reading do not prove write permission.';

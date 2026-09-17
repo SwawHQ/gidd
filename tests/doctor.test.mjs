@@ -190,6 +190,7 @@ test('doctor combines independent checks once; offline never invokes network or 
     const noToken = scenario({ token: { ok: false, reason: 'command_failed', text: 'PRIVATE_TOKEN' } });
     const failedGh = await doctor(f.root, noToken);
     assert.equal(byId(failedGh, accountId).reason, 'account_token_unavailable');
+    assert.match(byId(failedGh, accountId).hint, /gidd\.link\.cmd \.gh\.auth/);
     assert.equal(byId(failedGh, urlId).details.git_remote_read.blocked_by, accountId);
     assert.ok(!JSON.stringify(failedGh).includes('PRIVATE_TOKEN'));
     rmSync(config); const missing=await doctor(f.root,scenario());

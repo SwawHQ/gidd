@@ -27,7 +27,7 @@ try {
   } else if (!['store', 'erase'].includes(operation)) throw new Error('invalid_credential_operation');
 } catch (error) {
   const reason = /^[a-z_]+$/.test(error.message) ? error.message : 'credential_helper_failed';
-  process.stderr.write(`GIDD credential helper: ${reason}. Run gidd.link.cmd auth if credentials are missing.\n`);
+  process.stderr.write(`GIDD credential helper: ${reason}. Run gidd.link.cmd .gh.auth if credentials are missing.\n`);
   process.stdout.write('quit=true\n\n');
   process.exitCode = 1;
 }

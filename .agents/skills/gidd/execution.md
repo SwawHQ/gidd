@@ -2,6 +2,8 @@
 
 `gidd.link .gh <args...>` and `gidd.link .git <args...>` start the bound tool in the entry's repository directory. They forward arguments, stdin, stdout, stderr and the exit code. They do not inspect target arguments, restrict repositories, switch the shared gh account, or write Git configuration. Explicit native options such as `--repo`, `-C`, `-c` and `--author` retain their normal meaning. These commands can perform writes when the forwarded command does so.
 
+`gidd.link .gh.auth` is a separate authorization command. It reuses verified credentials for the configured account; if that account's token is unavailable, it starts device authorization, reports the URL/code and verifies the resulting account. Credentials are stored by gh. It retains the existing repository/remote checks and the `gidd.auth/v1` and `gidd.auth.event/v1` JSON formats. The old `auth` entry is removed. `.gh.auth` does not forward to `.gh auth`: the `.gh` wrapper requires an existing verified token before executing native arguments.
+
 ## Configuration
 
 Use these configuration commands in the entry's repository:
@@ -56,13 +58,15 @@ gidd.link set git.user.mode inherit
 
 - `.gh` derives `GH_HOST` and `GH_REPO` from `repo.remote.url`, obtains the saved token for the configured host/account, and verifies it via `api user`. Inherited gh target/token variables are replaced in this child environment. No `auth switch` occurs. Explicit gh targets may override the default repository; they do not change the identity of the supplied token.
 - In `managed` identity mode, both entries apply configured `user.name/email` using ordered `GIT_CONFIG_COUNT` entries; `inherit` injects neither key. Managed values override the same keys in configuration files; explicit `git -c` settings override the injected configuration. Existing author/committer-specific configuration, environment variables, `--author`, and Git's preservation of original authors retain native semantics. Signing configuration is inherited.
-- In `gh` mode, the configured HTTPS host's helper list is reset and replaced by a lazy helper. It selects and verifies the saved account token, then delegates the credential response to `gh auth git-credential`. Local Git commands do not acquire credentials or need a login. Missing credentials fail when requested; run `gidd.link auth` to authorize the configured account.
+- In `gh` mode, the configured HTTPS host's helper list is reset and replaced by a lazy helper. It selects and verifies the saved account token, then delegates the credential response to `gh auth git-credential`. Local Git commands do not acquire credentials or need a login. Missing credentials fail when requested; run `gidd.link .gh.auth` to authorize the configured account.
 - SSH does not use the HTTPS helper. It retains native SSH authentication in both modes. `inherit` does not guarantee the push account. Other native authentication sources and explicit overrides retain Git semantics; this wrapper is not an authentication enforcement boundary.
 - Git commands launched by gh normally inherit the same environment and selected Git path. Programs that replace that environment or pass their own configuration follow native rules; GIDD does not monitor or restrict descendants. Cancellation stops the launched command tree on Windows.
 - `GH_REPO` does not redirect Git push. Git still selects its destination from remotes, branch settings and explicit arguments. `doctor` diagnoses configured remote consistency and effective identity; execution does not reject intentional target overrides.
 - Internal token acquisition is captured privately and diagnostics do not print tokens. Forwarded commands preserve their native output, including credential output if that is what the caller explicitly requests.
 
 ## 中文摘要
+
+`gidd.link .gh.auth` 是独立授权入口：复用配置账号已核验的凭据；取不到该账号的 token 时发起设备授权，输出网址和设备码，完成后核验账号，凭据由 gh 保存。原有仓库及远端检查、`gidd.auth/v1` 和 `gidd.auth.event/v1` JSON 格式保留，旧 `auth` 入口移除。它不转发为 `.gh auth`；`.gh` 包装在执行原生参数前要求已有可验证的 token。
 
 配置命令为 `gidd.link set.show`、`gidd.link set <字段> <值>`、`gidd.link clear <字段>`。不带参数的 `gidd.link set` 显示本地化用法、可编辑字段及要求，不读取或修改配置，配置缺失或损坏时也可查看；语言选择与 help 一致（优先 `GIDD_LANG`，再按系统语言）。旧 `show` 和 `config` 入口已移除，不支持 `set show`、`del` 或 `delete`。配置结果仍使用 `gidd.config/v1` JSON 格式，doctor 的 `config.` 字段 ID 保持不变。
 

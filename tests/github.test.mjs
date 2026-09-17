@@ -139,7 +139,7 @@ test('authorization uses bindings, rejects retired gh versions and never discove
       GH_TOKEN: '', GITHUB_TOKEN: '', GH_ENTERPRISE_TOKEN: '', GITHUB_ENTERPRISE_TOKEN: '' };
     const skill=join(f.root,'.agents/skills/gidd');copySkill(skill);mkdirSync(join(f.root,'.git'));
     publishRepositoryEntry(f.root,join(skill,'scripts.js/gidd.mjs'));
-    const invoke = () => runRepositoryCommand(f.root,['auth'],{env});
+    const invoke = () => runRepositoryCommand(f.root,['.gh.auth'],{env});
     assert.equal(json(invoke()).reason, 'tool_bindings_missing');
     assert.equal(existsSync(join(toolsRoot(f.root),'gh')), false, 'Missing compatible gh must not trigger installation');
     stub(executable, managedGh, 'success', true);

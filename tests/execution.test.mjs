@@ -162,6 +162,7 @@ test('HTTPS credentials are acquired lazily via gh; helper reset and command ove
     write(s.config, s.text.replace('Octocat', 'missing'));
     const missing = s.invoke(['.git', 'credential', 'fill'], { input: request });
     assert.notEqual(missing.status, 0); assert.match(missing.stderr, /account_token_unavailable/);
+    assert.match(missing.stderr, /gidd\.link\.cmd \.gh\.auth/);
     assert.doesNotMatch(missing.stderr, /PRIVATE_TOKEN/);
     const marker = join(f.root, 'ssh-used'), ssh = join(f.root, 'fake-ssh.cjs');
     write(ssh, `require('fs').writeFileSync(${JSON.stringify(marker)},'called');process.exit(47);`);

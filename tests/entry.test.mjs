@@ -330,9 +330,19 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
     assert.match(ok(s.invoke([])).stdout, /Check tools, repository and GitHub identity/);
     assert.match(ok(s.invoke([], { GIDD_LANG: 'zh' })).stdout, /显示中文帮助/);
     assert.match(ok(s.invoke(['help','en'], { GIDD_LANG: 'zh' })).stdout, /Check tools, repository and GitHub identity/);
-    for (const args of [['unknown'], ['identity'], ['doctor','--offline','--offline'], ['doctor','--offline=true'], ['auth','--offline'], ['help','fr'], ['help','en','extra'], ['doctor','--repository','.'],
+    for (const language of ['en', 'zh']) {
+      const help = ok(s.invoke(['help', language])).stdout;
+      assert.match(help, /gidd\.link \.gh\.auth/);
+      assert.doesNotMatch(help, /gidd\.link auth\b/);
+    }
+    for (const args of [['auth'], ['auth', '--account', 'Octocat']]) {
+      const removed = s.invoke(args);
+      assert.equal(removed.status, 2);
+      assert.equal(json(removed).reason, 'unknown_command');
+    }
+    for (const args of [['unknown'], ['identity'], ['doctor','--offline','--offline'], ['doctor','--offline=true'], ['.gh.auth','--offline'], ['help','fr'], ['help','en','extra'], ['doctor','--repository','.'],
       ['doctor','--repository',s.target], ['doctor','--account','x'], ['setup','python'],
-      ['setup','bun','--offline','x'], ['auth','Octocat']]) {
+      ['setup','bun','--offline','x'], ['.gh.auth','Octocat']]) {
       const result = s.invoke(args);
       assert.equal(result.status, 2, args.join(' '));
       assert.ok(['gidd.cli/v1','gidd.repository-entry/v1'].includes(json(result).schema));
@@ -343,7 +353,7 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
     assert.equal(report.schema, 'gidd.doctor/v1');
     sameDirectory(report.folder, s.target);
     assert.equal(report.checks.find(c => c.id === 'tool.js_runtime').status, 'ready');
-    for (const command of [['auth']]) {
+    for (const command of [['.gh.auth']]) {
       const missing = s.invoke([...command]);
       assert.equal(missing.status, 2);
       assert.equal(json(missing).reason, 'config_missing_repo_remote_name');
@@ -395,7 +405,7 @@ test('repository installation locates its own Git worktree independently of cwd'
   } finally { f.dispose(); }
 });
 
-test('shell doctor and auth preserve JavaScript results, events and exit codes', { timeout: 30000 }, () => {
+test('shell doctor and .gh.auth preserve JavaScript results, events and exit codes', { timeout: 30000 }, () => {
   const f = fixture();
   try {
     const s = installation(f), git = findGit();
@@ -421,9 +431,9 @@ test('shell doctor and auth preserve JavaScript results, events and exit codes',
     assert.equal(report.checks.find(c => c.id === 'config.repo.remote.url..online').severity,'warning');
     assert.equal(report.checks.find(c => c.id === 'folder.git.worktree').severity,'warning');
     assert.ok(report.checks.every(c => c.severity !== 'error'));
-    assert.equal(json(ok(s.invoke(['auth'],env))).reason,'already_authenticated');
+    assert.equal(json(ok(s.invoke(['.gh.auth'],env))).reason,'already_authenticated');
     write(config,configured.replace('remote.name = "fixture"\n',''));
-    assert.equal(json(s.invoke(['auth'],env)).reason,'config_missing_repo_remote_name');
+    assert.equal(json(s.invoke(['.gh.auth'],env)).reason,'config_missing_repo_remote_name');
     assert.equal(json(s.invoke(['doctor'],env)).checks.find(c=>c.id==='config.repo.remote.name').reason,'config_missing_repo_remote_name');
     for (const [text,reason] of [
       [configured.replace('remote.url = "https://github.com/owner/repo"\n',''),'config_missing_repo_remote_url'],
@@ -431,31 +441,33 @@ test('shell doctor and auth preserve JavaScript results, events and exit codes',
       [configured.replace('https://github.com/owner/repo','https://github.com/other/repo'),'repository_address_mismatch'],
     ]) {
       write(config,text);
-      assert.equal(json(s.invoke(['auth'],env)).reason,reason);
+      assert.equal(json(s.invoke(['.gh.auth'],env)).reason,reason);
       assert.equal(existsSync(gh + '.started'),false,'Invalid configuration must never start login');
     }
     write(config,configured.replace('"Octocat"','"OtherAccount"'));
-    const mismatch = s.invoke(['auth'],env);
+    const mismatch = s.invoke(['.gh.auth'],env);
     assert.equal(mismatch.status,1);
     assert.equal(json(mismatch).reason,'unexpected_account');
     write(config,configured);
     write(gh + '.mode','success');
-    const auth = ok(s.invoke(['auth'],env));
+    const auth = ok(s.invoke(['.gh.auth'],env));
+    assert.equal(json(auth).schema, 'gidd.auth/v1');
     assert.equal(json(auth).reason,'authenticated');
+    assert.equal(JSON.parse(auth.stderr.trim()).schema, 'gidd.auth.event/v1');
     assert.equal(JSON.parse(auth.stderr.trim()).type,'authorization_required');
     assert.deepEqual(snapshot(s.target),before, 'Only the fake gh may write login state');
   } finally { f.dispose(); }
 });
 
-test('top-level configuration commands create and edit defaults; auth rejects missing config and overrides', { timeout: 30000 }, () => {
+test('top-level configuration commands create and edit defaults; .gh.auth rejects missing config and overrides', { timeout: 30000 }, () => {
   const f = fixture();
   try {
     const s = installation(f), env = { PATH: dirname(process.execPath) };
     const config = join(s.target,'.agents/skills/gidd/config.toml');
     const original = readFileSync(config,'utf8');
-    const missing = s.invoke(['auth'],env);
+    const missing = s.invoke(['.gh.auth'],env);
     assert.equal(json(missing).reason,'config_missing_repo_remote_name');
-    for (const args of [['auth','--account','Octocat'],['auth','--hostname','github.com'],['auth','--remote','origin'],['auth','Octocat']]) {
+    for (const args of [['.gh.auth','--account','Octocat'],['.gh.auth','--hostname','github.com'],['.gh.auth','--remote','origin'],['.gh.auth','Octocat']]) {
       assert.equal(json(s.invoke([...args],env)).reason,'github_parameters_moved_to_config');
     }
     for (const [key,value] of [['account','Octocat'],['name','upstream'],['url','https://github.com/owner/repo']]) {

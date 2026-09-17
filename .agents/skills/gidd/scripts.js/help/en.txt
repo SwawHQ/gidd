@@ -19,7 +19,7 @@ GIDD (Windows x64 / PowerShell 5.1)
   gidd.link set git.user.email "name@example.com"
   gidd.link clear git.user.name           #Example: remove name; also clear git.user.email when switching to inherit
 
-  gidd.link auth                                #Request device authorization using config and wait for confirmation; gh may save credentials
+  gidd.link .gh.auth                                #Check the configured account; authorize if credentials are missing, then verify identity; gh stores credentials
 
   gidd.link .gh <args...>                       #Supply account, GH_HOST/GH_REPO and Git environment; forward gh arguments
   gidd.link .git <args...>                      #Supply Git identity and HTTPS credentials; local operations need no login
