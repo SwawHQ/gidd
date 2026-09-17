@@ -58,7 +58,7 @@ gidd.link clear git.user.email
 gidd.link set git.user.mode inherit
 ```
 
-`doctor` reports the identity policy under `config.git.user.mode`, including `details.mode` and `details.source` (`config.toml` or `git`). Separate `config.git.user.name` and `config.git.user.email` checks report managed values in `details.configured`; in inherit mode, omitted fields are ready with `details.omitted: true`, while present fields are errors. An invalid mode blocks both field checks. `folder.git.author` reports the effective author and committer; invalid identity configuration blocks it with a reference to the first failing field instead of reporting an inherited fallback as ready.
+`doctor` reports the identity policy under `config.git.user.mode`, including `details.mode` and `details.source` (`config.toml` or `git`). Separate `config.git.user.name` and `config.git.user.email` checks report managed values in `details.configured`; in inherit mode, omitted fields are ready with `details.omitted: true`, while present fields are errors. An invalid mode blocks both field checks. `folder.git.identity` reports the current effective identities under `details.author` and `details.committer`, each with `name` and `email`. Both Git identity probes must succeed for this check to be ready. These are current execution defaults, not a historical commit or a guarantee that a future commit will succeed; invalid identity configuration blocks it with a reference to the first failing field instead of reporting an inherited fallback as ready.
 
 ## Execution and priority
 
@@ -86,6 +86,6 @@ gidd.link set git.user.mode inherit
 
 `set` 和 `clear` 允许逐字段修复；`.git` / `.gh` 包装要求配置完整。切换为 inherit 时，先执行 `clear git.user.name`、`clear git.user.email`，再执行 `set git.user.mode inherit`。clear 删除赋值，不写入空字符串；字段已不存在则成功且不重写配置，配置文件不存在也不会创建文件或目录。未知字段报错；必填字段允许清除，之后由 doctor/执行入口报告缺失。保留其余内容、BOM、换行和注释，行内注释转为独立注释，沿用 set 的文件锁和原子替换保护；结果以 `changed` 表示是否修改。
 
-doctor 的 `config.git.user.mode` 报告模式和来源，`config.git.user.name`、`config.git.user.email` 分别检查对应字段：managed 下报告配置值，inherit 下省略为正常、填写为冲突。模式无效时，姓名和邮箱检查受阻并指向模式项；`folder.git.author` 报告实际生效身份，署名配置无效时指向首个失败字段，不将回退身份误报为就绪。
+doctor 的 `config.git.user.mode` 报告模式和来源，`config.git.user.name`、`config.git.user.email` 分别检查对应字段：managed 下报告配置值，inherit 下省略为正常、填写为冲突。模式无效时，姓名和邮箱检查受阻并指向模式项；`folder.git.identity` 在 `details.author`、`details.committer` 中分别报告当前生效的作者、提交者姓名和邮箱，两项探测均成功才为 ready。这是当前执行环境的身份，不代表历史提交，也不保证后续提交必定成功；署名配置无效时指向首个失败字段，不将回退身份误报为就绪。
 
 `gh` 模式仅为指定 HTTPS host 配置按需认证助手，不禁止 SSH。Git 本地操作不需要登录；缺少凭据时，在实际请求凭据的阶段失败。两入口不会限制跨仓库参数，也不修改全局身份或切换共享活动账号。`doctor` 用于诊断配置和实际生效身份，不能证明推送账号或权限。

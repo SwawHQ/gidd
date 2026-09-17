@@ -7,7 +7,7 @@ import { bindFixture, diagnosis, toolsRoot, assert, compile, dirname, existsSync
 const configText = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[spec]\ncurrent = "issue-direct"\n[repo]\nremote.account = "Octocat"\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\n';
 const checkOrder = [
   'tool.platform', 'tool.js_runtime', 'tool.git', 'tool.gh',
-  'folder.git.worktree', 'folder.git.author',
+  'folder.git.worktree', 'folder.git.identity',
   'config.toml', 'config.repo.remote.name', 'config.repo.remote.url', 'config.repo.remote.account',
   'config.git.user.mode', 'config.git.user.name', 'config.git.user.email', 'config.git.credential.mode', 'config.spec.current',
   'config.repo.remote.account..online', 'config.repo.remote.url..online',
@@ -41,20 +41,36 @@ test('doctor combines independent checks once; offline never invokes network or 
         const key = args[0] === '--version' ? exe === git ? 'git' : 'gh' :
           args[0] === 'auth' ? 'token' : args[0] === 'api' ? 'api' : args[0] === 'repo' ? 'gh_repo' : args.includes('--is-inside-work-tree') ? 'inside' :
           args.includes('--show-toplevel') ? 'root' : args.includes('--verify') ? 'head' :
-          args.includes('symbolic-ref') ? 'symbolic' : args.includes('var') ? 'author' :
+          args.includes('symbolic-ref') ? 'symbolic' : args.includes('GIT_AUTHOR_IDENT') ? 'author' :
+          args.includes('GIT_COMMITTER_IDENT') ? 'committer' :
           args.includes('get-url') ? 'url' : args.includes('remote') ? 'remotes' : 'read';
         calls.push({key,exe,args,options});
         assert.ok([git,gh].includes(exe),'Only bound executables');
         assert.ok(!args.some(x=>['login','switch','setup-git','push','fetch'].includes(x)));
         return overrides[key] || success({git:'git version 2.55.0.windows.5',gh:'gh version 2.98.0',api:'Octocat',token:'fixture-token',
           inside:'true',root:f.root,head:'a'.repeat(40),symbolic:'refs/heads/main',
-          author:'Local Author <author@example.test> 1234567890 +0800',remotes:'origin',
+          author:'Local Author <author@example.test> 1234567890 +0800',
+          committer:'Local Committer <committer@example.test> 1234567890 +0800',remotes:'origin',
           url:'https://github.com/owner/repo.git',read:'',gh_repo:JSON.stringify({url:'https://github.com/owner/repo'})}[key]);
       }};
     };
     const accountId='config.repo.remote.account..online', urlId='config.repo.remote.url..online';
     const before=snapshot(f.root), online=scenario(), report=await doctor(f.root,online);
     assert.equal(report.status,'checks_passed');assert.equal(report.checks.length,16);
+    assert.deepEqual(byId(report, 'folder.git.identity').details, {
+      author: { name: 'Local Author', email: 'author@example.test' },
+      committer: { name: 'Local Committer', email: 'committer@example.test' },
+    });
+    for (const role of ['author', 'committer']) {
+      for (const [response, reason] of [[success('malformed identity'), 'invalid_identity_response'],
+        [{ ok: false, reason: 'command_failed', text: '' }, 'command_failed']]) {
+        const failed = await doctor(f.root, { ...scenario({ [role]: response }), offline: true });
+        const identity = byId(failed, 'folder.git.identity');
+        assert.equal(identity.status, 'failed'); assert.equal(identity.reason, reason);
+        assert.equal(failed.status, 'needs_attention');
+        assert.match(identity.hint, /author and committer/);
+      }
+    }
     assert.deepEqual(byId(report, 'config.git.user.mode').details, { mode: 'inherit', source: 'git' });
     for (const field of ['name', 'email']) {
       assert.equal(byId(report, 'config.git.user.' + field).status, 'ready');
@@ -182,8 +198,8 @@ test('doctor combines independent checks once; offline never invokes network or 
         } else assert.equal(item.status, 'ready');
       }
       assert.ok(!JSON.stringify(r).includes('PRIVATE_TOKEN'));
-      assert.equal(byId(r, 'folder.git.author').status, 'not_checked');
-      assert.equal(byId(r, 'folder.git.author').blocked_by, 'config.git.user.' + blocker);
+      assert.equal(byId(r, 'folder.git.identity').status, 'not_checked');
+      assert.equal(byId(r, 'folder.git.identity').blocked_by, 'config.git.user.' + blocker);
       assert.ok(!sc.calls.some(c => c.key === 'author'));
     }
     write(config, configText.replace('credential.mode = "inherit"', 'credential.mode = "gh"'));

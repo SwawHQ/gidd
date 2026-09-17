@@ -39,8 +39,8 @@ export async function effectiveGitIdentity(invoke) {
   for (const [name, variable] of [['author', 'GIT_AUTHOR_IDENT'], ['committer', 'GIT_COMMITTER_IDENT']]) {
     const result = await invoke(['var', variable]);
     const match = result.ok && /^(.+) <([^<>\r\n]+)> \d+ [+-]\d{4}$/.exec(result.text);
-    if (!match) return { id: 'folder.git.author', status: 'failed', reason: result.ok ? 'invalid_author_response' : result.reason };
+    if (!match) return { id: 'folder.git.identity', status: 'failed', reason: result.ok ? 'invalid_identity_response' : result.reason };
     identities[name] = { name: match[1], email: match[2] };
   }
-  return { id: 'folder.git.author', status: 'ready', details: { ...identities.author, committer: identities.committer } };
+  return { id: 'folder.git.identity', status: 'ready', details: identities };
 }

@@ -57,7 +57,7 @@ function describeCheck(item, root, bindings) {
       reason === 'head_unreadable' ? 'Repair the repository HEAD, then rerun doctor.' :
       reason === 'target_required' ? 'Run the actual skill gidd.pre.ensure.cmd --repo <Git-working-tree-root>, then invoke the generated gidd.link.cmd by its full path.' :
       'Check the reported directory and its Git working-tree metadata. Restore the intended repository or explicitly initialize Git there, then rerun doctor; do not substitute a parent repository.';
-  } else if (id === 'folder.git.author') {
+  } else if (id === 'folder.git.identity') {
     item.hint = 'Check effective Git author and committer. Repair inherited Git identity, or select git.user.mode=managed and set both git.user.name and git.user.email.';
     if (link) item.commands = [command(link, ['set', 'git.user.mode', 'managed']),
       ...['name', 'email'].map(key => command(link, ['set', `git.user.${key}`, '<value>'], [`git.user.${key}`]))];
@@ -185,11 +185,11 @@ export async function doctor(target, { offline = false, fixedRepository = false,
       repository.reason = symbolic.ok ? 'unborn_branch' : 'head_unreadable';
     }
     // A readable worktree can still supply authors/remotes before its first commit.
-    checks.push(userBlocker ? blockCheck(check('folder.git.author', 'ready'), userBlocker.id) :
-      environmentError ? check('folder.git.author', 'failed', environmentError) : await effectiveGitIdentity(invoke));
+    checks.push(userBlocker ? blockCheck(check('folder.git.identity', 'ready'), userBlocker.id) :
+      environmentError ? check('folder.git.identity', 'failed', environmentError) : await effectiveGitIdentity(invoke));
     fields = await inspectRemoteFields(invoke, fields);
   } else {
-    checks.push(check('folder.git.author', 'not_checked', 'repository_unavailable'));
+    checks.push(check('folder.git.identity', 'not_checked', 'repository_unavailable'));
     fields.name = blockCheck(fields.name, 'folder.git.worktree');
     fields.url = blockCheck(fields.url, fields.name.id);
   }

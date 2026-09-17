@@ -426,7 +426,7 @@ test('shell doctor and .gh.auth preserve JavaScript results, events and exit cod
     const report = json(diagnosis);
     assert.equal(report.schema,'gidd.doctor/v1');
     assert.equal(report.checks.find(c => c.id === 'config.repo.remote.account..online').status,'ready');
-    assert.equal(report.checks.find(c => c.id === 'folder.git.author').details.email,'author@example.test');
+    assert.equal(report.checks.find(c => c.id === 'folder.git.identity').details.author.email,'author@example.test');
     assert.equal(report.checks.find(c => c.id === 'config.repo.remote.url..online').reason,'online_incomplete');
     assert.equal(report.status,'checks_incomplete');
     assert.equal(report.checks.find(c => c.id === 'config.repo.remote.url..online').severity,'warning');

@@ -80,8 +80,18 @@ test('runtime Git config beats files, preserves native overrides and reaches Git
     for (const field of ['name', 'email']) {
       assert.deepEqual(diagnostic.checks.find(item => item.id === 'config.git.user.' + field).details, { configured: settings.user[field] });
     }
-    assert.equal(diagnostic.checks.find(item => item.id === 'folder.git.author').details.name, settings.user.name);
-    assert.equal(diagnostic.checks.find(item => item.id === 'folder.git.author').details.committer.email, settings.user.email);
+    assert.equal(diagnostic.checks.find(item => item.id === 'folder.git.identity').details.author.name, settings.user.name);
+    assert.equal(diagnostic.checks.find(item => item.id === 'folder.git.identity').details.committer.email, settings.user.email);
+    const distinct = JSON.parse(s.invoke(['doctor', '--offline'], { env: {
+      GIT_AUTHOR_NAME: 'Environment Author', GIT_AUTHOR_EMAIL: 'author@example.test',
+      GIT_COMMITTER_NAME: 'Environment Committer', GIT_COMMITTER_EMAIL: 'committer@example.test',
+    } }).stdout);
+    const identity = distinct.checks.find(item => item.id === 'folder.git.identity');
+    assert.equal(identity.status, 'ready');
+    assert.deepEqual(identity.details, {
+      author: { name: 'Environment Author', email: 'author@example.test' },
+      committer: { name: 'Environment Committer', email: 'committer@example.test' },
+    });
     assert.equal(s.invoke(['.git', '-C', s.elsewhere, 'rev-parse', '--is-inside-work-tree']).status, 128);
     const inherited = s.text.replace('user.mode = "managed"', 'user.mode = "inherit"').replace(/^user\.(?:name|email) = .*\n/gm, '');
     write(s.config, inherited);
@@ -89,7 +99,7 @@ test('runtime Git config beats files, preserves native overrides and reaches Git
     assert.equal(ok(s.invoke(['.gh', 'child-git'])).stdout.trim(), 'Local Name');
     const localReport = JSON.parse(s.invoke(['doctor', '--offline']).stdout);
     assert.deepEqual(localReport.checks.find(item => item.id === 'config.git.user.mode').details, { mode: 'inherit', source: 'git' });
-    assert.equal(localReport.checks.find(item => item.id === 'folder.git.author').details.email, 'local@example.test');
+    assert.equal(localReport.checks.find(item => item.id === 'folder.git.identity').details.author.email, 'local@example.test');
     const globalConfig = join(f.root, 'global.gitconfig');
     write(globalConfig, '[user]\nname = Global Name\nemail = global@example.test\n');
     for (const key of ['name', 'email']) ok(run(s.git, ['-C', s.target, 'config', '--unset', 'user.' + key]));
@@ -120,7 +130,7 @@ test('invalid identity modes block both wrappers and cannot report a fallback id
       assert.equal(shown.stdout, text); assert.equal(shown.stderr, '');
       const report = JSON.parse(s.invoke(['doctor', '--offline']).stdout);
       assert.equal(report.checks.find(item => item.id === 'config.git.user.' + field).reason, diagnosticReason);
-      assert.equal(report.checks.find(item => item.id === 'folder.git.author').blocked_by, 'config.git.user.' + field);
+      assert.equal(report.checks.find(item => item.id === 'folder.git.identity').blocked_by, 'config.git.user.' + field);
     }
   } finally { f.dispose(); }
 });
@@ -264,7 +274,7 @@ test('generated CMD forwards .git/.gh with literal arguments and bound working d
     assert.equal(JSON.parse(ok(invoke(['clear', 'git.user.name'])).stdout).changed, false);
     const report = JSON.parse(invoke(['doctor', '--offline']).stdout);
     assert.deepEqual(report.checks.find(item => item.id === 'config.git.user.name').details, { omitted: true });
-    assert.equal(report.checks.find(item => item.id === 'folder.git.author').details.email, 'inherited@example.test');
+    assert.equal(report.checks.find(item => item.id === 'folder.git.identity').details.author.email, 'inherited@example.test');
     ok(invoke(['clear', 'git.user.mode']));
     const missingMode = JSON.parse(invoke(['doctor', '--offline']).stdout);
     assert.equal(missingMode.checks.find(item => item.id === 'config.git.user.mode').reason, 'config_missing_git_user_mode');
