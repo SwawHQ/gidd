@@ -4,12 +4,12 @@ import { doctor } from '../.agents/skills/gidd/scripts.js/doctor.mjs';
 import { configure } from '../.agents/skills/gidd/scripts.js/config.mjs';
 import { bindFixture, diagnosis, toolsRoot, assert, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, readFileSync, repo, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
 
-const configText = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[spec]\nmode = "issue-direct"\n[repo]\nremote.account = "Octocat"\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\n';
+const configText = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[spec]\ncurrent = "issue-direct"\n[repo]\nremote.account = "Octocat"\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\n';
 const checkOrder = [
   'tool.platform', 'tool.js_runtime', 'tool.git', 'tool.gh',
   'folder.git.worktree', 'folder.git.author',
   'config.toml', 'config.repo.remote.name', 'config.repo.remote.url', 'config.repo.remote.account',
-  'config.git.user.mode', 'config.git.user.name', 'config.git.user.email', 'config.git.credential.mode', 'config.spec.mode',
+  'config.git.user.mode', 'config.git.user.name', 'config.git.user.email', 'config.git.credential.mode', 'config.spec.current',
   'config.repo.remote.account..online', 'config.repo.remote.url..online',
 ];
 const byId = (report, id) => {

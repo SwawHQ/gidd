@@ -1,5 +1,5 @@
 import { test } from 'node:test';
-import { realpathSync, renameSync } from 'node:fs';
+import { realpathSync, renameSync, symlinkSync, unlinkSync } from 'node:fs';
 import { configure } from '../.agents/skills/gidd/scripts.js/config.mjs';
 import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/storage.mjs';
 import { specCommand, parseSpecArguments } from '../.agents/skills/gidd/scripts.js/spec.mjs';
@@ -10,7 +10,7 @@ import { stringify as stringifyYaml } from '../.agents/skills/gidd/scripts.js/ve
 import { adapter, assert, bindFixture, compile, copySkill, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok,
   readFileSync, readdirSync, repo, rmSync, run, snapshot, stub, toolsRoot, write } from './support/helpers.mjs';
 
-const chosen = 'schema_version = 1\n[spec]\nmode = "issue-direct"\n';
+const chosen = 'schema_version = 1\n[spec]\ncurrent = "issue-direct"\n';
 const github = '[repo]\nremote.url = "https://github.com/owner/repo"\nremote.name = "origin"\n';
 const configPath = root => join(root, '.agents/skills/gidd/config.toml');
 function installation(f, config = chosen) {
@@ -27,30 +27,33 @@ function installation(f, config = chosen) {
   return { skill, target, invoke, current, diagnose };
 }
 const check = (report, id) => report.checks.find(item => item.id === id);
+const catalog = (skill, lang = 'en') => JSON.parse(readFileSync(join(skill, `spec.list.${lang}.json`), 'utf8')).specs;
 
 test('spec mode editing preserves text while preparation ignores business configuration', () => {
   const f = fixture();
   try {
     const path = configPath(f.root);
-    assert.throws(() => configure(f.root, 'set', 'spec.mode', 'issue-pr'), /spec_mode_unsupported/);
+    for (const action of ['set', 'clear']) assert.throws(() => configure(f.root, action, 'spec.mode', action === 'set' ? 'issue-direct' : undefined), /config_unknown_key/);
+    assert.throws(() => parseConfiguration('schema_version = 1\n[spec]\nmode = "issue-direct"\n'), /config_unsupported_syntax_or_field/);
+    assert.throws(() => configure(f.root, 'set', 'spec.current', 'issue-pr'), /spec_current_unsupported/);
     assert.equal(existsSync(path), false);
     for (const newline of ['\n', '\r\n']) {
       const text = '\uFEFF' + ['# 用户注释', 'schema_version = 1', '[git]', 'user.mode = "inherit"', 'credential.mode = "inherit"', '[spec] # choice',
-        "  mode = 'unknown-mode' # preserve", '[repo]', 'remote.account = "bad account"', ''].join(newline);
+        "  current = 'unknown-mode' # preserve", '[repo]', 'remote.account = "bad account"', ''].join(newline);
       write(path, text);
       ok(adapter(f.root, { action: 'configuration', repositoryRoot: f.root }, { env: { PATH: '' } }));
-      assert.equal(parseConfiguration(text).spec.mode, 'unknown-mode');
-      configure(f.root, 'set', 'spec.mode', 'issue-direct');
+      assert.equal(parseConfiguration(text).spec.current, 'unknown-mode');
+      configure(f.root, 'set', 'spec.current', 'issue-direct');
       assert.equal(readFileSync(path, 'utf8'), text.replace("'unknown-mode'", '"issue-direct"'));
       configure(f.root, 'set', 'repo.remote.account', 'Octocat');
-      assert.equal(parseConfiguration(configure(f.root, 'show').content).spec.mode, 'issue-direct');
+      assert.equal(parseConfiguration(configure(f.root, 'show').content).spec.current, 'issue-direct');
       ok(adapter(f.root, { action: 'configuration', repositoryRoot: f.root }, { env: { PATH: '' } }));
     }
     for (const text of ['schema_version = 1\n', 'schema_version = 1\n[spec]\n# select here\n']) {
-      write(path, text); configure(f.root, 'set', 'spec.mode', 'issue-direct');
-      assert.equal(parseConfiguration(readFileSync(path, 'utf8')).spec.mode, 'issue-direct');
+      write(path, text); configure(f.root, 'set', 'spec.current', 'issue-direct');
+      assert.equal(parseConfiguration(readFileSync(path, 'utf8')).spec.current, 'issue-direct');
     }
-    for (const tail of ['mode = true\n', 'mode = "a"\nmode = "b"\n', 'unknown = "x"\n', '[spec]\n']) {
+    for (const tail of ['current = true\n', 'current = "a"\ncurrent = "b"\n', 'unknown = "x"\n', '[spec]\n']) {
       const text = 'schema_version = 1\n[spec]\n' + tail;
       write(path, text);
       assert.throws(() => parseConfiguration(text), /config_/);
@@ -64,28 +67,31 @@ test('doctor and current agree on absent, missing and unsupported modes and neve
   const f = fixture();
   try {
     const s = installation(f, null);
-    for (const text of [null, 'schema_version = 1\n', 'schema_version = 1\n[spec]\nmode = "issue-pr"\n']) {
+    for (const text of [null, 'schema_version = 1\n', 'schema_version = 1\n[spec]\ncurrent = "issue-pr"\n']) {
       if (text !== null) write(configPath(s.target), text);
       const before = snapshot(f.root), result = s.current(), report = json(result);
       assert.equal(result.status, 1);
       assert.equal(report.scope, s.target);
       assert.equal(report.mode, text?.includes('issue-pr') ? 'issue-pr' : undefined);
       assert.equal(report.checks, undefined);
-      assert.equal(report.error, text?.includes('issue-pr') ? 'spec_mode_unsupported' : 'spec_mode_missing');
+      assert.equal(report.error, text?.includes('issue-pr') ? 'spec_current_unsupported' : 'spec_current_missing');
       assert.match(report.hint, /doctor/);
       const diagnosis = s.diagnose();
       if (text !== null) {
-        const mode = check(diagnosis, 'config.spec.mode');
+        const mode = check(diagnosis, 'config.spec.current');
         assert.equal(mode.reason, report.error);
-        assert.deepEqual(mode.details.available_modes, ['issue-direct']);
-        assert.deepEqual(mode.commands[0].args, ['set', 'spec.mode', 'issue-direct']);
+        assert.deepEqual(mode.details.available_names, ['issue-direct']);
+        assert.equal(mode.severity, 'error');
+        assert.deepEqual(mode.commands.map(command => command.args), [['spec.list'], ['set', 'spec.current', '<name>']]);
+        assert.deepEqual(mode.commands[1].required_inputs, ['spec.current']);
+        assert.match(mode.hint, /spec\.list.*set spec\.current/);
       }
-      else assert.equal(check(diagnosis, 'config.spec.mode').blocked_by, 'config.toml');
+      else assert.equal(check(diagnosis, 'config.spec.current').blocked_by, 'config.toml');
       assert.deepEqual(snapshot(f.root), before);
     }
-    configure(s.target, 'set', 'spec.mode', 'issue-direct');
-    assert.equal(check(s.diagnose(), 'config.spec.mode').status, 'ready');
-    assert.deepEqual(check(s.diagnose(), 'config.spec.mode').details, { configured: 'issue-direct' });
+    configure(s.target, 'set', 'spec.current', 'issue-direct');
+    assert.equal(check(s.diagnose(), 'config.spec.current').status, 'ready');
+    assert.deepEqual(check(s.diagnose(), 'config.spec.current').details, { configured: 'issue-direct' });
     assert.match(ok(s.current()).stdout, /Prompt source: ` .+prompt\.en\.md `/);
   } finally { f.dispose(); }
 });
@@ -105,7 +111,7 @@ test('successful offline doctor guarantees current spec and localized templates 
       const before = snapshot(f.root);
       const diagnosis = json(ok(s.invoke(['doctor', '--offline'])));
       assert.equal(diagnosis.status, 'local_ready');
-      assert.equal(check(diagnosis, 'config.spec.mode').status, 'ready');
+      assert.equal(check(diagnosis, 'config.spec.current').status, 'ready');
       for (const lang of ['en', 'zh']) {
         const result = ok(s.current('--lang', lang));
         assert.match(result.stdout, /issue-direct/);
@@ -115,12 +121,20 @@ test('successful offline doctor guarantees current spec and localized templates 
       assert.deepEqual(snapshot(f.root), before);
     };
     verify();
+    ok(s.invoke(['clear', 'spec.current']));
+    const unselected = s.invoke(['doctor', '--offline']);
+    assert.equal(unselected.status, 1);
+    assert.equal(json(unselected).status, 'needs_attention');
+    assert.equal(check(json(unselected), 'config.spec.current').reason, 'spec_current_missing');
+    assert.equal(check(json(unselected), 'config.spec.current').severity, 'error');
+    ok(s.invoke(['set', 'spec.current', 'issue-direct']));
+    verify();
     // Even an unused language must be checked before doctor can report success.
     const prompt = join(s.skill, 'spec.issue-direct/prompt.en.md'), saved = readFileSync(prompt, 'utf8');
     write(prompt, '');
     const failed = s.invoke(['doctor', '--offline']);
     assert.equal(failed.status, 1);
-    assert.equal(check(json(failed), 'config.spec.mode').reason, 'spec_resources_invalid');
+    assert.equal(check(json(failed), 'config.spec.current').reason, 'spec_resources_invalid');
     assert.equal(s.current('--lang', 'zh').status, 1);
     write(prompt, saved);
     verify();
@@ -132,7 +146,7 @@ test('spec readers emit scoped Markdown guidance and preserve native form JSON',
   try {
     const s = installation(f), before = snapshot(f.root);
     for (const [lang, locale] of [['zh', 'zh-CN'], ['en', 'en']]) {
-      assert.deepEqual(json(ok(s.invoke(['spec.list', '--lang', lang]))), { scope: s.target, names: ['issue-direct'] });
+      assert.deepEqual(json(ok(s.invoke(['spec.list', '--lang', lang]))), { scope: s.target, specs: catalog(s.skill, locale) });
       const prompt = readFileSync(join(s.skill, `spec.issue-direct/prompt.${locale}.md`), 'utf8');
       const form = parseSpecYaml(readFileSync(join(s.skill, `spec.issue-direct/issue.${locale}.yaml`), 'utf8'));
       for (const route of ['spec.current', 'spec.issue-direct']) {
@@ -149,17 +163,90 @@ test('spec readers emit scoped Markdown guidance and preserve native form JSON',
         assert.equal(result.stderr, '');
       }
     }
-    assert.deepEqual(json(ok(s.invoke(['spec.list']))), { scope: s.target, names: ['issue-direct'] });
+    assert.deepEqual(json(ok(s.invoke(['spec.list']))), { scope: s.target, specs: catalog(s.skill) });
     assert.match(ok(s.invoke(['spec.current'], { env: { GIDD_LANG: 'zh-CN' } })).stdout, /关联的 Issue/);
     assert.deepEqual(snapshot(f.root), before);
-    for (const text of ['', 'schema_version = 1\n', 'schema_version = 1\n[spec]\nmode = "unavailable"\n']) {
+    for (const text of ['invalid TOML', '', 'schema_version = 1\n', 'schema_version = 1\n[spec]\ncurrent = "unavailable"\n']) {
       write(configPath(s.target), text);
       const saved = snapshot(f.root);
-      assert.deepEqual(json(ok(s.invoke(['spec.list']))).names, ['issue-direct']);
+      assert.deepEqual(json(ok(s.invoke(['spec.list']))).specs, catalog(s.skill));
       assert.match(ok(s.invoke(['spec.issue-direct'])).stdout, /Prompt source: ` .+prompt\.en\.md `/);
       assert.equal(json(ok(s.invoke(['spec.issue-direct.issue']))).form.body[2].attributes.label, 'Acceptance criteria');
       assert.deepEqual(snapshot(f.root), saved);
     }
+  } finally { f.dispose(); }
+});
+
+test('localized catalogs are the selectable source and reject inconsistent or unsafe entries and directories', { timeout: 60000 }, () => {
+  const f = fixture();
+  try {
+    const s = installation(f), enPath = join(s.skill, 'spec.list.en.json'), zhPath = join(s.skill, 'spec.list.zh-CN.json');
+    const en = readFileSync(enPath, 'utf8'), zh = readFileSync(zhPath, 'utf8');
+    const original = JSON.parse(en).specs[0];
+    const encode = specs => JSON.stringify({ specs });
+    const failure = reason => {
+      for (const lang of ['en', 'zh']) {
+        const result = s.invoke(['spec.list', '--lang', lang]);
+        assert.equal(result.status, 2);
+        assert.equal(json(result).error, reason);
+        assert.match(json(result).hint, /spec\.list\.en\.json.*spec\.list\.zh-CN\.json/);
+      }
+      const result = s.invoke(['doctor', '--offline']);
+      assert.equal(result.status, 1);
+      const item = check(json(result), 'config.spec.current');
+      assert.equal(item.reason, reason);
+      assert.equal(item.severity, 'error');
+      assert.equal(json(s.current()).error, reason);
+    };
+    for (const [text, reason] of [
+      ['{', 'spec_list_invalid'],
+      [Buffer.from([255]), 'spec_list_invalid'],
+      ['[]', 'spec_list_invalid'],
+      [JSON.stringify({ specs: [original], extra: true }), 'spec_list_invalid'],
+      [encode([]), 'spec_list_invalid'],
+      [encode([original, original]), 'spec_list_invalid'],
+      [encode([{ name: original.name }]), 'spec_list_invalid'],
+      [encode([{ ...original, description: ' ' }]), 'spec_list_invalid'],
+      [encode([{ ...original, description: 1 }]), 'spec_list_invalid'],
+      [encode([{ ...original, extra: true }]), 'spec_list_invalid'],
+      ...['../outside', 'list', 'current'].map(name => [encode([{ ...original, name }]), 'spec_list_invalid']),
+      [encode([{ ...original, name: 'other' }]), 'spec_list_mismatch'],
+      [encode([original, { name: 'other', description: 'Other spec' }]), 'spec_list_mismatch'],
+    ]) {
+      write(enPath, text);
+      const before = snapshot(f.root);
+      failure(reason);
+      assert.deepEqual(snapshot(f.root), before);
+    }
+    write(enPath, en);
+    rmSync(zhPath);
+    failure('spec_list_missing');
+    write(zhPath, zh);
+
+    const directory = join(s.skill, 'spec.issue-direct'), savedDirectory = directory + '.saved';
+    renameSync(directory, savedDirectory);
+    failure('spec_directory_missing');
+    write(directory, 'not a directory');
+    failure('spec_directory_invalid');
+    unlinkSync(directory);
+    symlinkSync(savedDirectory, directory, 'junction');
+    try { failure('spec_directory_invalid'); }
+    finally { unlinkSync(directory); }
+    renameSync(savedDirectory, directory);
+
+    // A new catalog entry becomes selectable without editing JavaScript names.
+    mkdirSync(join(s.skill, 'spec.issue-review'));
+    const entries = [original, { name: 'issue-review', description: 'Review before delivery.' }];
+    write(enPath, encode(entries));
+    write(zhPath, encode([{ name: original.name, description: '直接交付。' }, { name: 'issue-review', description: '审核后交付。' }]));
+    assert.deepEqual(json(ok(s.invoke(['spec.list']))).specs, entries);
+    ok(s.invoke(['set', 'spec.current', 'issue-review']));
+    assert.equal(json(s.current()).error, 'spec_resources_missing');
+    write(zhPath, encode([...JSON.parse(readFileSync(zhPath, 'utf8')).specs].reverse()));
+    failure('spec_list_mismatch');
+    const selected = readFileSync(configPath(s.target), 'utf8');
+    assert.equal(json(s.invoke(['set', 'spec.current', 'issue-direct'])).reason, 'spec_list_mismatch');
+    assert.equal(readFileSync(configPath(s.target), 'utf8'), selected);
   } finally { f.dispose(); }
 });
 
@@ -192,7 +279,7 @@ test('unknown arguments and retired names are rejected without changing files', 
       [['workflow', 'current'], 'unknown_command'],
       [['set', 'workflow.mode', 'issue-direct'], 'config_unknown_key'],
       [['spec.current.issue.check'], 'invalid_spec_route'],
-      [['spec.unknown'], 'spec_mode_unsupported'],
+      [['spec.unknown'], 'spec_current_unsupported'],
       [['spec.current.issue.check.extra'], 'invalid_spec_route'],
       [['spec..issue'], 'invalid_spec_route'],
       [['spec.current.pr'], 'invalid_spec_route'],
@@ -217,7 +304,7 @@ test('resource failures require repair and cannot silently fall back to another 
     for (const name of ['issue.en.yaml', 'issue.zh-CN.yaml', 'prompt.en.md', 'prompt.zh-CN.md']) {
       const resourcePath = join(root, name), content = readFileSync(resourcePath);
       rmSync(resourcePath);
-      assert.equal(check(s.diagnose(), 'config.spec.mode').reason, 'spec_resources_missing', name);
+      assert.equal(check(s.diagnose(), 'config.spec.current').reason, 'spec_resources_missing', name);
       assert.equal(json(s.current()).error, 'spec_resources_missing', name);
       write(resourcePath, content);
     }
@@ -227,7 +314,7 @@ test('resource failures require repair and cannot silently fall back to another 
       const form = parseSpecYaml(original); change(form); write(resourcePath, stringifyYaml(form));
       const before = snapshot(f.root), result = s.current();
       assert.equal(result.status, 1);
-      const resource = check(s.diagnose(), 'config.spec.mode');
+      const resource = check(s.diagnose(), 'config.spec.current');
       assert.equal(json(result).checks, undefined);
       assert.equal(json(result).error, resource.reason);
       assert.equal(resource.status, 'invalid');
@@ -235,7 +322,7 @@ test('resource failures require repair and cannot silently fall back to another 
       assert.equal(realpathSync.native(resource.details.path), realpathSync.native(root));
       assert.equal(resource.reason, 'spec_resources_invalid'); assert.equal(resource.commands, undefined);
       assert.match(resource.hint, /Restore or reinstall/);
-      assert.equal(check(s.diagnose(), 'config.spec.mode').reason, resource.reason);
+      assert.equal(check(s.diagnose(), 'config.spec.current').reason, resource.reason);
       assert.deepEqual(snapshot(f.root), before);
     }
     write(resourcePath, original); write(path, '');
@@ -284,7 +371,7 @@ test('generated repository link dispatches spec and template commands from any c
       windowsVerbatimArguments: true, cwd: f.root, env: { PATH: '', GIDD_LANG: 'en', GIT_DIR: join(f.root, 'unrelated.git') },
     });
     const before = snapshot(f.root), result = ok(invoke('spec.current'));
-    assert.deepEqual(json(ok(invoke('spec.list'))).names, ['issue-direct']);
+    assert.deepEqual(json(ok(invoke('spec.list'))).specs, catalog(s.skill));
     const scope = /^Scope: ` (.+) ` {2}\r?$/m.exec(result.stdout)?.[1];
     assert.ok(scope, result.stdout);
     assert.equal(realpathSync.native(scope), realpathSync.native(s.target));
@@ -304,19 +391,19 @@ test('doctor validates both native forms and follows edited labels and placehold
     const s = installation(f), root = join(s.skill, 'spec.issue-direct');
     const path = join(root, 'issue.en.yaml'), original = readFileSync(path, 'utf8');
     rmSync(path);
-    assert.equal(check(s.diagnose(), 'config.spec.mode').reason, 'spec_resources_missing');
+    assert.equal(check(s.diagnose(), 'config.spec.current').reason, 'spec_resources_missing');
     for (const change of [form => { form.body[0].validations.required = 'yes'; },
       form => { form.body[1].id = form.body[0].id; }, form => { form.body[0].attributes.label = 'Scope'; },
       form => { form.body[2].min_task_items = -1; }, form => { form.body[0].validations.requiredd = true; },
       form => { form.body.reverse(); }]) {
       const form = parseSpecYaml(original); change(form); write(path, stringifyYaml(form));
-      assert.equal(check(s.diagnose(), 'config.spec.mode').reason, 'spec_resources_invalid');
+      assert.equal(check(s.diagnose(), 'config.spec.current').reason, 'spec_resources_invalid');
     }
     const updated = parseSpecYaml(original);
     updated.body[0].attributes.label = 'Expected outcome';
     updated.body[0].attributes.placeholder = 'Describe the new expected outcome.';
     write(path, stringifyYaml(updated));
-    assert.equal(check(s.diagnose(), 'config.spec.mode').status, 'ready');
+    assert.equal(check(s.diagnose(), 'config.spec.current').status, 'ready');
     const form = json(ok(s.invoke(['spec.current.issue', '--lang', 'en']))).form;
     assert.deepEqual(form, updated);
   } finally { f.dispose(); }
@@ -391,7 +478,7 @@ test('doctor and spec readers reject broken Markdown files and malformed form YA
       for (const text of failures) {
         write(path, text);
         const before = snapshot(f.root);
-        assert.equal(check(s.diagnose(), 'config.spec.mode').reason, 'spec_resources_invalid');
+        assert.equal(check(s.diagnose(), 'config.spec.current').reason, 'spec_resources_invalid');
         for (const route of ['spec.current', 'spec.issue-direct.issue']) {
           const result = s.invoke([route, '--lang', 'zh']);
           assert.equal(result.status, route === 'spec.current' ? 1 : 2);
@@ -406,7 +493,7 @@ test('doctor and spec readers reject broken Markdown files and malformed form YA
     // Markdown is authored freely, including tables, code and headings that differ by language.
     const prompt = '# Custom guidance\n\n| Step | Action |\n| --- | --- |\n| 1 | Read the Issue |\n\n~~~sh\ngit status\n~~~';
     write(join(root, 'prompt.en.md'), prompt);
-    assert.equal(check(s.diagnose(), 'config.spec.mode').status, 'ready');
+    assert.equal(check(s.diagnose(), 'config.spec.current').status, 'ready');
     assert.ok(ok(s.current('--lang', 'en')).stdout.endsWith(prompt));
   } finally { f.dispose(); }
 });

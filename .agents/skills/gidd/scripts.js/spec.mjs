@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { configurationPath, parseConfiguration, readConfigurationText } from './storage.mjs';
-import { loadSpec, specModes } from './specs.mjs';
+import { loadSpec, loadSpecCatalog, specCatalogHint } from './specs.mjs';
 
 function language(explicit) {
   const choice = explicit || process.env.GIDD_LANG || process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || Intl.DateTimeFormat().resolvedOptions().locale;
@@ -27,13 +27,14 @@ export function specError(repository, mode, reason) {
   const hint = reason === 'invalid_arguments' || reason === 'invalid_spec_route'
     ? 'Run gidd.link help for spec command usage.'
     : reason === 'unsupported_help_language' ? 'Use --lang zh or --lang en.'
+    : reason.startsWith('spec_list_') || reason.startsWith('spec_directory_') ? specCatalogHint
     : reason.startsWith('spec_') ? 'Run gidd.link doctor --offline for details.'
     : 'Run gidd.link doctor for diagnostics.';
   return { ...(repository ? { scope: repository } : {}), ...(mode ? { mode } : {}), error: reason, hint };
 }
 
 export function specCommand(repository, options) {
-  if (options.action === 'list') return { report: { scope: repository, names: [...specModes] }, exitCode: 0 };
+  if (options.action === 'list') return { report: { scope: repository, specs: loadSpecCatalog()[options.lang] }, exitCode: 0 };
   const current = options.selector === 'current';
   const resourceExit = current ? 1 : 2;
   let mode = current ? undefined : options.selector;
@@ -41,11 +42,11 @@ export function specCommand(repository, options) {
   if (current) {
     try {
       const path = configurationPath(repository);
-      if (existsSync(path)) mode = parseConfiguration(readConfigurationText(path)).spec.mode;
+      if (existsSync(path)) mode = parseConfiguration(readConfigurationText(path)).spec.current;
     } catch {
       return failure('spec_configuration_unreadable');
     }
-    if (mode === undefined) return failure('spec_mode_missing');
+    if (mode === undefined) return failure('spec_current_missing');
   }
   let spec;
   try { spec = loadSpec(mode); }

@@ -57,7 +57,7 @@ export function parseConfiguration(text) {
       if (schema) throw new Error('config_duplicate_schema_version');
       schema = true; continue;
     }
-    const names = section === 'repo' ? 'remote\\.(?:name|url|account)' : section === 'git' ? '(?:user\\.(?:mode|name|email)|credential\\.mode)' : section === 'spec' ? 'mode' : '(?!)';
+    const names = section === 'repo' ? 'remote\\.(?:name|url|account)' : section === 'git' ? '(?:user\\.(?:mode|name|email)|credential\\.mode)' : section === 'spec' ? 'current' : '(?!)';
     const field = new RegExp('^[ \\t]*(' + names + ')[ \\t]*=[ \\t]*(' + stringPattern + ')[ \\t]*(?:#.*)?$').exec(line);
     if (!field) throw new Error('config_unsupported_syntax_or_field:' + (index + 1));
     const key = section + '.' + field[1];
@@ -67,7 +67,7 @@ export function parseConfiguration(text) {
     else if (section === 'git') {
       const [group, name] = field[1].split('.');
       result.git[group][name] = decodeString(field[2]);
-    } else result.spec.mode = decodeString(field[2]);
+    } else result.spec.current = decodeString(field[2]);
   }
   if (!schema) throw new Error('config_missing_key:schema_version');
   return result;

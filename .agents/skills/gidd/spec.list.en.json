@@ -1,0 +1,8 @@
+{
+  "specs": [
+    {
+      "name": "issue-direct",
+      "description": "Record goals, acceptance criteria and delivery in a GitHub Issue; commit directly to the default branch without a PR."
+    }
+  ]
+}

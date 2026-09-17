@@ -2,11 +2,11 @@ import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readF
 import { randomUUID } from 'node:crypto';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { parseConfiguration, stringPattern } from './storage.mjs';
-import { validateSpecMode, specModes } from './specs.mjs';
+import { validateSpecName, specSelectionHint, specCatalogHint } from './specs.mjs';
 import { validateGitField, validateGitSettings } from './git-settings.mjs';
 
 const initialConfiguration = 'schema_version = 1\n\n[repo]\nremote.name = "origin"\n';
-const editableKey = /^(?:repo\.remote\.(?:name|url|account)|git\.(?:user\.(?:mode|name|email)|credential\.mode)|spec\.mode)$/;
+const editableKey = /^(?:repo\.remote\.(?:name|url|account)|git\.(?:user\.(?:mode|name|email)|credential\.mode)|spec\.current)$/;
 const hostnamePattern = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i;
 
 export function normalizeRepositoryIdentity(value) {
@@ -54,7 +54,7 @@ function validateKey(key) {
 
 function validateSetting(key, value) {
   validateKey(key);
-  if (key === 'spec.mode') return validateSpecMode(value);
+  if (key === 'spec.current') return validateSpecName(value);
   if (key.startsWith('git.')) return validateGitField(key.slice(4), value);
   validateRemoteField(key.slice('repo.remote.'.length), value);
 }
@@ -139,7 +139,8 @@ export function readAuthorizationConfiguration(repository) {
 }
 
 export function configurationHint(reason) {
-  if (reason === 'spec_mode_unsupported') return 'Available spec modes: ' + specModes.join(', ') + '. Use gidd.link set spec.mode <mode>.';
+  if (reason === 'spec_current_unsupported') return specSelectionHint;
+  if (reason.startsWith('spec_list_') || reason.startsWith('spec_directory_')) return specCatalogHint;
   if (reason === 'config_retired_structure') return 'Replace [github] with [repo] remote.name, remote.url and remote.account; remove hostname and [tools]. Tool sources are internal preparation policy. Preserve unrelated comments and [spec].';
   if (reason === 'config_missing') return 'Create config with: gidd.link.cmd set repo.remote.account <login>. Then set repo.remote.url and review repo.remote.name.';
   if (/^config_(missing|invalid)_git_user_mode$/.test(reason)) return 'Set git.user.mode explicitly to managed or inherit with gidd.link set.';

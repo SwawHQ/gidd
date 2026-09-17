@@ -145,7 +145,7 @@ export async function doctor(target, { offline = false, fixedRepository = false,
   const checks = [check('tool.js_runtime', 'ready', undefined, { name: runtimeName,
     path: process.execPath, version: process.versions.bun || process.versions.node,
     gidd_managed: managedRuntime(runtimeName) }), ...toolChecks];
-  const { checks: [modeCheck] } = inspectSpec(configuration.spec?.mode, configRoot || target, configuration.result.status === 'ready');
+  const { checks: [modeCheck] } = inspectSpec(configuration.spec?.current, configRoot || target, configuration.result.status === 'ready');
   if (process.platform !== 'win32' || process.arch !== 'x64') checks.unshift(check('tool.platform', 'unsupported', 'unsupported_platform'));
   const usable = name => checks.find(item => item.id === 'tool.' + name)?.status === 'ready';
   const gitChecks = gitSettingChecks(configuration.git, configuration.result.status === 'ready');

@@ -1,0 +1,8 @@
+{
+  "specs": [
+    {
+      "name": "issue-direct",
+      "description": "以 GitHub Issue 记录目标、验收和交付；允许直接提交到默认分支，无需 PR。"
+    }
+  ]
+}
