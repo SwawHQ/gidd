@@ -9,18 +9,26 @@ import { boundTools, boundExecutor } from './bindings.mjs';
 import { parseSpecArguments, specCommand, specError } from './spec.mjs';
 import { passthrough } from './passthrough.mjs';
 
+function printHelp(requestedLanguage, topic = '') {
+  const choice = requestedLanguage || process.env.GIDD_LANG || process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || Intl.DateTimeFormat().resolvedOptions().locale;
+  if ((requestedLanguage || process.env.GIDD_LANG) && !/^(zh|en)(?:$|[-_])/.test(choice)) throw new Error('unsupported_help_language');
+  const language = /^zh(?:$|[-_])/.test(choice) ? 'zh-CN' : 'en';
+  console.log(readFileSync(new URL(`./help/${topic}${language}.txt`, import.meta.url), 'utf8'));
+}
+
 export async function main(args, { boundRepository } = {}) {
   const route = (args.shift() || 'help').toLowerCase();
-  let command = route.startsWith('spec.') ? 'spec' : route;
-  const schemas = { config: 'gidd.config/v1', doctor: 'gidd.doctor/v1', auth: 'gidd.auth/v1', spec: 'gidd.spec/v1' };
+  const command = route.startsWith('spec.') ? 'spec' : route;
+  const configurationCommand = ['show', 'set', 'clear'].includes(command);
+  const schemas = { show: 'gidd.config/v1', set: 'gidd.config/v1', clear: 'gidd.config/v1', doctor: 'gidd.doctor/v1', auth: 'gidd.auth/v1', spec: 'gidd.spec/v1' };
   let schema = 'gidd.cli/v1';
   try {
     if (['help','--help','-h'].includes(command)) {
       if (args.length > 1) throw new Error('invalid_arguments');
-      const choice = args[0] || process.env.GIDD_LANG || process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || Intl.DateTimeFormat().resolvedOptions().locale;
-      if ((args[0] || process.env.GIDD_LANG) && !/^(zh|en)(?:$|[-_])/.test(choice)) throw new Error('unsupported_help_language');
-      const language = /^zh(?:$|[-_])/.test(choice) ? 'zh-CN' : 'en';
-      console.log(readFileSync(new URL(`./help/${language}.txt`,import.meta.url),'utf8')); return 0;
+      printHelp(args[0]); return 0;
+    }
+    if (command === 'set' && args.length === 0) {
+      printHelp(undefined, 'set.'); return 0;
     }
     if (['.gh', '.git'].includes(command)) {
       if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');
@@ -32,16 +40,15 @@ export async function main(args, { boundRepository } = {}) {
     }
     if (!Object.hasOwn(schemas,command)) throw new Error('unknown_command');
     if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');
-    let action, key, value, specOptions;
+    let key, value, specOptions;
     if (command === 'spec') {
       schema = schemas.spec;
       specOptions = parseSpecArguments(route, args);
       args = [];
     }
-    if (command === 'config') {
-      action = args.shift(); if (!['show','set','clear'].includes(action)) throw new Error('invalid_arguments');
-      if (action !== 'show') { key = args.shift(); if (key === undefined) throw new Error('invalid_arguments'); }
-      if (action === 'set') { value = args.shift(); if (value === undefined) throw new Error('invalid_arguments'); }
+    if (configurationCommand) {
+      if (command !== 'show') { key = args.shift(); if (key === undefined) throw new Error('invalid_arguments'); }
+      if (command === 'set') { value = args.shift(); if (value === undefined) throw new Error('invalid_arguments'); }
     }
     if (command === 'auth' && args.some(arg => ['--hostname','--account','--remote'].includes(arg) || !arg.startsWith('--') && args.indexOf(arg) === 0)) throw new Error('github_parameters_moved_to_config');
     let offline = false;
@@ -65,7 +72,7 @@ export async function main(args, { boundRepository } = {}) {
     }
     let report;
     if (command === 'doctor') report = await doctor(repository, { offline, fixedRepository: true });
-    else if (command === 'config') report = configure(repository,action,key,value);
+    else if (configurationCommand) report = configure(repository,command,key,value);
     else {
       readRemoteConfiguration(repository, ['name', 'url', 'account']);
       const bindings = boundTools(toolsRoot());

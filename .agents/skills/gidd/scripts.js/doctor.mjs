@@ -45,8 +45,8 @@ function describeCheck(item, root, bindings) {
   }
   if (id === 'config.toml') {
     if (reason === 'config_missing') {
-      item.hint = 'Create config.toml with config set repo.remote.account, then set repo.remote.url and review repo.remote.name.';
-      if (link) item.commands = [command(link, ['config', 'set', 'repo.remote.account', '<value>'], ['repo.remote.account'])];
+      item.hint = 'Create config.toml with gidd.link set repo.remote.account <login>, then set repo.remote.url and review repo.remote.name.';
+      if (link) item.commands = [command(link, ['set', 'repo.remote.account', '<value>'], ['repo.remote.account'])];
     } else {
       item.hint = configurationHint(reason) || 'Repair config.toml at the reported path, preserving unrelated settings and comments, then rerun doctor. Invalid values are omitted from this report.';
     }
@@ -59,8 +59,8 @@ function describeCheck(item, root, bindings) {
       'Check the reported directory and its Git working-tree metadata. Restore the intended repository or explicitly initialize Git there, then rerun doctor; do not substitute a parent repository.';
   } else if (id === 'folder.git.author') {
     item.hint = 'Check effective Git author and committer. Repair inherited Git identity, or select git.user.mode=managed and set both git.user.name and git.user.email.';
-    if (link) item.commands = [command(link, ['config', 'set', 'git.user.mode', 'managed']),
-      ...['name', 'email'].map(key => command(link, ['config', 'set', `git.user.${key}`, '<value>'], [`git.user.${key}`]))];
+    if (link) item.commands = [command(link, ['set', 'git.user.mode', 'managed']),
+      ...['name', 'email'].map(key => command(link, ['set', `git.user.${key}`, '<value>'], [`git.user.${key}`]))];
   } else if (id === remoteId('account') + '..online') {
     item.hint = reason === 'unexpected_account' ?
       'The selected token does not belong to repo.remote.account. Review the configured account and saved gh credentials.' :
@@ -73,12 +73,12 @@ function describeCheck(item, root, bindings) {
       'Set repo.remote.account to the expected GitHub login. This does not log in or change Git author information.' :
       'Review the local remote and the expected repository address, then repair the reported config field or the local remote. Do not accept a changed target automatically.';
     item.commands = [...remoteCommands];
-    if (link) item.commands.push({ ...command(link, ['config', 'set', configKey, '<value>'], [configKey]),
+    if (link) item.commands.push({ ...command(link, ['set', configKey, '<value>'], [configKey]),
       ...(id === remoteId('url') ? { requires_configuration_review: true } : {}) });
   } else if (id.startsWith('config.git.')) {
     item.hint = reason === 'config_git_user_inherit_conflict' ?
-      `Run gidd.link.cmd config clear ${configKey} in inherit mode, or select managed and provide both name and email.` : configurationHint(reason);
-    if (link && reason === 'config_git_user_inherit_conflict') item.commands = [command(link, ['config', 'clear', configKey])];
+      `Run gidd.link.cmd clear ${configKey} in inherit mode, or select managed and provide both name and email.` : configurationHint(reason);
+    if (link && reason === 'config_git_user_inherit_conflict') item.commands = [command(link, ['clear', configKey])];
   }
   else if (id === 'tool.platform') item.hint = 'Use the currently supported Windows x64 platform.';
 }

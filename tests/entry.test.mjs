@@ -447,7 +447,7 @@ test('shell doctor and auth preserve JavaScript results, events and exit codes',
   } finally { f.dispose(); }
 });
 
-test('config shell command creates and edits defaults; auth rejects missing config and overrides', { timeout: 30000 }, () => {
+test('top-level configuration commands create and edit defaults; auth rejects missing config and overrides', { timeout: 30000 }, () => {
   const f = fixture();
   try {
     const s = installation(f), env = { PATH: dirname(process.execPath) };
@@ -459,33 +459,71 @@ test('config shell command creates and edits defaults; auth rejects missing conf
       assert.equal(json(s.invoke([...args],env)).reason,'github_parameters_moved_to_config');
     }
     for (const [key,value] of [['account','Octocat'],['name','upstream'],['url','https://github.com/owner/repo']]) {
-      const result = json(ok(s.invoke(['config','set',`repo.remote.${key}`,value],env)));
+      const result = json(ok(s.invoke(['set',`repo.remote.${key}`,value],env)));
+      assert.equal(result.schema, 'gidd.config/v1');
+      assert.equal(result.action, 'set');
       assert.equal(result.key,`repo.remote.${key}`);
     }
     assert.ok(readFileSync(config,'utf8').startsWith(original));
-    ok(s.invoke(['config','set','git.user.mode','inherit'],env));
-    ok(s.invoke(['config','set','git.credential.mode','inherit'],env));
-    assert.equal(json(ok(s.invoke(['config','show'],env))).content,readFileSync(config,'utf8'));
+    ok(s.invoke(['set','git.user.mode','inherit'],env));
+    ok(s.invoke(['set','git.credential.mode','inherit'],env));
+    const shown = json(ok(s.invoke(['show'],env)));
+    assert.equal(shown.schema, 'gidd.config/v1');
+    assert.equal(shown.content,readFileSync(config,'utf8'));
     const before = snapshot(s.target);
     for (const [key,value] of [['repo.remote.account','bad name'],['github.token','secret'],['schema_version','2']]) {
-      assert.equal(s.invoke(['config','set',key,value],env).status,2);
+      assert.equal(s.invoke(['set',key,value],env).status,2);
     }
     assert.deepEqual(snapshot(s.target),before);
     rmSync(config);
-    const created = s.invoke(['config','set','repo.remote.account','Octocat'],env);
+    const created = s.invoke(['set','repo.remote.account','Octocat'],env);
     ok(created);
     const text = readFileSync(config,'utf8');
     assert.doesNotMatch(text,/hostname/); assert.match(text,/remote.name = "origin"/);
     assert.match(text,/remote.account = "Octocat"/);
     // All tool settings are internal; only repository business settings are editable.
     for (const key of ['tools.node.version','tools.bun.version','tools.node.source']) {
-      assert.equal(s.invoke(['config','set',key,'999.0.0'],env).status,2);
+      assert.equal(s.invoke(['set',key,'999.0.0'],env).status,2);
     }
-    assert.equal(s.invoke(['config','set','tools.directory','custom'],env).status,2);
-    const direct = s.invoke(['config','set','repo.remote.url','https://github.example.test/owner/repo'],env);
+    assert.equal(s.invoke(['set','tools.directory','custom'],env).status,2);
+    const direct = s.invoke(['set','repo.remote.url','https://github.example.test/owner/repo'],env);
     assert.equal(json(ok(direct)).value,'https://github.example.test/owner/repo');
-    ok(s.invoke(['config','set','git.user.mode','inherit'],env));
-    ok(s.invoke(['config','set','git.credential.mode','inherit'],env));
-    ok(s.invoke(['config','show'],env));
+    ok(s.invoke(['set','git.user.mode','inherit'],env));
+    ok(s.invoke(['set','git.credential.mode','inherit'],env));
+    ok(s.invoke(['show'],env));
+  } finally { f.dispose(); }
+});
+
+test('bare set provides bilingual guidance without configuration; old commands and malformed arguments do not mutate files', { timeout: 30000 }, () => {
+  const f = fixture();
+  try {
+    const s = installation(f), config = join(s.target, '.agents/skills/gidd/config.toml');
+    const fields = ['repo.remote.name', 'repo.remote.url', 'repo.remote.account', 'git.user.mode',
+      'git.user.name', 'git.user.email', 'git.credential.mode', 'spec.mode'];
+    for (const content of ['invalid TOML', null]) {
+      if (content === null) rmSync(config); else write(config, content);
+      const before = snapshot(f.root);
+      const stat = content === null ? undefined : statSync(config, { bigint: true });
+      for (const language of ['en', 'zh']) {
+        const help = ok(s.invoke(['set'], { GIDD_LANG: language })).stdout;
+        assert.match(help, language === 'zh' ? /可编辑字段/ : /Editable fields/);
+        for (const field of fields) assert.ok(help.includes(field));
+        for (const syntax of ['managed|inherit', 'gh|inherit', 'gidd.link show', 'gidd.link set', 'gidd.link clear']) assert.ok(help.includes(syntax));
+        assert.doesNotMatch(help, /gidd\.link config/);
+      }
+      for (const args of [['config'], ['config', 'show'], ['config', 'set', 'git.user.mode', 'inherit'],
+        ['config', 'clear', 'git.user.name'], ['del', 'git.user.name'], ['delete', 'git.user.name'],
+        ['set', 'show'], ['set', 'git.user.name'], ['set', 'git.user.name', 'Name', 'extra'],
+        ['show', 'extra'], ['clear'], ['clear', 'git.user.name', 'extra']]) {
+        const result = s.invoke(args);
+        assert.equal(result.status, 2);
+        assert.equal(json(result).reason, ['config', 'del', 'delete'].includes(args[0]) ? 'unknown_command' : 'invalid_arguments');
+      }
+      assert.deepEqual(snapshot(f.root), before);
+      if (stat) {
+        const after = statSync(config, { bigint: true });
+        assert.equal(after.mtimeNs, stat.mtimeNs); assert.equal(after.ino, stat.ino);
+      }
+    }
   } finally { f.dispose(); }
 });

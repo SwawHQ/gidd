@@ -78,7 +78,7 @@ test('doctor and current agree on absent, missing and unsupported modes and neve
         const mode = check(diagnosis, 'config.spec.mode');
         assert.equal(mode.reason, report.error);
         assert.deepEqual(mode.details.available_modes, ['issue-direct']);
-        assert.deepEqual(mode.commands[0].args, ['config', 'set', 'spec.mode', 'issue-direct']);
+        assert.deepEqual(mode.commands[0].args, ['set', 'spec.mode', 'issue-direct']);
       }
       else assert.equal(check(diagnosis, 'config.spec.mode').blocked_by, 'config.toml');
       assert.deepEqual(snapshot(f.root), before);
@@ -186,7 +186,7 @@ test('unknown arguments and retired names are rejected without changing files', 
     }
     for (const [args, reason] of [
       [['workflow', 'current'], 'unknown_command'],
-      [['config', 'set', 'workflow.mode', 'issue-direct'], 'config_unknown_key'],
+      [['set', 'workflow.mode', 'issue-direct'], 'config_unknown_key'],
       [['spec.current.issue.check'], 'invalid_spec_route'],
       [['spec.unknown'], 'spec_mode_unsupported'],
       [['spec.current.issue.check.extra'], 'invalid_spec_route'],

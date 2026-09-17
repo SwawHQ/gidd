@@ -51,9 +51,9 @@ export function inspectSpec(mode, repository, configurationReady = true) {
     Object.assign(modeCheck, { status: mode === undefined ? 'missing' : 'invalid',
       reason: mode === undefined ? 'spec_mode_missing' : 'spec_mode_unsupported',
       details: { available_modes: [...specModes] },
-      hint: 'Select a supported spec with config set spec.mode. Available modes: ' + specModes.join(', ') + '.',
+      hint: 'Select a supported spec with gidd.link set spec.mode <mode>. Available modes: ' + specModes.join(', ') + '.',
       commands: specModes.map(value => ({ executable: join(repository, '.agents/skills/gidd/gidd.link.cmd'),
-        args: ['config', 'set', 'spec.mode', value] })) });
+        args: ['set', 'spec.mode', value] })) });
     return { checks };
   }
   modeCheck.details = { configured: mode };

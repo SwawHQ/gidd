@@ -1,4 +1,4 @@
-// Semantic validation is separate from TOML parsing so config set can repair
+// Semantic validation is separate from TOML parsing so set can repair
 // individual fields, including the two halves of a name/email pair.
 export function validateGitField(key, value) {
   if (key === 'credential.mode') {

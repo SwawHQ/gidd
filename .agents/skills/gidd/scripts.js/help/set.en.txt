@@ -1,0 +1,24 @@
+GIDD configuration
+
+  gidd.link show                #Show validated config.toml contents (JSON)
+  gidd.link set <key> <value>    #Set one field
+  gidd.link clear <key>         #Remove one field; absent fields succeed
+  gidd.link set                #Show this help without reading or writing config
+
+Editable fields:
+  repo.remote.name       Local Git remote name, e.g. origin
+  repo.remote.url        HTTPS repository identity, e.g. https://github.com/owner/repo
+  repo.remote.account    GitHub login, e.g. Octocat
+  git.user.mode          Required: managed|inherit
+  git.user.name          Required with email in managed mode; absent in inherit mode
+  git.user.email         Required with name in managed mode; absent in inherit mode
+  git.credential.mode    Required: gh|inherit (gh supplies HTTPS credentials)
+  spec.mode              Spec name; run gidd.link spec to list supported names
+
+Set and clear edit one field at a time. Complete the selected mode before using
+show or .git/.gh. Empty strings undergo validation and never mean removal.
+Quote values containing spaces: gidd.link set git.user.name "Commit Name"
+To inherit Git identity:
+  gidd.link clear git.user.name
+  gidd.link clear git.user.email
+  gidd.link set git.user.mode inherit

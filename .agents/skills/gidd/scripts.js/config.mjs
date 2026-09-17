@@ -130,18 +130,18 @@ export function readConfiguration(repository) {
 }
 
 export function configurationHint(reason) {
-  if (reason === 'spec_mode_unsupported') return 'Available spec modes: ' + specModes.join(', ') + '. Use config set spec.mode <mode>.';
+  if (reason === 'spec_mode_unsupported') return 'Available spec modes: ' + specModes.join(', ') + '. Use gidd.link set spec.mode <mode>.';
   if (reason === 'config_retired_structure') return 'Replace [github] with [repo] remote.name, remote.url and remote.account; remove hostname and [tools]. Tool sources are internal preparation policy. Preserve unrelated comments and [spec].';
-  if (reason === 'config_missing') return 'Create config with: gidd.link.cmd config set repo.remote.account <login>. Then set repo.remote.url and review repo.remote.name.';
-  if (/^config_(missing|invalid)_git_user_mode$/.test(reason)) return 'Set git.user.mode explicitly to managed or inherit with config set.';
+  if (reason === 'config_missing') return 'Create config with: gidd.link.cmd set repo.remote.account <login>. Then set repo.remote.url and review repo.remote.name.';
+  if (/^config_(missing|invalid)_git_user_mode$/.test(reason)) return 'Set git.user.mode explicitly to managed or inherit with gidd.link set.';
   const userField = /^config_(?:missing|invalid)_git_user_(name|email)$/.exec(reason);
-  if (userField) return `Set a valid git.user.${userField[1]} with config set; managed mode requires both name and email.`;
-  if (reason === 'config_incomplete_git_user') return 'Managed identity requires both git.user.name and git.user.email. Set both, or choose inherit and remove both with config clear.';
-  if (reason === 'config_git_user_inherit_conflict') return 'Use config clear git.user.name and config clear git.user.email to inherit Git identity, or select managed and complete both fields.';
-  if (/^config_(missing|invalid)_git_credential_mode$/.test(reason)) return 'Set git.credential.mode explicitly to gh or inherit with config set.';
+  if (userField) return `Set a valid git.user.${userField[1]} with gidd.link set; managed mode requires both name and email.`;
+  if (reason === 'config_incomplete_git_user') return 'Managed identity requires both git.user.name and git.user.email. Set both, or choose inherit and remove both with gidd.link clear.';
+  if (reason === 'config_git_user_inherit_conflict') return 'Use gidd.link clear git.user.name and gidd.link clear git.user.email to inherit Git identity, or select managed and complete both fields.';
+  if (/^config_(missing|invalid)_git_credential_mode$/.test(reason)) return 'Set git.credential.mode explicitly to gh or inherit with gidd.link set.';
   const field = /^config_(?:missing|invalid)_repo_remote_(name|url|account)$/.exec(reason);
-  if (field) return `Run doctor --offline and repair repo.remote.${field[1]} with config set.`;
-  if (reason.startsWith('config_')) return 'Check config.toml using config show/set/clear. No configuration fallback or login was performed.';
+  if (field) return `Run doctor --offline and repair repo.remote.${field[1]} with gidd.link set.`;
+  if (reason.startsWith('config_')) return 'Check config.toml using gidd.link show, gidd.link set or gidd.link clear. No configuration fallback or login was performed.';
   return '';
 }
 

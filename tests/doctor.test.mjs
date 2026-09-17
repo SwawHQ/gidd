@@ -123,6 +123,7 @@ test('doctor combines independent checks once; offline never invokes network or 
       write(config,configText.replace(new RegExp('^remote\\.'+key+' = .*\\n','m'),''));
       const r=await doctor(f.root,scenario());
       assert.equal(byId(r,'config.repo.remote.'+key).reason,'config_missing_repo_remote_'+key);
+      assert.deepEqual(byId(r,'config.repo.remote.'+key).commands.at(-1).args, ['set', 'repo.remote.' + key, '<value>']);
       write(config,configText.replace(new RegExp('^remote\\.'+key+' = .*','m'),'remote.'+key+' = "PRIVATE_TOKEN:invalid"'));
       const invalid=await doctor(f.root,scenario());
       assert.equal(byId(invalid,'config.repo.remote.'+key).reason,'config_invalid_repo_remote_'+key);
@@ -173,7 +174,7 @@ test('doctor combines independent checks once; offline never invokes network or 
           assert.equal(item.reason, errors[field]); assert.equal(item.severity, 'error');
           assert.ok(item.hint.includes('git.user.' + field));
           if (errors[field] === 'config_git_user_inherit_conflict') {
-            assert.deepEqual(item.commands[0].args, ['config', 'clear', 'git.user.' + field]);
+            assert.deepEqual(item.commands[0].args, ['clear', 'git.user.' + field]);
           }
         } else if (errors.mode) {
           assert.equal(item.status, 'not_checked'); assert.equal(item.severity, 'info');
@@ -193,6 +194,7 @@ test('doctor combines independent checks once; offline never invokes network or 
     assert.ok(!JSON.stringify(failedGh).includes('PRIVATE_TOKEN'));
     rmSync(config); const missing=await doctor(f.root,scenario());
     assert.equal(byId(missing,'config.toml').reason,'config_missing');
+    assert.deepEqual(byId(missing,'config.toml').commands[0].args, ['set', 'repo.remote.account', '<value>']);
     await assert.rejects(doctor('.'),/repository_must_be_absolute/);
   } finally {f.dispose();}
 });

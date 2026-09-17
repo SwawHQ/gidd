@@ -67,7 +67,7 @@ test('config editing repairs fields independently and preserves comments, BOM, l
   } finally { f.dispose(); }
 });
 
-test('config clear preserves other bytes and comments and is idempotent for every editable field', () => {
+test('clear preserves other bytes and comments and is idempotent for every editable field', () => {
   const f = fixture();
   try {
     const path = join(f.root, '.agents/skills/gidd/config.toml'), before = snapshot(f.root);
@@ -115,7 +115,7 @@ test('config clear preserves other bytes and comments and is idempotent for ever
   } finally { f.dispose(); }
 });
 
-test('config clear rejects invalid requests, unsafe paths and broken files without changing them', () => {
+test('clear rejects invalid requests, unsafe paths and broken files without changing them', () => {
   const f = fixture();
   try {
     const path = join(f.root, '.agents/skills/gidd/config.toml');
