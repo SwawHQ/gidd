@@ -1,45 +1,36 @@
-import { existsSync, lstatSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { plainPath } from './storage.mjs';
 import { fields, nonemptyText, parseSpecYaml, specLanguages, validateIssueForms } from './spec-data.mjs';
 
 const skillRoot = fileURLToPath(new URL('../', import.meta.url));
-export const specSelectionHint = 'Run gidd.link spec.list to see available specs and descriptions, then gidd.link set spec.current <name> to select one.';
-export const specCatalogHint = 'Repair spec.list.en.json, spec.list.zh-CN.json and their spec.<name> directories, then rerun doctor.';
+export const specSelectionHint = 'Run gidd.link spec.list to see names and summaries, then gidd.link spec.<name> to read the full instructions before selecting one with gidd.link set spec.current <name>.';
+export const specCatalogHint = 'Repair the spec.<name> directories and their bilingual description.json files, then rerun doctor.';
 
 export function loadSpecCatalog() {
-  const catalogs = {};
-  for (const lang of specLanguages) {
-    try {
-      const catalog = JSON.parse(resource(skillRoot, `spec.list.${lang}.json`));
-      fields(catalog, ['specs']);
-      if (!Array.isArray(catalog.specs) || !catalog.specs.length) throw new Error();
-      const seen = new Set();
-      for (const spec of catalog.specs) {
-        fields(spec, ['name', 'description']);
-        if (typeof spec.name !== 'string' || !/^[a-z][a-z0-9-]*$/.test(spec.name) ||
-            ['current', 'list'].includes(spec.name) || seen.has(spec.name) || !nonemptyText(spec.description)) throw new Error();
-        seen.add(spec.name);
-      }
-      catalogs[lang] = catalog.specs;
-    } catch (error) {
-      throw new Error(error.message === 'spec_resources_missing' ? 'spec_list_missing' : 'spec_list_invalid');
-    }
-  }
-  const names = catalogs.en.map(spec => spec.name);
-  if (catalogs['zh-CN'].length !== names.length || catalogs['zh-CN'].some((spec, index) => spec.name !== names[index])) {
-    throw new Error('spec_list_mismatch');
-  }
-  for (const name of names) {
-    const path = join(skillRoot, `spec.${name}`);
+  let directories;
+  try {
+    plainPath(skillRoot);
+    directories = readdirSync(skillRoot).filter(name => name.startsWith('spec.')).sort();
+  } catch { throw new Error('spec_directory_invalid'); }
+  if (!directories.length) throw new Error('spec_list_empty');
+  const catalogs = Object.fromEntries(specLanguages.map(lang => [lang, []]));
+  for (const directory of directories) {
+    const name = directory.slice('spec.'.length), path = join(skillRoot, directory);
     try {
       plainPath(path);
-      if (!existsSync(path)) throw new Error('spec_directory_missing');
-      if (!lstatSync(path).isDirectory()) throw new Error();
+      if (!/^[a-z][a-z0-9-]*$/.test(name) || ['current', 'list'].includes(name) || !lstatSync(path).isDirectory()) throw new Error();
+    } catch { throw new Error('spec_directory_invalid'); }
+    let descriptions;
+    try {
+      descriptions = JSON.parse(resource(path, 'description.json'));
+      fields(descriptions, specLanguages);
+      if (!specLanguages.every(lang => nonemptyText(descriptions[lang]))) throw new Error();
     } catch (error) {
-      throw new Error(error.message === 'spec_directory_missing' ? error.message : 'spec_directory_invalid');
+      throw new Error(error.message === 'spec_resources_missing' ? 'spec_description_missing' : 'spec_description_invalid');
     }
+    for (const lang of specLanguages) catalogs[lang].push({ name, description: descriptions[lang] });
   }
   return catalogs;
 }
@@ -98,6 +89,7 @@ export function inspectSpec(mode, repository, configurationReady = true) {
       hint: specSelectionHint,
       commands: [
         { executable: join(repository, '.agents/skills/gidd/gidd.link.cmd'), args: ['spec.list'] },
+        { executable: join(repository, '.agents/skills/gidd/gidd.link.cmd'), args: ['spec.<name>'], required_inputs: ['spec.current'] },
         { executable: join(repository, '.agents/skills/gidd/gidd.link.cmd'), args: ['set', 'spec.current', '<name>'], required_inputs: ['spec.current'] },
       ] });
     return { checks };

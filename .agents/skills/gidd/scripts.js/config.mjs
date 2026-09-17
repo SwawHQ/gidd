@@ -140,7 +140,7 @@ export function readAuthorizationConfiguration(repository) {
 
 export function configurationHint(reason) {
   if (reason === 'spec_current_unsupported') return specSelectionHint;
-  if (reason.startsWith('spec_list_') || reason.startsWith('spec_directory_')) return specCatalogHint;
+  if (/^spec_(list|directory|description)_/.test(reason)) return specCatalogHint;
   if (reason === 'config_retired_structure') return 'Replace [github] with [repo] remote.name, remote.url and remote.account; remove hostname and [tools]. Tool sources are internal preparation policy. Preserve unrelated comments and [spec].';
   if (reason === 'config_missing') return 'Create config with: gidd.link.cmd set repo.remote.account <login>. Then set repo.remote.url and review repo.remote.name.';
   if (/^config_(missing|invalid)_git_user_mode$/.test(reason)) return 'Set git.user.mode explicitly to managed or inherit with gidd.link set.';

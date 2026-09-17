@@ -36,9 +36,9 @@ credential.mode = "gh"
 current = "issue-direct"
 ```
 
-`spec.current` is the explicit spec selection. `doctor` (including `--offline`) cannot pass when it is missing, unsupported, or its resources are damaged. Its `config.spec.current` check points to `gidd.link spec.list` and `gidd.link set spec.current <name>`. The former `spec.mode` field is not accepted. `clear spec.current` removes the selection and doctor then reports it missing.
+`spec.current` is the explicit spec selection. `doctor` (including `--offline`) cannot pass when it is missing, unsupported, or its resources are damaged. For a missing/unsupported selection, its `config.spec.current` hint and commands guide three steps: `gidd.link spec.list` for summaries, `gidd.link spec.<name>` for full instructions, then `gidd.link set spec.current <name>` to select. Summaries help identify candidates; read the full instructions before choosing. The former `spec.mode` field is not accepted. `clear spec.current` removes the selection and doctor then reports it missing. Damaged resources require repair.
 
-`gidd.link spec.list --lang en|zh` returns `{ "scope": "...", "specs": [{ "name": "...", "description": "..." }] }` even when repository configuration is absent or invalid. The skill's `spec.list.en.json` and `spec.list.zh-CN.json` each contain a `specs` array and are the source of selectable names. Both files must use this structure, contain the same ordered names and count, and provide unique safe names with nonempty descriptions. `current` and `list` are reserved. Each `spec.<name>` must be an existing plain directory. Listing, selection and doctor share this validation; selected-spec reads and doctor additionally validate both languages of the selected spec's prompts and Issue forms. Catalog errors require repairing the catalog files/directories, rather than choosing another spec.
+`gidd.link spec.list --lang en|zh` returns `{ "scope": "...", "specs": [{ "name": "...", "description": "..." }] }` even when repository configuration is absent or invalid. Names come from the skill root's `spec.<name>` directories, sorted by name; no separate registry is maintained. Each directory contains `description.json` with exactly two nonempty strings: `{ "en": "English summary", "zh-CN": "中文简介" }`. Every `spec.*` entry must be a plain directory with a lowercase name matching `[a-z][a-z0-9-]*`; `current` and `list` are reserved. An empty catalog, invalid directories or missing/invalid descriptions are errors. Listing, selection and doctor share this validation; selected-spec reads and doctor additionally validate both languages of the selected spec's prompts and Issue forms. The former root catalogs are removed.
 
 Both Git modes are required and independent:
 
@@ -72,9 +72,9 @@ gidd.link set git.user.mode inherit
 
 ## 中文摘要
 
-当前规范配置为 `[spec]` 下的 `current = "issue-direct"`，设置命令为 `gidd.link set spec.current <名称>`，旧 `spec.mode` 字段不再接受。doctor（含离线模式）的 `config.spec.current` 检查要求显式选择有效规范，且相关资源完整；未选或无效时提示先运行 `spec.list` 查看名称和描述，再设置 `spec.current`。`clear spec.current` 会移除选择，之后 doctor 报告缺失。
+当前规范配置为 `[spec]` 下的 `current = "issue-direct"`，设置命令为 `gidd.link set spec.current <名称>`，旧 `spec.mode` 字段不再接受。doctor（含离线模式）的 `config.spec.current` 检查要求显式选择有效规范，且相关资源完整；未选或选择无效时，提示和命令依次引导：运行 `spec.list` 查看简介，运行 `spec.<名称>` 阅读全文，最后设置 `spec.current`。简介用于初步识别，选择前应阅读全文。`clear spec.current` 会移除选择，之后 doctor 报告缺失；资源损坏时提示修复。
 
-`spec.list` 根据语言返回 `scope` 和包含 `name`、`description` 的 `specs` 数组，不依赖仓库配置有效。技能根目录的 `spec.list.en.json` 与 `spec.list.zh-CN.json` 都使用 `{"specs":[...]}`，两者的数量、名称和顺序必须一致；名称不得重复或使用保留名 `current/list`，描述不得为空，且对应 `spec.<名称>` 必须是存在的普通目录。列表、设置和 doctor 共用这些校验；读取已选规范及 doctor 还会校验该规范两种语言的正文和 Issue 表单。目录清单损坏需修复清单或文件夹，不能靠切换规范绕过。
+`spec.list` 根据语言返回 `scope` 和包含 `name`、`description` 的 `specs` 数组，不依赖仓库配置有效。规范名称来自技能根目录的 `spec.<名称>`，按名称排序，不再另建名称清单。各目录下的 `description.json` 只包含 `en`、`zh-CN` 两个非空字符串。所有 `spec.*` 项必须是普通目录，名称符合小写 `[a-z][a-z0-9-]*`，不得使用保留名 `current/list`；未发现规范目录、名称或目录类型无效、描述缺失或无效均报错。列表、设置和 doctor 共用这些校验；读取已选规范及 doctor 还会校验该规范两种语言的正文和 Issue 表单。原有根目录双语清单已移除。
 
 `gidd.link .gh.auth` 是独立授权入口：复用配置账号已核验的凭据；取不到该账号的 token 时发起设备授权，输出网址和设备码，完成后核验账号，凭据由 gh 保存。保留 `gidd.auth/v1` 和 `gidd.auth.event/v1` JSON 格式，旧 `auth` 入口移除。它不转发为 `.gh auth`；`.gh` 包装在执行原生参数前要求已有可验证的 token。
 

@@ -27,7 +27,8 @@ function installation(f, config = chosen) {
   return { skill, target, invoke, current, diagnose };
 }
 const check = (report, id) => report.checks.find(item => item.id === id);
-const catalog = (skill, lang = 'en') => JSON.parse(readFileSync(join(skill, `spec.list.${lang}.json`), 'utf8')).specs;
+const catalog = (skill, lang = 'en') => [{ name: 'issue-direct',
+  description: JSON.parse(readFileSync(join(skill, 'spec.issue-direct/description.json'), 'utf8'))[lang] }];
 
 test('spec mode editing preserves text while preparation ignores business configuration', () => {
   const f = fixture();
@@ -82,9 +83,10 @@ test('doctor and current agree on absent, missing and unsupported modes and neve
         assert.equal(mode.reason, report.error);
         assert.deepEqual(mode.details.available_names, ['issue-direct']);
         assert.equal(mode.severity, 'error');
-        assert.deepEqual(mode.commands.map(command => command.args), [['spec.list'], ['set', 'spec.current', '<name>']]);
+        assert.deepEqual(mode.commands.map(command => command.args), [['spec.list'], ['spec.<name>'], ['set', 'spec.current', '<name>']]);
         assert.deepEqual(mode.commands[1].required_inputs, ['spec.current']);
-        assert.match(mode.hint, /spec\.list.*set spec\.current/);
+        assert.deepEqual(mode.commands[2].required_inputs, ['spec.current']);
+        assert.match(mode.hint, /spec\.list.*spec\.<name>.*set spec\.current/);
       }
       else assert.equal(check(diagnosis, 'config.spec.current').blocked_by, 'config.toml');
       assert.deepEqual(snapshot(f.root), before);
@@ -177,19 +179,18 @@ test('spec readers emit scoped Markdown guidance and preserve native form JSON',
   } finally { f.dispose(); }
 });
 
-test('localized catalogs are the selectable source and reject inconsistent or unsafe entries and directories', { timeout: 60000 }, () => {
+test('spec directories supply sorted localized descriptions and reject malformed resources', { timeout: 60000 }, () => {
   const f = fixture();
   try {
-    const s = installation(f), enPath = join(s.skill, 'spec.list.en.json'), zhPath = join(s.skill, 'spec.list.zh-CN.json');
-    const en = readFileSync(enPath, 'utf8'), zh = readFileSync(zhPath, 'utf8');
-    const original = JSON.parse(en).specs[0];
-    const encode = specs => JSON.stringify({ specs });
+    const s = installation(f), directory = join(s.skill, 'spec.issue-direct');
+    const descriptionPath = join(directory, 'description.json'), original = readFileSync(descriptionPath, 'utf8');
+    const descriptions = JSON.parse(original);
     const failure = reason => {
       for (const lang of ['en', 'zh']) {
         const result = s.invoke(['spec.list', '--lang', lang]);
         assert.equal(result.status, 2);
         assert.equal(json(result).error, reason);
-        assert.match(json(result).hint, /spec\.list\.en\.json.*spec\.list\.zh-CN\.json/);
+        assert.match(json(result).hint, /spec\.<name>.*description\.json/);
       }
       const result = s.invoke(['doctor', '--offline']);
       assert.equal(result.status, 1);
@@ -198,34 +199,25 @@ test('localized catalogs are the selectable source and reject inconsistent or un
       assert.equal(item.severity, 'error');
       assert.equal(json(s.current()).error, reason);
     };
-    for (const [text, reason] of [
-      ['{', 'spec_list_invalid'],
-      [Buffer.from([255]), 'spec_list_invalid'],
-      ['[]', 'spec_list_invalid'],
-      [JSON.stringify({ specs: [original], extra: true }), 'spec_list_invalid'],
-      [encode([]), 'spec_list_invalid'],
-      [encode([original, original]), 'spec_list_invalid'],
-      [encode([{ name: original.name }]), 'spec_list_invalid'],
-      [encode([{ ...original, description: ' ' }]), 'spec_list_invalid'],
-      [encode([{ ...original, description: 1 }]), 'spec_list_invalid'],
-      [encode([{ ...original, extra: true }]), 'spec_list_invalid'],
-      ...['../outside', 'list', 'current'].map(name => [encode([{ ...original, name }]), 'spec_list_invalid']),
-      [encode([{ ...original, name: 'other' }]), 'spec_list_mismatch'],
-      [encode([original, { name: 'other', description: 'Other spec' }]), 'spec_list_mismatch'],
+    for (const text of [
+      '{', Buffer.from([255]), '[]', '{}',
+      JSON.stringify({ en: 'Only English' }), JSON.stringify({ 'zh-CN': '只有中文' }),
+      JSON.stringify({ ...descriptions, en: ' ' }), JSON.stringify({ ...descriptions, 'zh-CN': '' }),
+      JSON.stringify({ ...descriptions, en: 1 }), JSON.stringify({ ...descriptions, 'zh-CN': [] }),
+      JSON.stringify({ ...descriptions, name: 'duplicate-name' }),
     ]) {
-      write(enPath, text);
+      write(descriptionPath, text);
       const before = snapshot(f.root);
-      failure(reason);
+      failure('spec_description_invalid');
       assert.deepEqual(snapshot(f.root), before);
     }
-    write(enPath, en);
-    rmSync(zhPath);
-    failure('spec_list_missing');
-    write(zhPath, zh);
+    rmSync(descriptionPath);
+    failure('spec_description_missing');
+    write(descriptionPath, original);
 
-    const directory = join(s.skill, 'spec.issue-direct'), savedDirectory = directory + '.saved';
+    const savedDirectory = join(s.skill, 'saved-spec');
     renameSync(directory, savedDirectory);
-    failure('spec_directory_missing');
+    failure('spec_list_empty');
     write(directory, 'not a directory');
     failure('spec_directory_invalid');
     unlinkSync(directory);
@@ -234,18 +226,31 @@ test('localized catalogs are the selectable source and reject inconsistent or un
     finally { unlinkSync(directory); }
     renameSync(savedDirectory, directory);
 
-    // A new catalog entry becomes selectable without editing JavaScript names.
-    mkdirSync(join(s.skill, 'spec.issue-review'));
-    const entries = [original, { name: 'issue-review', description: 'Review before delivery.' }];
-    write(enPath, encode(entries));
-    write(zhPath, encode([{ name: original.name, description: '直接交付。' }, { name: 'issue-review', description: '审核后交付。' }]));
-    assert.deepEqual(json(ok(s.invoke(['spec.list']))).specs, entries);
+    for (const name of ['list', 'current', 'Bad', 'bad_name', 'bad.name']) {
+      const invalid = join(s.skill, 'spec.' + name);
+      renameSync(directory, invalid);
+      try { failure('spec_directory_invalid'); }
+      finally { renameSync(invalid, directory); }
+    }
+
+    // New directories are discovered and sorted without another name registry.
+    write(join(s.skill, 'spec.issue-review/description.json'), JSON.stringify({ en: 'Review before delivery.', 'zh-CN': '审核后交付。' }));
+    write(join(s.skill, 'spec.alpha/description.json'), JSON.stringify({ en: 'First spec.', 'zh-CN': '首个规范。' }));
+    const before = snapshot(f.root);
+    for (const [lang, locale] of [['en', 'en'], ['zh', 'zh-CN']]) {
+      const entries = json(ok(s.invoke(['spec.list', '--lang', lang]))).specs;
+      assert.deepEqual(entries.map(item => item.name), ['alpha', 'issue-direct', 'issue-review']);
+      assert.equal(entries[1].description, descriptions[locale]);
+      assert.equal(entries[2].description, lang === 'en' ? 'Review before delivery.' : '审核后交付。');
+    }
+    assert.deepEqual(snapshot(f.root), before);
     ok(s.invoke(['set', 'spec.current', 'issue-review']));
     assert.equal(json(s.current()).error, 'spec_resources_missing');
-    write(zhPath, encode([...JSON.parse(readFileSync(zhPath, 'utf8')).specs].reverse()));
-    failure('spec_list_mismatch');
+    // Another spec's broken description also blocks discovery and selection.
+    write(descriptionPath, '{}');
+    failure('spec_description_invalid');
     const selected = readFileSync(configPath(s.target), 'utf8');
-    assert.equal(json(s.invoke(['set', 'spec.current', 'issue-direct'])).reason, 'spec_list_mismatch');
+    assert.equal(json(s.invoke(['set', 'spec.current', 'issue-direct'])).reason, 'spec_description_invalid');
     assert.equal(readFileSync(configPath(s.target), 'utf8'), selected);
   } finally { f.dispose(); }
 });
@@ -411,7 +416,7 @@ test('doctor validates both native forms and follows edited labels and placehold
 
 test('native YAML forms and localized workflow instructions preserve their structure', () => {
   const root = join(repo, '.agents/skills/gidd/spec.issue-direct');
-  assert.deepEqual(readdirSync(root).sort(), ['issue.en.yaml', 'issue.zh-CN.yaml', 'prompt.en.md', 'prompt.zh-CN.md']);
+  assert.deepEqual(readdirSync(root).sort(), ['description.json', 'issue.en.yaml', 'issue.zh-CN.yaml', 'prompt.en.md', 'prompt.zh-CN.md']);
   const spec = loadSpec('issue-direct'), { issueForms } = spec;
   assert.deepEqual(issueForms.en.body.map(field => field.id), ['goal', 'scope', 'acceptance', 'validation', 'delivery']);
   for (const lang of ['en', 'zh-CN']) {

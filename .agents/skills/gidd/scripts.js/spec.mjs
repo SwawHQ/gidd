@@ -27,7 +27,7 @@ export function specError(repository, mode, reason) {
   const hint = reason === 'invalid_arguments' || reason === 'invalid_spec_route'
     ? 'Run gidd.link help for spec command usage.'
     : reason === 'unsupported_help_language' ? 'Use --lang zh or --lang en.'
-    : reason.startsWith('spec_list_') || reason.startsWith('spec_directory_') ? specCatalogHint
+    : /^spec_(list|directory|description)_/.test(reason) ? specCatalogHint
     : reason.startsWith('spec_') ? 'Run gidd.link doctor --offline for details.'
     : 'Run gidd.link doctor for diagnostics.';
   return { ...(repository ? { scope: repository } : {}), ...(mode ? { mode } : {}), error: reason, hint };
