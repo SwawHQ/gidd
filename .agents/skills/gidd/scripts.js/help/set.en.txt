@@ -1,6 +1,6 @@
 GIDD configuration
 
-  gidd.link show                #Show validated config.toml contents (JSON)
+  gidd.link set.show                #Show validated config.toml contents (JSON)
   gidd.link set <key> <value>    #Set one field
   gidd.link clear <key>         #Remove one field; absent fields succeed
   gidd.link set                #Show this help without reading or writing config
@@ -16,7 +16,7 @@ Editable fields:
   spec.mode              Spec name; run gidd.link spec to list supported names
 
 Set and clear edit one field at a time. Complete the selected mode before using
-show or .git/.gh. Empty strings undergo validation and never mean removal.
+set.show or .git/.gh. Empty strings undergo validation and never mean removal.
 Quote values containing spaces: gidd.link set git.user.name "Commit Name"
 To inherit Git identity:
   gidd.link clear git.user.name

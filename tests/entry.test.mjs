@@ -467,7 +467,7 @@ test('top-level configuration commands create and edit defaults; auth rejects mi
     assert.ok(readFileSync(config,'utf8').startsWith(original));
     ok(s.invoke(['set','git.user.mode','inherit'],env));
     ok(s.invoke(['set','git.credential.mode','inherit'],env));
-    const shown = json(ok(s.invoke(['show'],env)));
+    const shown = json(ok(s.invoke(['set.show'],env)));
     assert.equal(shown.schema, 'gidd.config/v1');
     assert.equal(shown.content,readFileSync(config,'utf8'));
     const before = snapshot(s.target);
@@ -490,7 +490,7 @@ test('top-level configuration commands create and edit defaults; auth rejects mi
     assert.equal(json(ok(direct)).value,'https://github.example.test/owner/repo');
     ok(s.invoke(['set','git.user.mode','inherit'],env));
     ok(s.invoke(['set','git.credential.mode','inherit'],env));
-    ok(s.invoke(['show'],env));
+    ok(s.invoke(['set.show'],env));
   } finally { f.dispose(); }
 });
 
@@ -508,16 +508,16 @@ test('bare set provides bilingual guidance without configuration; old commands a
         const help = ok(s.invoke(['set'], { GIDD_LANG: language })).stdout;
         assert.match(help, language === 'zh' ? /可编辑字段/ : /Editable fields/);
         for (const field of fields) assert.ok(help.includes(field));
-        for (const syntax of ['managed|inherit', 'gh|inherit', 'gidd.link show', 'gidd.link set', 'gidd.link clear']) assert.ok(help.includes(syntax));
+        for (const syntax of ['managed|inherit', 'gh|inherit', 'gidd.link set.show', 'gidd.link set', 'gidd.link clear']) assert.ok(help.includes(syntax));
         assert.doesNotMatch(help, /gidd\.link config/);
       }
-      for (const args of [['config'], ['config', 'show'], ['config', 'set', 'git.user.mode', 'inherit'],
+      for (const args of [['show'], ['config'], ['config', 'show'], ['config', 'set', 'git.user.mode', 'inherit'],
         ['config', 'clear', 'git.user.name'], ['del', 'git.user.name'], ['delete', 'git.user.name'],
         ['set', 'show'], ['set', 'git.user.name'], ['set', 'git.user.name', 'Name', 'extra'],
-        ['show', 'extra'], ['clear'], ['clear', 'git.user.name', 'extra']]) {
+        ['set.show', 'extra'], ['clear'], ['clear', 'git.user.name', 'extra']]) {
         const result = s.invoke(args);
         assert.equal(result.status, 2);
-        assert.equal(json(result).reason, ['config', 'del', 'delete'].includes(args[0]) ? 'unknown_command' : 'invalid_arguments');
+        assert.equal(json(result).reason, ['show', 'config', 'del', 'delete'].includes(args[0]) ? 'unknown_command' : 'invalid_arguments');
       }
       assert.deepEqual(snapshot(f.root), before);
       if (stat) {

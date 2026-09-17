@@ -4,7 +4,7 @@ GIDD（Windows x64 / PowerShell 5.1）
   gidd.link help zh                 #显示中文帮助
   gidd.link doctor                  #检查工具、仓库及 GitHub 身份（含联网检查）
   gidd.link doctor --offline        #仅检查本地工具、配置和仓库，不联网
-  gidd.link show                            #列出 config.toml 当前内容
+  gidd.link set.show                            #列出 config.toml 当前内容
   gidd.link set                             #显示可编辑字段及要求，不读取或修改配置
   gidd.link set <字段> <值>                 #设置 config.toml 中指定字段
   gidd.link set spec.mode issue-direct      #(示例)设置当前的规范；列出可用规范：gidd.link spec

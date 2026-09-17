@@ -141,7 +141,7 @@ export function configurationHint(reason) {
   if (/^config_(missing|invalid)_git_credential_mode$/.test(reason)) return 'Set git.credential.mode explicitly to gh or inherit with gidd.link set.';
   const field = /^config_(?:missing|invalid)_repo_remote_(name|url|account)$/.exec(reason);
   if (field) return `Run doctor --offline and repair repo.remote.${field[1]} with gidd.link set.`;
-  if (reason.startsWith('config_')) return 'Check config.toml using gidd.link show, gidd.link set or gidd.link clear. No configuration fallback or login was performed.';
+  if (reason.startsWith('config_')) return 'Check config.toml using gidd.link set.show, gidd.link set or gidd.link clear. No configuration fallback or login was performed.';
   return '';
 }
 

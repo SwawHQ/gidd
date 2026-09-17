@@ -114,7 +114,7 @@ test('invalid identity modes block both wrappers and cannot report a fallback id
         assert.equal(failed.status, 2); assert.equal(failed.stdout, '');
         assert.match(failed.stderr, new RegExp(reason));
       }
-      assert.equal(s.invoke(['show']).status, 2);
+      assert.equal(s.invoke(['set.show']).status, 2);
       const report = JSON.parse(s.invoke(['doctor', '--offline']).stdout);
       assert.equal(report.checks.find(item => item.id === 'config.git.user.' + field).reason, diagnosticReason);
       assert.equal(report.checks.find(item => item.id === 'folder.git.author').blocked_by, 'config.git.user.' + field);
@@ -255,7 +255,7 @@ test('generated CMD forwards .git/.gh with literal arguments and bound working d
     }
     assert.equal(invoke(['.git', '--version']).status, 2, 'Managed identity stays incomplete until repaired');
     ok(invoke(['set', 'git.user.mode', 'inherit']));
-    ok(invoke(['show']));
+    ok(invoke(['set.show']));
     assert.equal(ok(invoke(['.git', 'config', '--get', 'user.name'])).stdout.trim(), 'Inherited Name');
     assert.equal(JSON.parse(ok(invoke(['clear', 'git.user.name'])).stdout).changed, false);
     const report = JSON.parse(invoke(['doctor', '--offline']).stdout);

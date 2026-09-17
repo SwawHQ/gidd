@@ -5,7 +5,7 @@ GIDD (Windows x64 / PowerShell 5.1)
   gidd.link doctor                              #Check tools, repository and GitHub identity (includes network checks)
   gidd.link doctor --offline                    #Check local tools, config and repository without network requests
 
-  gidd.link show                         #Show current config.toml contents
+  gidd.link set.show                         #Show current config.toml contents
   gidd.link set                          #Show editable fields and requirements without reading or changing config
   gidd.link set <key> <value>             #Set a field in config.toml
   gidd.link clear <key>                   #Remove a field; absent fields succeed. Empty strings do not mean removal

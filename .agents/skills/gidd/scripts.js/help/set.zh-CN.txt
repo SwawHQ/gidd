@@ -1,6 +1,6 @@
 GIDD 配置
 
-  gidd.link show                #校验并显示 config.toml 内容（JSON）
+  gidd.link set.show                #校验并显示 config.toml 内容（JSON）
   gidd.link set <字段> <值>     #设置一个字段
   gidd.link clear <字段>        #删除一个字段；已不存在则成功
   gidd.link set                 #显示本帮助，不读取或修改配置
@@ -15,7 +15,7 @@ GIDD 配置
   git.credential.mode    必填：gh|inherit（gh 提供 HTTPS 凭据）
   spec.mode              规范名；运行 gidd.link spec 列出可选规范
 
-set 和 clear 可逐字段修改，使用 show 或 .git/.gh 前需满足所选模式的要求。
+set 和 clear 可逐字段修改，使用 set.show 或 .git/.gh 前需满足所选模式的要求。
 空字符串仍按字段规则校验，不表示删除。
 含空格的值需加引号：gidd.link set git.user.name "Commit Name"
 切换为继承 Git 身份：

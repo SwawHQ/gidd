@@ -335,10 +335,10 @@ test('repository links repair generated contents and preserve target, arguments 
     const report = json(output); assert.equal(report.folder, target);
     assert.equal(report.checks.find(c => c.id === 'config.toml').reason, 'config_missing');
     assert.equal(realpathSync.native(report.checks.find(c => c.id === 'folder.git.worktree').details.path), realpathSync.native(target));
-    const rejected = s.invoke(link, ['show', '--repository', other]);
+    const rejected = s.invoke(link, ['set.show', '--repository', other]);
     assert.equal(json(rejected).reason, 'repository_override_forbidden');
     assert.equal(json(s.invoke(link, ['--repository=' + other])).reason, 'repository_override_forbidden');
-    assert.equal(json(s.invoke(link, ['--encoded-arguments', Buffer.from(JSON.stringify(['show', '--repository', other])).toString('base64')])).reason, 'unknown_command');
+    assert.equal(json(s.invoke(link, ['--encoded-arguments', Buffer.from(JSON.stringify(['set.show', '--repository', other])).toString('base64')])).reason, 'unknown_command');
     const source = 'https://github.example.test/team/repo';
     const set = json(ok(s.invoke(link, ['set', 'repo.remote.url', source])));
     assert.equal(set.value, source);
@@ -354,7 +354,7 @@ test('repository links repair generated contents and preserve target, arguments 
       assert.ok(repositoryCheck.hint);
       assert.equal(diagnosis.checks.find(c => c.id === 'config.toml').details.path, join(target, '.agents/skills/gidd/config.toml'));
       assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /Check tools, repository and GitHub identity/);
-      assert.equal(json(s.invoke(link, ['show'])).reason, 'not_git_repository_root');
+      assert.equal(json(s.invoke(link, ['set.show'])).reason, 'not_git_repository_root');
     } finally { renameSync(savedMarker, gitMarker); }
     const beforeRemoved = snapshot(f.root);
     for (const args of [['tools'], ['tools','--check'], ['tools','--ensure']]) {
