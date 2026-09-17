@@ -84,5 +84,5 @@ gh.link.cmd
 
 ## 命令帮助
 
-- gidd.link：[中文](reference/gidd.link.help.zh-CN.md) / [English](reference/gidd.link.help.en.md)
-- gidd.pre.ensure：[中文](reference/gidd.pre.ensure.help.zh-CN.md) / [English](reference/gidd.pre.ensure.help.en.md)
+- gidd.link：[中文](references/gidd.link.help.zh-CN.md) / [English](references/gidd.link.help.en.md)
+- gidd.pre.ensure：[中文](references/gidd.pre.ensure.help.zh-CN.md) / [English](references/gidd.pre.ensure.help.en.md)
