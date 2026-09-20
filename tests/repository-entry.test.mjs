@@ -24,13 +24,13 @@ function setup(f) {
   return { git, skill, invoke, create, ensure, link };
 }
 
-test('issue-direct guidance uses only the public preparation and repository commands', () => {
+test('issue guidance uses only the public preparation and repository commands', () => {
   const f = fixture();
   try {
-    const s = setup(f), target = s.create('issue-direct lifecycle');
+    const s = setup(f), target = s.create('issue lifecycle');
     ok(s.ensure(target));
     const invoke = args => s.invoke(s.link(target), args, { env: { PATH: '' } });
-    for (const [key,value] of [['spec.current','issue-direct'],['git.user.mode','inherit'],['git.credential.mode','inherit'],
+    for (const [key,value] of [['spec.current','02.issue'],['git.user.mode','inherit'],['git.credential.mode','inherit'],
       ['repo.remote.account','Octocat'],['repo.remote.name','origin'],['repo.remote.url','https://github.com/Team/Repo']]) {
       ok(invoke(['set',key,value]));
     }
@@ -38,10 +38,12 @@ test('issue-direct guidance uses only the public preparation and repository comm
       ok(run(s.git,['-C',target,'config',key,value]));
     }
     assert.equal(json(ok(invoke(['doctor','--offline']))).status,'local_ready');
-    assert.match(ok(invoke(['spec.current'])).stdout, /Prompt source: ` .+prompt\.en\.md `/);
-    const form = json(ok(invoke(['spec.current.issue','--lang','en']))).form;
-    assert.deepEqual(form.body.map(field => field.id), ['goal', 'scope', 'acceptance', 'validation', 'delivery']);
-    assert.match(ok(invoke(['spec.current'])).stdout, /spec\.issue-direct\.issue/);
+    const source = ok(invoke(['spec.current'])).stdout.match(/^Prompt source: `([^`\r\n]+)`$/m);
+    assert.ok(source, 'The printed spec must identify its source file');
+    assert.equal(realpathSync.native(source[1]), realpathSync.native(join(s.skill, 'specs/02.issue/prompt.en.md')));
+    const form = json(ok(invoke(['spec.issue.current','--lang','en']))).form;
+    assert.deepEqual(form.body.map(field => field.id), ['goal', 'scope', 'non_goals', 'acceptance', 'delivery']);
+    assert.match(ok(invoke(['spec.current'])).stdout, /gidd\.link spec\.issue 02\.issue --lang (en|zh)/);
     const config = readFileSync(join(target,'.agents/skills/gidd/config.toml'));
     write(s.link(target),'damaged entry');
     assert.notEqual(s.ensure(target,['--check']).status,0);

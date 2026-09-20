@@ -1,0 +1,63 @@
+{
+  "name": "Development task (English)",
+  "description": "Record the task's goal, scope, non-goals, an acceptance checklist with verification methods and results, and delivery status.",
+  "body": [
+    {
+      "type": "textarea",
+      "id": "goal",
+      "attributes": {
+        "label": "Goal",
+        "placeholder": "Describe the problem and the expected outcome."
+      },
+      "validations": {
+        "required": true
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "scope",
+      "attributes": {
+        "label": "Scope",
+        "placeholder": "List the work to complete in this task."
+      },
+      "validations": {
+        "required": true
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "non_goals",
+      "attributes": {
+        "label": "Non-goals",
+        "placeholder": "List related work that could be mistaken for part of this task but is explicitly excluded; leave blank if none."
+      },
+      "validations": {
+        "required": false
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "acceptance",
+      "attributes": {
+        "label": "Acceptance checklist",
+        "description": "Replace the examples with verifiable outcomes, using a Markdown checkbox and a verification method for each item; shared methods may be described once in this section. After execution, add actual results or evidence links under the corresponding item. Check it off only when evidence confirms the criterion is met. For incomplete items, note checks not run, failures or blockers as needed; leave no example placeholders.",
+        "value": "- [ ] Verifiable outcome one\n  Verification: describe the inspection method or command and expected result.\n\n- [ ] Verifiable outcome two\n  Verification: describe the inspection method or command and expected result."
+      },
+      "validations": {
+        "required": true
+      }
+    },
+    {
+      "type": "textarea",
+      "id": "delivery",
+      "attributes": {
+        "label": "Delivery record",
+        "description": "May be left blank when creating the Issue. As work progresses, briefly record commits, PRs or other delivery locations used, whether the target branch has received the delivery, and any pending authorization or undelivered work. Keep verification results under their acceptance items rather than repeating them here. Completed checkboxes do not establish delivery or closure authorization; follow the selected spec before closing.",
+        "placeholder": "For example: PR #123 passed acceptance and awaits merge authorization; or delivered through PR #123 to main, with remote commit <actual commit ID>. Use actual task details."
+      },
+      "validations": {
+        "required": false
+      }
+    }
+  ]
+}

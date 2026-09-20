@@ -40,7 +40,7 @@ test('config editing repairs fields independently and preserves comments, BOM, l
     configure(f.root,'set','repo.remote.url','https://GitHub.com/Owner/Repo.git/');
     assert.equal(readRemoteConfiguration(f.root).url,'https://github.com/owner/repo');
     for (const newline of ['\n','\r\n']) {
-      const original='\uFEFF'+['# 保留','schema_version = 1','[git]','user.mode = "inherit"','credential.mode = "inherit"','[repo] # target',"  remote.account = 'bad account' # 注释",'remote.url = "bad url"','[spec]','current = "issue-direct"',''].join(newline);
+      const original='\uFEFF'+['# 保留','schema_version = 1','[git]','user.mode = "inherit"','credential.mode = "inherit"','[repo] # target',"  remote.account = 'bad account' # 注释",'remote.url = "bad url"','[spec]','current = "02.issue"',''].join(newline);
       write(path,original);
       configure(f.root,'set','repo.remote.account','Octocat');
       assert.equal(readFileSync(path,'utf8'),original.replace("'bad account'",'"Octocat"'));
@@ -105,7 +105,7 @@ test('clear preserves other bytes and comments and is idempotent for every edita
     write(path, 'schema_version = 1\n');
     const fields = { 'repo.remote.name': 'origin', 'repo.remote.url': 'https://github.com/owner/repo',
       'repo.remote.account': 'Octocat', 'git.user.mode': 'managed', 'git.user.name': 'Name',
-      'git.user.email': 'name@example.test', 'git.credential.mode': 'gh', 'spec.current': 'issue-direct' };
+      'git.user.email': 'name@example.test', 'git.credential.mode': 'gh', 'spec.current': '02.issue' };
     for (const [key, value] of Object.entries(fields)) configure(f.root, 'set', key, value);
     for (const key of Object.keys(fields)) {
       assert.equal(configure(f.root, 'clear', key).changed, true);
