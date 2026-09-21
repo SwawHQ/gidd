@@ -29,13 +29,22 @@ function validateDescription(description) {
   }
 }
 
-export function specResourcePath(root, source, reference) {
+function resourcePath(roots, source, reference) {
   if (typeof reference !== 'string' || !reference.trim() || /[\x00-\x1f:*?"<>|]/.test(reference) || isAbsolute(reference) || /^[\\/]/.test(reference)) fail('spec_resource_path_invalid');
   const path = resolve(dirname(source), reference);
-  const local = relative(resolve(root), path);
-  if (!local || local === '..' || local.startsWith('..' + sep) || isAbsolute(local)) fail('spec_resource_path_invalid');
+  if (!roots.some(root => {
+    const local = relative(resolve(root), path);
+    return local && local !== '..' && !local.startsWith('..' + sep) && !isAbsolute(local);
+  })) fail('spec_resource_path_invalid');
   return path;
 }
+
+export const specResourcePath = (root, source, reference) => resourcePath([root], source, reference);
+
+// Only Issue templates may use the sibling references directory. Markdown
+// includes retain their specs-only boundary; neither may access other siblings.
+export const specIssueTemplatePath = (root, source, reference) =>
+  resourcePath([root, resolve(root, '../references')], source, reference);
 
 export function readSpecResource(path) {
   try { plainPath(path); } catch { fail('spec_resource_path_invalid'); }

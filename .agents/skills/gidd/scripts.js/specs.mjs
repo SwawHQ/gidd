@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { plainPath } from './storage.mjs';
 import { specLanguages, validateIssueForms } from './spec-data.mjs';
-import { expandSpecPrompt, readSpecPrompt, readSpecResource, specResourcePath } from './spec-resources.mjs';
+import { expandSpecPrompt, readSpecPrompt, readSpecResource, specIssueTemplatePath } from './spec-resources.mjs';
 
 export const specRoot = fileURLToPath(new URL('../specs/', import.meta.url));
 export const specNamePattern = /^(?:[0-9]{2}\.)?[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*$/;
@@ -15,7 +15,7 @@ function promptsAt(root, name) {
   if (Object.hasOwn(prompts.en.metadata, 'issue_template') !== Object.hasOwn(prompts['zh-CN'].metadata, 'issue_template') ||
       JSON.stringify(prompts.en.metadata.description) !== JSON.stringify(prompts['zh-CN'].metadata.description)) throw new Error('spec_metadata_mismatch');
   for (const prompt of Object.values(prompts)) {
-    if (prompt.metadata.issue_template) specResourcePath(root, prompt.path, prompt.metadata.issue_template);
+    if (prompt.metadata.issue_template) specIssueTemplatePath(root, prompt.path, prompt.metadata.issue_template);
   }
   return prompts;
 }
@@ -54,7 +54,7 @@ export function loadSpec(mode, catalog = loadSpecCatalog(), root = specRoot) {
     const prompt = entries[lang];
     prompts[lang] = { path: prompt.path, content: expandSpecPrompt(root, prompt) };
     if (prompt.metadata.issue_template) {
-      const path = specResourcePath(root, prompt.path, prompt.metadata.issue_template);
+      const path = specIssueTemplatePath(root, prompt.path, prompt.metadata.issue_template);
       if (!path.toLowerCase().endsWith('.json')) throw new Error('spec_resources_invalid');
       const text = readSpecResource(path);
       try { forms[lang] = JSON.parse(text); } catch { throw new Error('spec_resources_invalid'); }

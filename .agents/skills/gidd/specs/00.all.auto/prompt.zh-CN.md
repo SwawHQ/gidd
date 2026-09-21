@@ -6,7 +6,7 @@ description:
   - merge_and_related_failures: agent_decides
   - close_issue: agent_decides
   - other_steps: agent_decides
-issue_template: ../_share/issue.zh-CN.json
+issue_template: ../../references/issue.zh-CN.json
 ---
 
 # 00.all.auto

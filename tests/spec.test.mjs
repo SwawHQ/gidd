@@ -211,6 +211,7 @@ test('include failures reject missing, cyclic, escaping, nonplain and excessive 
     for (const [body, reason] of [
       ['@include ../_share/missing.md@\n', 'spec_resources_missing'], ['@include ../_share/a.md@\n', 'spec_include_cycle'],
       ['@include ../../outside.md@\n', 'spec_resource_path_invalid'], ['@include C:/outside.md@\n', 'spec_resource_path_invalid'],
+      ['@include ../../references/rules.md@\n', 'spec_resource_path_invalid'],
       ['@include https://example.test/a.md@\n', 'spec_resource_path_invalid'], ['@include ../_share/a.md', 'spec_include_invalid'],
       ['@include ../_share/form.json@\n', 'spec_include_invalid'],
     ]) { s.save(body); assert.throws(s.load, new RegExp(reason)); }
@@ -226,7 +227,7 @@ test('include failures reject missing, cyclic, escaping, nonplain and excessive 
   } finally { f.dispose(); }
 });
 
-test('templates follow explicit local or shared JSON paths without fallback', () => {
+test('templates follow explicit local, shared or references JSON paths without fallback', () => {
   const f = fixture();
   try {
     const s = resourceFixture(f), forms = loadSpec('02.issue').issueForms;
@@ -240,6 +241,19 @@ test('templates follow explicit local or shared JSON paths without fallback', ()
     for (const lang of ['en', 'zh-CN']) write(join(s.root, 'sample/issue.' + lang + '.json'), '{}');
     assert.deepEqual(s.load().issueForms, forms);
     rmSync(join(s.root, '_share/issue.en.json')); assert.throws(s.load, /spec_resources_missing/);
+    setForms('../references'); assert.deepEqual(s.load().issueForms, forms);
+    rmSync(join(s.root, '../references/issue.en.json')); assert.throws(s.load, /spec_resources_missing/);
+    setForms('../references');
+    write(join(s.root, '../references/issue.en.json'), '{bad'); assert.throws(s.load, /spec_resources_invalid/);
+    setForms('../references');
+    const outside = join(f.root, 'outside');
+    write(join(outside, 'issue.json'), JSON.stringify(forms.en));
+    symlinkSync(outside, join(s.root, '../references/linked'), 'junction');
+    s.save('# junction', '../../references/linked/issue.json'); assert.throws(s.load, /spec_resource_path_invalid/);
+    for (const reference of ['../../references-other/issue.json', '../../references/../outside/issue.json',
+      '../../scripts.js/issue.json', 'C:/outside.json', 'https://example.test/issue.json']) {
+      s.save('# escape', reference); assert.throws(s.load, /spec_resource_path_invalid/);
+    }
     setForms('sample'); assert.deepEqual(s.load().issueForms, forms);
     for (const text of ['{bad', '{}', JSON.stringify({ ...forms.en, body: [...forms.en.body].reverse() })]) {
       write(join(s.root, 'sample/issue.en.json'), text); assert.throws(s.load, /spec_resources_invalid/);
@@ -315,11 +329,12 @@ test('doctor and spec readers validate both languages and complete dependencies 
     for (const args of [['init', '--quiet'], ['config', 'user.name', 'Test'], ['config', 'user.email', 'test@example.test'],
       ['remote', 'add', 'origin', 'https://github.com/owner/repo']]) ok(run(git, ['-C', s.target, ...args]));
     assert.equal(check(json(ok(s.invoke(['doctor', '--offline'])))).status, 'ready');
-    const path = join(s.root, '_share/common.en.md'), saved = readFileSync(path);
+    const path = join(s.root, '_share/fragment.en.md'), saved = '# Test fragment\n';
+    write(path, saved);
     rmSync(path);
     assert.equal(check(json(ok(s.invoke(['doctor', '--offline'])))).status, 'ready');
     const promptPath = join(s.root, '04.issue.ask-commit/prompt.en.md');
-    write(promptPath, readFileSync(promptPath, 'utf8') + '\n@include ../_share/common.en.md@\n');
+    write(promptPath, readFileSync(promptPath, 'utf8') + '\n@include ../_share/fragment.en.md@\n');
     write(path, '@include missing.md@\n');
     const before = snapshot(f.root);
     assert.equal(check(s.diagnose()).reason, 'spec_resources_missing');
@@ -356,7 +371,7 @@ test('printed template commands bind the selected name and language after includ
     const ticks = String.fromCharCode(96).repeat(3);
     for (const lang of ['en', 'zh-CN']) {
       const body = '# Rendered\nInline: ' + marker + '\n@include ../_share/render.md@\n';
-      write(join(s.root, '02.issue/prompt.' + lang + '.md'), meta(body, '../_share/issue.' + lang + '.json'));
+      write(join(s.root, '02.issue/prompt.' + lang + '.md'), meta(body, '../../references/issue.' + lang + '.json'));
     }
     write(join(s.root, '_share/render.md'), ticks + '\n' + marker + '\n' + ticks + '\n@gidd.link .gh issue create@\n');
     for (const lang of ['en', 'zh']) {
@@ -372,7 +387,7 @@ test('printed template commands bind the selected name and language after includ
       assert.ok(ok(s.invoke(['spec.current', '--lang', lang])).stdout.includes('gidd.link spec.issue 04.issue.ask-commit --lang ' + lang));
     }
     assert.ok(ok(s.invoke(['spec', '02.issue'], { GIDD_LANG: 'zh' })).stdout.includes('gidd.link spec.issue 02.issue --lang zh'));
-    const templatePath = join(s.root, '_share/issue.en.json'), form = JSON.parse(readFileSync(templatePath, 'utf8'));
+    const templatePath = join(s.skill, 'references/issue.en.json'), form = JSON.parse(readFileSync(templatePath, 'utf8'));
     form.body[0].attributes.placeholder = marker;
     write(templatePath, JSON.stringify(form));
     assert.equal(json(ok(s.invoke(['spec.issue', '02.issue', '--lang', 'en']))).form.body[0].attributes.placeholder, marker);

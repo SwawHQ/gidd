@@ -6,7 +6,7 @@ description:
   - merge_and_related_failures: ask
   - close_issue: ask
   - other_steps: auto
-issue_template: ../_share/issue.en.json
+issue_template: ../../references/issue.en.json
 ---
 
 # 13.issue.pr.ask-commit.ask-merge.ask-close

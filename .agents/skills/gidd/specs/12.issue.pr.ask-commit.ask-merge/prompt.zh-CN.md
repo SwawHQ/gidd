@@ -6,7 +6,7 @@ description:
   - merge_and_related_failures: ask
   - close_issue: auto
   - other_steps: auto
-issue_template: ../_share/issue.zh-CN.json
+issue_template: ../../references/issue.zh-CN.json
 ---
 
 

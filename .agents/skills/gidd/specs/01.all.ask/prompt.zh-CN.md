@@ -6,7 +6,7 @@ description:
   - merge_and_related_failures: user_decides
   - close_issue: user_decides
   - other_steps: user_decides
-issue_template: ../_share/issue.zh-CN.json
+issue_template: ../../references/issue.zh-CN.json
 ---
 
 # 01.all.ask
