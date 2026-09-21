@@ -23,5 +23,8 @@ GIDD（Windows x64 / PowerShell 5.1）
   gidd.link spec.issue.current      #打印当前规范要求的 GitHub Issue 模板
   gidd.link spec.issue 04.issue.ask-commit #同上，但目标规范被指定为 04.issue.ask-commit
   gidd.link .gh.auth            #检查配置的账号的凭据；缺失时发起交互式登陆授权(凭据由 gh 管理)
-  gidd.link .gh <gh 原生参数>   #按配置提供环境：账号-token/GH_HOST/GH_REPO/Git(优先级< 参数指定)后,转发 gh
-  gidd.link .git <git 原生参数> #按配置提供环境：身份/HTTPS-凭据助手(优先级>.git/config < 参数)后,转发 git
+  gidd.link .gh <gh 原生参数>   #按配置提供账号、目标仓库和 Git 后转发 gh；禁用常见交互
+  gidd.link .git <git 原生参数> #按配置提供身份和 HTTPS 凭据后转发 Git；禁用常见交互
+
+包装保留管道输入；需要编辑器或凭据提示时失败。自定义程序的保护边界见 execution.md。
+  $env:GIDD_EXEC_TIMEOUT_MS=600000 #可选：限制转发命令为 10 分钟；默认不限时，超时退出 124

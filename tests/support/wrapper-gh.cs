@@ -9,6 +9,12 @@ public static class WrapperGh {
         Console.InputEncoding = new UTF8Encoding(false);
         Console.OutputEncoding = new UTF8Encoding(false);
         if (args.Length == 1 && args[0] == "--version") { Console.WriteLine("gh version 2.100.0"); return 0; }
+        if (args.Length == 3 && args[0] == "lock-file") {
+            using (var file = File.Open(args[1], FileMode.Open, FileAccess.ReadWrite, FileShare.None)) {
+                File.WriteAllText(args[2], "locked"); Console.ReadLine();
+            }
+            return 0;
+        }
         if (args.Length > 1 && args[0] == "auth" && args[1] == "token") {
             // Token selection must ignore all inherited authentication tokens.
             foreach (string key in new[] {"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"})
@@ -30,6 +36,12 @@ public static class WrapperGh {
             var start = new ProcessStartInfo("git.exe", "config --get user.name");
             start.UseShellExecute = false;
             using (var child = Process.Start(start)) { child.WaitForExit(); return child.ExitCode; }
+        }
+        if (args.Length > 0 && args[0] == "noninteractive-environment") {
+            Console.WriteLine("{\"GH_PROMPT_DISABLED\":\"" + Env("GH_PROMPT_DISABLED") + "\",\"GCM_INTERACTIVE\":\"" + Env("GCM_INTERACTIVE") +
+                "\",\"GIT_PAGER\":\"" + Env("GIT_PAGER") + "\",\"GH_EDITOR\":\"" + Env("GH_EDITOR").Replace("\\", "\\\\").Replace("\"", "\\\"") +
+                "\",\"GIT_EDITOR\":\"" + Env("GIT_EDITOR").Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}");
+            return 0;
         }
         foreach (string arg in args) Emit("arg", arg);
         Emit("cwd", Environment.CurrentDirectory);

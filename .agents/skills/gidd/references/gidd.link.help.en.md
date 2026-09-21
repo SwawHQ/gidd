@@ -23,5 +23,8 @@ GIDD (Windows x64 / PowerShell 5.1)
   gidd.link spec.issue.current      #Print the GitHub Issue template required by the current spec
   gidd.link spec.issue 04.issue.ask-commit #As above, for the 04.issue.ask-commit spec
   gidd.link .gh.auth               #Check the configured account's credentials; start interactive login if missing (credentials managed by gh)
-  gidd.link .gh <native gh args>   #Supply the configured environment: account token/GH_HOST/GH_REPO/Git (priority < explicit arguments), then forward to gh
-  gidd.link .git <native git args> #Supply the configured environment: identity/HTTPS credential helper (priority > .git/config, < arguments), then forward to git
+  gidd.link .gh <native gh args>   #Forward with the configured account, repository and Git; disable common interaction
+  gidd.link .git <native git args> #Forward with the configured identity and HTTPS credentials; disable common interaction
+
+Wrappers preserve piped input and fail when an editor or credential prompt is needed. See execution.md for custom programs.
+  $env:GIDD_EXEC_TIMEOUT_MS=600000 #Optional: limit forwarded commands to 10 minutes; default unlimited, timeout exits 124

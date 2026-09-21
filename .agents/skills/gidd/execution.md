@@ -2,6 +2,14 @@
 
 `gidd.link .gh <args...>` and `gidd.link .git <args...>` start the bound tool in the entry's repository directory. They forward arguments, stdin, stdout, stderr and the exit code. They do not inspect target arguments, restrict repositories, switch the shared gh account, or write Git configuration. Explicit native options such as `--repo`, `-C`, `-c` and `--author` retain their normal meaning. These commands can perform writes when the forwarded command does so.
 
+The wrappers disable common interaction: Git/gh editors fail with a diagnostic, pagers print directly, and Git terminal/AskPass and GCM credential prompts are disabled. Explicit Git patch/interactive modes for add, clean, commit, checkout, restore, reset and stash, plus mergetool/difftool/gui/citool, fail before execution; interactive rebase fails when it needs its editor. Supply messages, files and required arguments. Piped input remains available, including `commit -F -` and gh file/stdin inputs. The shared tool launchers do not apply this repository policy.
+
+SSH keeps the selected command, key/proxy options and transport working directory, adding OpenSSH `BatchMode=yes` or PuTTY `-batch`. Custom commands must identify their dialect through `ssh.variant` or `GIT_SSH_VARIANT` when it cannot be inferred as `ssh`; unsupported variants fail. SSH configuration is resolved in the actual Git transport, including `-C`, `-c` and submodules.
+
+These defaults are not a sandbox for hooks, aliases, extensions, signing agents or arbitrary external programs. They cannot guarantee that such programs never wait or override the defaults, and do not bypass signing or hooks. Set `GIDD_EXEC_TIMEOUT_MS` to an optional command deadline in milliseconds (unset or `0`: unlimited). It starts when the forwarded command launches, after credential preflight; timeout stops the command tree on Windows and returns 124. Cancellation returns 130. `.gh.auth` retains its separate device-authorization deadline.
+
+Git for Windows file-access retry confirmations are also declined; resolve the locked file before retrying the operation.
+
 `gidd.link .gh.auth` is a separate authorization command. It reuses verified credentials for the configured account; if that account's token is unavailable, it starts device authorization, reports the URL/code and verifies the resulting account. Credentials are stored by gh. The `gidd.auth/v1` and `gidd.auth.event/v1` JSON formats are retained. The old `auth` entry is removed. `.gh.auth` does not forward to `.gh auth`: the `.gh` wrapper requires an existing verified token before executing native arguments.
 
 Authorization reads the bound entry directory's `config.toml`, derives the host directly from `repo.remote.url`, and uses `repo.remote.account`. It requires valid URL/account fields and a compatible gh binding. It does not require Git, a `.git` worktree, `repo.remote.name`, local remote consistency, or completed Git identity/credential settings. The config file and binding record must still parse successfully. `doctor` retains local repository/remote diagnostics; authorization does not imply repository access or readiness. An existing token that fails identity verification returns an error instead of starting a new login.
@@ -44,7 +52,7 @@ Both Git modes are required and independent:
 
 - `git.user.mode = "managed"` supplies the default commit identity from this file and requires both `user.name` and `user.email`.
 - `git.user.mode = "inherit"` uses Git's existing identity rules and requires both name/email fields to be absent. Keeping either field is a configuration error. Here `managed` refers to identity defaults supplied by GIDD, independently of whether the Git executable is GIDD-managed.
-- `git.credential.mode = "gh"` supplies gh-backed credentials for the configured HTTPS host; `inherit` leaves Git authentication unchanged.
+- `git.credential.mode = "gh"` supplies gh-backed credentials for the configured HTTPS host; `inherit` keeps Git's credential sources. Both modes disable common credential prompts.
 
 No migration or implicit mode is provided. `set` and `clear` can repair one field at a time; complete the selected mode's requirements before invoking wrappers. No tokens are stored in this file.
 
@@ -65,12 +73,18 @@ gidd.link set git.user.mode inherit
 - `.gh` derives `GH_HOST` and `GH_REPO` from `repo.remote.url`, obtains the saved token for the configured host/account, and verifies it via `api user`. Inherited gh target/token variables are replaced in this child environment. No `auth switch` occurs. Explicit gh targets may override the default repository; they do not change the identity of the supplied token.
 - In `managed` identity mode, both entries apply configured `user.name/email` using ordered `GIT_CONFIG_COUNT` entries; `inherit` injects neither key. Managed values override the same keys in configuration files; explicit `git -c` settings override the injected configuration. Existing author/committer-specific configuration, environment variables, `--author`, and Git's preservation of original authors retain native semantics. Signing configuration is inherited.
 - In `gh` mode, the configured HTTPS host's helper list is reset and replaced by a lazy helper. It selects and verifies the saved account token, then delegates the credential response to `gh auth git-credential`. Local Git commands do not acquire credentials or need a login. Missing credentials fail when requested; run `gidd.link .gh.auth` to authorize the configured account.
-- SSH does not use the HTTPS helper. It retains native SSH authentication in both modes. `inherit` does not guarantee the push account. Other native authentication sources and explicit overrides retain Git semantics; this wrapper is not an authentication enforcement boundary.
+- SSH does not use the HTTPS helper. Both modes retain SSH credential sources with batch interaction disabled as described above. `inherit` does not guarantee the push account. Other native authentication sources and explicit overrides retain Git semantics; this wrapper is not an authentication enforcement boundary.
 - Git commands launched by gh normally inherit the same environment and selected Git path. Programs that replace that environment or pass their own configuration follow native rules; GIDD does not monitor or restrict descendants. Cancellation stops the launched command tree on Windows.
 - `GH_REPO` does not redirect Git push. Git still selects its destination from remotes, branch settings and explicit arguments. `doctor` diagnoses configured remote consistency and effective identity; execution does not reject intentional target overrides.
 - Internal token acquisition is captured privately and diagnostics do not print tokens. Forwarded commands preserve their native output, including credential output if that is what the caller explicitly requests.
 
 ## 中文摘要
+
+`.git` / `.gh` 禁用常见交互：编辑器直接报错、分页直接输出、禁止 Git 终端/AskPass 和 GCM 凭据询问；add、clean、commit、checkout、restore、reset、stash 的显式交互/补丁模式，以及 mergetool/difftool/gui/citool 直接失败。正常管道输入保留，请用参数或文件提供消息和必要数据。SSH 保留原命令及密钥/代理配置，追加 OpenSSH `BatchMode=yes` 或 PuTTY `-batch`；无法识别的自定义命令须声明 `ssh.variant` 或 `GIT_SSH_VARIANT`，不支持的变体报错。
+
+hooks、alias、扩展、签名代理及任意外部程序可能自行等待或覆盖默认值，包装不是沙箱，也不会跳过签名或 hooks。可设置 `GIDD_EXEC_TIMEOUT_MS`（毫秒；未设置或 0 表示不限时），从实际转发命令启动时计时，超时终止 Windows 命令进程树并退出 124；取消退出 130。`.gh.auth` 保留独立设备授权及其超时。共享工具启动器不应用这些仓库包装策略。
+
+Git for Windows 遇到文件占用时也不询问是否重试；先解决文件访问问题，再重新执行命令。
 
 当前规范配置为 `[spec]` 下的 `current = "04.issue.ask-commit"`，设置命令为 `gidd.link set spec.current <名称>`，旧 `spec.mode` 字段不再接受。doctor（含离线模式）的 `config.spec.current` 检查要求显式选择有效规范，且相关资源完整；未选或选择无效时，提示和命令依次引导：运行 `spec.list` 查看简介，运行 `spec <名称>` 阅读全文，最后设置 `spec.current`。简介用于初步识别，选择前应阅读全文。`clear spec.current` 会移除选择，之后 doctor 报告缺失；资源损坏时提示修复。
 

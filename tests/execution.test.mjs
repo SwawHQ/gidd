@@ -1,13 +1,15 @@
 import { test } from 'node:test';
+import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
 import { configure, readConfiguration } from '../.agents/skills/gidd/scripts.js/config.mjs';
 import { validateGitSettings } from '../.agents/skills/gidd/scripts.js/git-settings.mjs';
 import { gitConfigurationEnvironment, selectGitHubAccount } from '../.agents/skills/gidd/scripts.js/execution-env.mjs';
 import { runPassthrough } from '../.agents/skills/gidd/scripts.js/passthrough.mjs';
+import { executionTimeout, noninteractiveEnvironment, rejectInteractiveArguments } from '../.agents/skills/gidd/scripts.js/noninteractive.mjs';
 import { publishRepositoryEntry, runRepositoryCommand } from './support/repository.mjs';
 import { assert, fixture, findGit, join, mkdirSync, write, run, ok, compile, bindFixture, copySkill, adapter,
-  dirname, readFileSync, repo, until } from './support/helpers.mjs';
+  dirname, readFileSync, repo, until, existsSync } from './support/helpers.mjs';
 
 const code = pathToFileURL(join(repo, '.agents/skills/gidd/scripts.js/gidd.mjs')).href;
 const driver = `const {main}=await import(${JSON.stringify(code)});process.exitCode=await main(JSON.parse(process.argv[1]),{boundRepository:process.argv[2]});`;
@@ -180,7 +182,7 @@ test('HTTPS credentials are acquired lazily via gh; helper reset and command ove
     const marker = join(f.root, 'ssh-used'), ssh = join(f.root, 'fake-ssh.cjs');
     write(ssh, `require('fs').writeFileSync(${JSON.stringify(marker)},'called');process.exit(47);`);
     const sshResult = s.invoke(['.git', 'ls-remote', 'git@github.com:other/project.git'], { env: {
-      GIT_SSH_COMMAND: `"${process.execPath.replaceAll('\\', '/')}" "${ssh.replaceAll('\\', '/')}"`, GIT_SSH_VARIANT: 'simple',
+      GIT_SSH_COMMAND: `"${process.execPath.replaceAll('\\', '/')}" "${ssh.replaceAll('\\', '/')}"`, GIT_SSH_VARIANT: 'ssh',
     } });
     assert.notEqual(sshResult.status, 0); assert.equal(readFileSync(marker, 'utf8'), 'called');
     // Local history preserves explicit authors and Git's committer default.
@@ -192,6 +194,163 @@ test('HTTPS credentials are acquired lazily via gh; helper reset and command ove
     write(s.config, s.text.replace('"gh"', '"inherit"'));
     const inherited = ok(s.invoke(['.git', 'config', '--get-all', 'credential.helper']));
     assert.match(inherited.stdout, /wrong-helper/);
+  } finally { f.dispose(); }
+});
+
+test('editors and AskPass fail without invoking inherited programs; stdin and pager remain usable', () => {
+  const f = fixture();
+  try {
+    const s = setup(f), marker = join(f.root, 'unexpected-interaction'), script = join(f.root, 'interactive.cjs');
+    write(script, `require('fs').writeFileSync(${JSON.stringify(marker)},'called');process.exit(0);`);
+    const command = `"${process.execPath.replaceAll('\\', '/')}" "${script.replaceAll('\\', '/')}"`;
+    const env = { GIT_EDITOR: command, GIT_SEQUENCE_EDITOR: command, GH_EDITOR: command,
+      GIT_ASKPASS: script, SSH_ASKPASS: script, GCM_INTERACTIVE: 'true', GIT_PAGER: command };
+    const failed = s.invoke(['.git', '-c', 'core.editor=' + command, '-c', 'commit.gpgsign=false', 'commit', '--allow-empty'], { env });
+    assert.notEqual(failed.status, 0); assert.match(failed.stderr, /interactive editor disabled/);
+    assert.equal(existsSync(marker), false);
+    assert.notEqual(s.invoke(['.git', 'rev-parse', '--verify', 'HEAD']).status, 0, 'No commit was made by a no-op editor');
+    for (const variable of ['GIT_EDITOR', 'GIT_SEQUENCE_EDITOR']) {
+      assert.match(ok(s.invoke(['.git', 'var', variable], { env })).stdout, /reject-interaction\.mjs/);
+    }
+    assert.equal(ok(s.invoke(['.git', 'var', 'GIT_PAGER'], { env })).stdout.trim(), 'cat');
+    write(s.config, s.text.replace('"gh"', '"inherit"'));
+    const credential = s.invoke(['.git', '-c', 'credential.helper=', '-c', 'core.askPass=' + script, 'credential', 'fill'],
+      { input: 'protocol=https\nhost=example.invalid\n\n', env });
+    assert.notEqual(credential.status, 0); assert.match(credential.stderr, /credential prompt disabled|unable to get password/);
+    const askpass = s.invoke(['.git', '-c', 'credential.helper=', '-c', 'credential.interactive=true', 'credential', 'fill'],
+      { input: 'protocol=https\nhost=example.invalid\n\n', env });
+    assert.notEqual(askpass.status, 0); assert.match(askpass.stderr, /credential prompt disabled/);
+    assert.equal(existsSync(marker), false);
+    const helper = '!echo "$GCM_INTERACTIVE" >&2; echo username=fixture; echo password=fixture';
+    const inherited = ok(s.invoke(['.git', '-c', 'credential.helper=', '-c', 'credential.helper=' + helper, 'credential', 'fill'],
+      { input: 'protocol=https\nhost=example.invalid\n\n', env }));
+    assert.match(inherited.stderr, /^0\r?\n/);
+    ok(s.invoke(['.git', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-F', '-'], { input: 'message from stdin\n', env }));
+    assert.equal(ok(s.invoke(['.git', 'log', '-1', '--format=%s'])).stdout.trim(), 'message from stdin');
+    const sequence = s.invoke(['.git', 'rebase', '-i', '--root'], { env });
+    assert.notEqual(sequence.status, 0); assert.match(sequence.stderr, /interactive editor disabled/);
+    assert.equal(existsSync(marker), false);
+  } finally { f.dispose(); }
+});
+
+test('explicit patch/interactive modes fail before execution without mistaking data for options', () => {
+  const f = fixture();
+  try {
+    const s = setup(f);
+    for (const args of [['add', '-p'], ['add', '-vi'], ['clean', '-di'], ['commit', '-sp'], ['commit', '--inter'],
+      ['checkout', '--patch'], ['restore', '--pa'], ['reset', '-p'], ['stash', 'push', '-p'], ['mergetool'], ['difftool', '-y'],
+      ['-C', s.target, '-c', 'user.name=-p', 'add', '-p']]) {
+      const failed = s.invoke(['.git', ...args]);
+      assert.equal(failed.status, 2, JSON.stringify(args) + failed.stderr); assert.match(failed.stderr, /interactive_command_disabled/);
+    }
+    for (const args of [['add', '--', '-p'], ['commit', '-m', '--patch'], ['commit', '-m-p'], ['commit', '-qm', '--patch'],
+      ['commit', '-i', '-m', 'message'], ['commit', '--message=-p'], ['clean', '-e', '--interactive'],
+      ['restore', '-s', '--patch'], ['config', 'alias.inspect', 'add -p']]) {
+      assert.doesNotThrow(() => rejectInteractiveArguments('git', args));
+    }
+    ok(s.invoke(['.git', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-qm', '--patch']));
+    assert.equal(ok(s.invoke(['.git', 'log', '-1', '--format=%s'])).stdout.trim(), '--patch');
+  } finally { f.dispose(); }
+});
+
+test('Windows file locks fail without asking whether to retry', async () => {
+  const f = fixture();
+  let locker, closed;
+  try {
+    const s = setup(f), locked = join(s.target, 'locked-file.txt'), marker = join(f.root, 'locked');
+    write(locked, 'keep this file');
+    locker = spawn(s.gh, ['lock-file', locked, marker], { windowsHide: true, stdio: ['pipe', 'ignore', 'ignore'] });
+    closed = new Promise((resolve, reject) => { locker.once('close', resolve); locker.once('error', reject); });
+    await until(() => existsSync(marker));
+    const failed = s.invoke(['.git', 'clean', '-f', '--', 'locked-file.txt'], { env: { GIT_ASK_YESNO: 'must-not-run' } });
+    assert.notEqual(failed.status, 0); assert.match(failed.stderr, /interactive retry disabled/);
+    assert.equal(existsSync(locked), true);
+  } finally {
+    locker?.stdin.end();
+    if (closed) await closed;
+    f.dispose();
+  }
+});
+
+test('SSH batch options preserve transport cwd, native command priority and arguments', () => {
+  const f = fixture();
+  try {
+    const s = setup(f), marker = join(f.root, 'ssh-arguments.json'), script = join(f.root, 'ssh fixture.cjs');
+    write(script, `require('fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2)}));process.exit(47);`);
+    const command = `"${process.execPath.replaceAll('\\', '/')}" "${script.replaceAll('\\', '/')}"`;
+    for (const variant of ['ssh', 'plink', 'tortoiseplink']) {
+      const result = s.invoke(['.git', '-c', 'core.sshCommand=' + command, '-c', 'ssh.variant=' + variant,
+        'ls-remote', 'ssh://git@example.invalid:2222/other/project.git']);
+      assert.notEqual(result.status, 0);
+      assert.ok(existsSync(marker), result.stderr);
+      const received = JSON.parse(readFileSync(marker, 'utf8'));
+      assert.ok(received.args.includes(variant === 'ssh' ? '-oBatchMode=yes' : '-batch'));
+      assert.ok(received.args.includes(variant === 'ssh' ? '-p' : '-P'));
+      assert.ok(received.args.includes('2222'));
+      assert.ok(received.args.includes('git@example.invalid'));
+    }
+    const result = s.invoke(['.git', '-C', s.elsewhere, '-c', 'core.sshCommand=must-not-run',
+      'ls-remote', 'git@example.invalid:path with spaces.git'], { env: { GIT_SSH_COMMAND: command, GIT_SSH_VARIANT: 'ssh' } });
+    assert.notEqual(result.status, 0);
+    const received = JSON.parse(readFileSync(marker, 'utf8'));
+    assert.equal(realpathSync.native(received.cwd), realpathSync.native(s.elsewhere));
+    assert.ok(received.args.some(arg => arg.includes('path with spaces.git')));
+    for (const variant of ['simple', 'auto']) {
+      const failed = s.invoke(['.git', 'ls-remote', 'git@example.invalid:repo'], { env: { GIT_SSH_COMMAND: command, GIT_SSH_VARIANT: variant } });
+      assert.notEqual(failed.status, 0); assert.match(failed.stderr, /noninteractive SSH/);
+    }
+    const fromEnv = s.invoke(['.git', '--config-env=core.sshCommand=GIDD_TEST_SSH', '-c', 'ssh.variant=ssh',
+      'ls-remote', 'git@example.invalid:repo'], { env: { GIDD_TEST_SSH: command } });
+    assert.notEqual(fromEnv.status, 0);
+    assert.ok(JSON.parse(readFileSync(marker, 'utf8')).args.includes('-oBatchMode=yes'));
+    ok(run(s.git, ['-C', s.target, 'config', 'core.sshCommand', command]));
+    ok(run(s.git, ['-C', s.target, 'config', 'ssh.variant', 'ssh']));
+    const fromFile = s.invoke(['.git', 'ls-remote', 'git@example.invalid:repo']);
+    assert.notEqual(fromFile.status, 0);
+    assert.ok(JSON.parse(readFileSync(marker, 'utf8')).args.includes('-oBatchMode=yes'));
+    const nestedEnv = noninteractiveEnvironment(s.git, { GIT_SSH_COMMAND: command, GIT_SSH_VARIANT: 'ssh' });
+    const nested = s.invoke(['.git', 'ls-remote', 'git@example.invalid:nested-repo'], { env: nestedEnv });
+    assert.notEqual(nested.status, 0);
+    assert.ok(JSON.parse(readFileSync(marker, 'utf8')).args.some(arg => arg.includes('nested-repo')));
+  } finally { f.dispose(); }
+});
+
+test('noninteractive defaults are case-insensitive and reach gh editors and child Git', () => {
+  const env = noninteractiveEnvironment('C:/git.exe', { gcm_interactive: 'true', gh_editor: 'unexpected', git_pager: 'less', GH_FORCE_TTY: '1' });
+  assert.equal(env.gcm_interactive, undefined); assert.equal(env.GCM_INTERACTIVE, '0');
+  assert.equal(env.gh_editor, undefined); assert.equal(env.GH_EDITOR, env.GIT_EDITOR);
+  assert.equal(env.git_pager, undefined); assert.equal(env.GIT_PAGER, 'cat');
+  assert.equal(env.GH_FORCE_TTY, undefined);
+  assert.match(env.GH_EDITOR, /reject-interaction\.mjs/);
+  const f = fixture();
+  try {
+    const s = setup(f);
+    const result = ok(s.invoke(['.gh', 'noninteractive-environment']));
+    const actual = JSON.parse(result.stdout);
+    assert.equal(actual.GH_PROMPT_DISABLED, '1'); assert.equal(actual.GCM_INTERACTIVE, '0');
+    assert.equal(actual.GH_EDITOR, actual.GIT_EDITOR); assert.equal(actual.GIT_PAGER, 'cat');
+  } finally { f.dispose(); }
+});
+
+test('optional execution deadlines validate input and stop descendants with exit 124', async () => {
+  assert.equal(executionTimeout({}), 0); assert.equal(executionTimeout({ GIDD_EXEC_TIMEOUT_MS: '0' }), 0);
+  assert.equal(executionTimeout({ gidd_exec_timeout_ms: '3000' }), 3000);
+  for (const value of ['-1', '1.5', 'soon', '2147483648']) {
+    assert.throws(() => executionTimeout({ GIDD_EXEC_TIMEOUT_MS: value }), /invalid_execution_timeout/);
+  }
+  const f = fixture();
+  try {
+    const marker = join(f.root, 'timed-descendant');
+    const pending = runPassthrough(process.execPath, ['-e', `const child=require('child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'inherit'});require('fs').writeFileSync(${JSON.stringify(marker)},String(child.pid));setInterval(()=>{},1000)`],
+      { timeoutMs: 1500, stdio: 'ignore' });
+    await until(() => existsSync(marker));
+    const descendant = Number(readFileSync(marker, 'utf8'));
+    assert.equal(await pending, 124);
+    await until(() => { try { process.kill(descendant, 0); return false; } catch { return true; } });
+    const s = setup(f);
+    assert.equal(s.invoke(['.git', '--version'], { env: { GIDD_EXEC_TIMEOUT_MS: 'invalid' } }).status, 2);
+    const timeout = s.invoke(['.git', '-c', 'alias.wait=!sleep 30', 'wait'], { env: { GIDD_EXEC_TIMEOUT_MS: '500' } });
+    assert.equal(timeout.status, 124); assert.match(timeout.stderr, /execution timed out/);
   } finally { f.dispose(); }
 });
 
@@ -252,6 +411,12 @@ test('generated CMD forwards .git/.gh with literal arguments and bound working d
     const credential = ok(runRepositoryCommand(s.target, ['.git', 'credential', 'fill'],
       { cwd: s.elsewhere, input: 'protocol=https\nhost=github.com\n\n', env: s.env }));
     assert.match(credential.stdout, /password=fixture-Octocat/);
+    const editor = runRepositoryCommand(s.target, ['.git', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty'],
+      { cwd: s.elsewhere, env: s.env });
+    assert.notEqual(editor.status, 0); assert.match(editor.stderr, /interactive editor disabled/);
+    const denied = runRepositoryCommand(s.target, ['.git', '-c', 'credential.helper=', '-c', 'credential.interactive=true', 'credential', 'fill'],
+      { cwd: s.elsewhere, input: 'protocol=https\nhost=example.invalid\n\n', env: s.env });
+    assert.notEqual(denied.status, 0); assert.match(denied.stderr, /credential prompt disabled/);
     const invoke = args => runRepositoryCommand(s.target, args, { cwd: s.elsewhere, env: s.env });
     const original = readFileSync(s.config, 'utf8');
     for (const args of [['clear'], ['clear', 'git.user.name', 'extra'],
