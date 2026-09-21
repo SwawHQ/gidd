@@ -66,6 +66,11 @@ export async function main(args, { boundRepository } = {}) {
     if (command === 'spec') {
       const result = await specCommand(repository, specOptions);
       if (result.markdown !== undefined) process.stdout.write(result.markdown);
+      else if (specOptions.action === 'list' && result.exitCode === 0) {
+        // Keep each workflow on one line while preserving ordinary JSON parsing.
+        const rows = result.report.specs.map(spec => '    ' + JSON.stringify(spec)).join(',\n');
+        console.log(`{\n  "scope": ${JSON.stringify(result.report.scope)},\n  "specs": [\n${rows}\n  ]\n}`);
+      }
       else console.log(JSON.stringify(result.report, null, 2));
       return result.exitCode;
     }

@@ -16,7 +16,7 @@ GIDD（Windows x64 / PowerShell 5.1）
   gidd.link set git.user.email <email>  #managed 模式必填，inherit 用 clear 删除；指定 git user.email
   gidd.link clear <字段>            #删除 config.toml 中指定字段
   gidd.link clear git.user.name     #(示例)删除 git.user.name（inherit 模式还必须删除 git.user.email）
-  gidd.link spec.list               #列出规范简介；阅读全文：gidd.link spec <规范名>
+  gidd.link spec.list               #每行列出一个规范及摘要；阅读全文：gidd.link spec <规范名>
   gidd.link spec.current            #打印当前应用的规范
   gidd.link spec.current --lang zh  #同上，但指定语言，可选 zh|en，下同
   gidd.link spec 04.issue.ask-commit       #打印名为 04.issue.ask-commit 的规范

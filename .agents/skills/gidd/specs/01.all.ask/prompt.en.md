@@ -1,5 +1,11 @@
 ---
-description: "The user specifies whether and when each step applies; the Agent does not act autonomously (but may report, ask questions and assist)."
+description:
+  - issue: user_decides
+  - branch_pr: user_decides
+  - stage_commit_push: user_decides
+  - merge_and_related_failures: user_decides
+  - close_issue: user_decides
+  - other_steps: user_decides
 issue_template: ../_share/issue.en.json
 ---
 

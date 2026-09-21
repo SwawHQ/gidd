@@ -1,5 +1,11 @@
 ---
-description: "Agent 自主决定各步骤是否适用及何时执行，正常汇报进展与结果。"
+description:
+  - issue: agent_decides
+  - branch_pr: agent_decides
+  - stage_commit_push: agent_decides
+  - merge_and_related_failures: agent_decides
+  - close_issue: agent_decides
+  - other_steps: agent_decides
 issue_template: ../_share/issue.zh-CN.json
 ---
 

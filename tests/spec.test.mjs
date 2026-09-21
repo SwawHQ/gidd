@@ -28,7 +28,10 @@ const names = [
 ];
 const chosen = 'schema_version = 1\n[spec]\ncurrent = "04.issue.ask-commit"\n';
 const configPath = root => join(root, '.agents/skills/gidd/config.toml');
-const meta = (body, template) => '---\ndescription: Test description\n' + (template ? 'issue_template: ' + template + '\n' : '') + '---\n' + body;
+const description = [{ issue: 'required' }, { branch_pr: 'optional' }, { stage_commit_push: 'ask' },
+  { merge_and_related_failures: 'auto' }, { close_issue: 'auto' }, { other_steps: 'auto' }];
+const meta = (body, template, summary = description) => '---\ndescription: ' + JSON.stringify(summary) + '\n' +
+  (template ? 'issue_template: ' + template + '\n' : '') + '---\n' + body;
 const check = report => report.checks.find(item => item.id === 'config.spec.current');
 function installation(f, config = chosen) {
   const skill = join(f.root, "installed 中文 & ' spaces"), target = join(f.root, 'target');
@@ -51,6 +54,25 @@ function resourceFixture(f) {
 test('fourteen presets expose bilingual summaries, expanded guidance and shared forms', () => {
   const catalog = loadSpecCatalog();
   for (const lang of ['en', 'zh-CN']) assert.deepEqual(catalog[lang].map(item => item.name), names);
+  const policies = [
+    Array(6).fill('agent_decides'), Array(6).fill('user_decides'),
+    ['required', 'optional', 'auto', 'auto', 'auto', 'auto'],
+    ['required', 'optional', 'auto', 'auto', 'ask', 'auto'],
+    ['required', 'optional', 'ask', 'auto', 'auto', 'auto'],
+    ['required', 'optional', 'ask', 'auto', 'ask', 'auto'],
+    ['required', 'required', 'auto', 'auto', 'auto', 'auto'],
+    ['required', 'required', 'auto', 'auto', 'ask', 'auto'],
+    ['required', 'required', 'ask', 'auto', 'auto', 'auto'],
+    ['required', 'required', 'ask', 'auto', 'ask', 'auto'],
+    ['required', 'required', 'auto', 'ask', 'auto', 'auto'],
+    ['required', 'required', 'auto', 'ask', 'ask', 'auto'],
+    ['required', 'required', 'ask', 'ask', 'auto', 'auto'],
+    ['required', 'required', 'ask', 'ask', 'ask', 'auto'],
+  ];
+  for (const lang of ['en', 'zh-CN']) catalog[lang].forEach((item, index) => {
+    assert.deepEqual(item.description.map(entry => Object.keys(entry)[0]), description.map(entry => Object.keys(entry)[0]));
+    assert.deepEqual(item.description.map(entry => Object.values(entry)[0]), policies[index]);
+  });
   for (const name of names) {
     const spec = loadSpec(name, catalog);
     assert.deepEqual(readdirSync(join(specRoot, name)).sort(), ['prompt.en.md', 'prompt.zh-CN.md']);
@@ -100,20 +122,65 @@ test('discovery skips helpers and placeholders but validates bilingual metadata'
   try {
     const s = resourceFixture(f);
     write(join(s.root, '_lib/broken/prompt.en.md'), 'not a spec'); write(join(s.root, 'placeholder/.gitkeep'), '');
+    write(join(s.root, 'AGENTS.md'), '# Authoring instructions, not a selectable spec');
     assert.deepEqual(loadSpecCatalog(s.root).en.map(item => item.name), ['sample']);
     for(const lang of ['en','zh-CN']) write(join(s.root,'current/prompt.'+lang+'.md'), meta('# named current'));
     assert.deepEqual(loadSpecCatalog(s.root).en.map(item => item.name), ['current', 'sample']);
     rmSync(join(s.root, 'sample/prompt.zh-CN.md')); assert.throws(() => loadSpecCatalog(s.root), /spec_resources_missing/);
     s.save('# restored');
     for (const invalid of ['# no front matter', '---\ndescription: ""\n---\n# body', '---\ndescription: x\ndescription: y\n---\n# body',
-      '---\ndescription: [x]\n---\n# body', '---\ndescription: yes\nextra: no\n---\n# body',
-      '---\ndescription: x\nissue_template: 5\n---\n# body', '---\ndescription: x\n---\n']) {
+      '---\ndescription: [x]\n---\n# body', meta('# body').replace('\n---\n# body', '\nextra: no\n---\n# body'),
+      meta('# body', '5'), meta('')]) {
       write(s.prompt, invalid); assert.throws(() => loadSpecCatalog(s.root), /spec_(metadata|resources)_invalid/);
     }
     s.save('# restored'); write(s.prompt, meta('# only English template', '../_share/issue.en.json'));
     assert.throws(() => loadSpecCatalog(s.root), /spec_metadata_mismatch/);
     s.save('# restored'); symlinkSync(join(s.root, 'sample'), join(s.root, 'linked'), 'junction');
     assert.throws(() => loadSpecCatalog(s.root), /spec_directory_invalid/);
+  } finally { f.dispose(); }
+});
+
+test('descriptions require six unique single-key entries with field-specific values', () => {
+  const f = fixture();
+  try {
+    const s = resourceFixture(f);
+    const invalid = [null, false, 1, 'legacy summary', {}, [], Object.assign({}, ...description),
+      description.slice(1), [...description, { issue: 'required' }],
+      ...[null, [], 'issue', 1, {}, { issue: 'required', branch_pr: 'optional' },
+        { unknown: 'required' }, { Issue: 'required' }, { branch_pr: 'optional' },
+        { issue: 'ask' }, { issue: true }, { issue: ['required'] }, { issue: 'Required' },
+        { issue: 'required\n' }].map(item => [item, ...description.slice(1)]),
+      [...description.slice(0, 2), { stage_commit_push: 'required' }, ...description.slice(3)],
+      [...description.slice(0, 5), { other_steps: 'optional' }],
+    ];
+    for (const value of invalid) {
+      write(s.prompt, meta('# body', undefined, value));
+      assert.throws(() => readSpecPrompt(s.prompt), /spec_metadata_invalid/, JSON.stringify(value));
+    }
+    for (const choice of ['agent_decides', 'user_decides']) {
+      const value = description.map(item => ({ [Object.keys(item)[0]]: choice }));
+      write(s.prompt, meta('# body', undefined, value));
+      assert.deepEqual(readSpecPrompt(s.prompt).metadata.description, value);
+    }
+    const value = [...description.slice(0, 5), { other_steps: 'ask' }];
+    write(s.prompt, meta('# body', undefined, value));
+    assert.deepEqual(readSpecPrompt(s.prompt).metadata.description, value);
+  } finally { f.dispose(); }
+});
+
+test('description order follows the source and bilingual values and order must match', () => {
+  const f = fixture();
+  try {
+    const s = resourceFixture(f), reordered = [...description].reverse();
+    const translated = join(s.root, 'sample/prompt.zh-CN.md');
+    for (const path of [s.prompt, translated]) write(path, meta('# body', undefined, reordered));
+    const before = snapshot(f.root), catalog = loadSpecCatalog(s.root);
+    for (const lang of ['en', 'zh-CN']) assert.deepEqual(catalog[lang][0].description, reordered);
+    assert.deepEqual(snapshot(f.root), before);
+    for (const mismatch of [description, [...reordered.slice(0, 5), { issue: 'optional' }]]) {
+      write(translated, meta('# body', undefined, mismatch));
+      assert.throws(() => loadSpecCatalog(s.root), /spec_metadata_mismatch/);
+    }
   } finally { f.dispose(); }
 });
 
@@ -203,6 +270,18 @@ test('CLI lists without config and prints named/current bilingual instructions a
   try {
     const s = installation(f, null);
     assert.deepEqual(json(ok(s.invoke(['spec.list']))).specs.map(item => item.name), names);
+    const reordered = [...description].reverse();
+    for (const lang of ['en', 'zh-CN']) {
+      const path = join(s.root, '04.issue.ask-commit/prompt.' + lang + '.md'), prompt = readSpecPrompt(path);
+      write(path, meta(prompt.content, prompt.metadata.issue_template, reordered));
+    }
+    for (const lang of ['en', 'zh']) {
+      const output = ok(s.invoke(['spec.list', '--lang', lang])), listed = json(output).specs;
+      const lines = output.stdout.trimEnd().split(/\r?\n/);
+      assert.equal(lines.length, names.length + 5);
+      assert.deepEqual(lines.slice(3, -2).map(line => JSON.parse(line.replace(/,$/, ''))), listed);
+      assert.deepEqual(listed.find(item => item.name === '04.issue.ask-commit').description, reordered);
+    }
     for (const content of [null, 'schema_version = 1\n', 'schema_version = 1\n[spec]\ncurrent = "missing"\n', 'broken TOML']) {
       if (content !== null) write(configPath(s.target), content);
       const before = snapshot(f.root), result = s.invoke(['spec.current']);
@@ -247,6 +326,22 @@ test('doctor and spec readers validate both languages and complete dependencies 
     const failed = s.invoke(['spec.current', '--lang', 'zh']);
     assert.equal(failed.status, 1); assert.equal(failed.stderr, ''); assert.equal(json(failed).error, 'spec_resources_missing');
     assert.deepEqual(snapshot(f.root), before); write(path, saved); assert.equal(check(s.diagnose()).status, 'ready');
+    const translationPath = join(s.root, '04.issue.ask-commit/prompt.zh-CN.md');
+    const translation = readFileSync(translationPath, 'utf8'), translated = readSpecPrompt(translationPath);
+    write(translationPath, meta(translated.content, translated.metadata.issue_template,
+      [{ issue: 'optional' }, ...description.slice(1)]));
+    const mismatched = snapshot(f.root);
+    assert.equal(check(s.diagnose()).reason, 'spec_metadata_mismatch');
+    for (const args of [['spec.list'], ['spec.current'], ['spec.issue.current'], ['set', 'spec.current', '02.issue']]) {
+      const result = s.invoke(args);
+      assert.notEqual(result.status, 0);
+      if (args[0] === 'set') assert.match(result.stderr, /^Repair specs\//);
+      else assert.equal(result.stderr, '');
+      const report = json(result);
+      assert.equal(report.error ?? report.reason, 'spec_metadata_mismatch');
+    }
+    assert.deepEqual(snapshot(f.root), mismatched);
+    write(translationPath, translation);
     write(configPath(s.target), 'schema_version = 1\n');
     const missing = check(s.diagnose());
     assert.deepEqual(missing.commands.map(c => c.args), [['spec.list'], ['spec', '<name>'], ['set', 'spec.current', '<name>']]);

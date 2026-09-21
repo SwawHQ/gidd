@@ -1,5 +1,11 @@
 ---
-description: "An Issue and a PR workflow are required; the Agent continues other stages automatically."
+description:
+  - issue: required
+  - branch_pr: required
+  - stage_commit_push: auto
+  - merge_and_related_failures: auto
+  - close_issue: auto
+  - other_steps: auto
 issue_template: ../_share/issue.en.json
 ---
 

@@ -4,6 +4,31 @@ import { plainPath } from './storage.mjs';
 import { fields, nonemptyText, parseSpecYaml } from './spec-data.mjs';
 
 const fail = reason => { throw new Error(reason); };
+const requirementValues = ['required', 'optional', 'agent_decides', 'user_decides'];
+const handlingValues = ['auto', 'ask', 'agent_decides', 'user_decides'];
+const descriptionValues = {
+  issue: requirementValues,
+  branch_pr: requirementValues,
+  stage_commit_push: handlingValues,
+  merge_and_related_failures: handlingValues,
+  close_issue: handlingValues,
+  other_steps: handlingValues,
+};
+
+// Array order belongs to the author. Validate every dimension without sorting
+// or flattening it; agent/user_decides also covers whether a step applies.
+function validateDescription(description) {
+  if (!Array.isArray(description) || description.length !== Object.keys(descriptionValues).length) fail('spec_metadata_invalid');
+  const seen = new Set();
+  for (const item of description) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) fail('spec_metadata_invalid');
+    const keys = Object.keys(item), key = keys[0];
+    if (keys.length !== 1 || !Object.hasOwn(descriptionValues, key) || seen.has(key) ||
+        !descriptionValues[key].includes(item[key])) fail('spec_metadata_invalid');
+    seen.add(key);
+  }
+}
+
 export function specResourcePath(root, source, reference) {
   if (typeof reference !== 'string' || !reference.trim() || /[\x00-\x1f:*?"<>|]/.test(reference) || isAbsolute(reference) || /^[\\/]/.test(reference)) fail('spec_resource_path_invalid');
   const path = resolve(dirname(source), reference);
@@ -35,8 +60,8 @@ export function readSpecPrompt(path) {
   try {
     metadata = parseSpecYaml(match[1]);
     fields(metadata, ['description'], ['issue_template']);
-    if (!nonemptyText(metadata.description) || /[\r\n]/.test(metadata.description) ||
-      Object.hasOwn(metadata, 'issue_template') && !nonemptyText(metadata.issue_template)) fail('spec_metadata_invalid');
+    validateDescription(metadata.description);
+    if (Object.hasOwn(metadata, 'issue_template') && !nonemptyText(metadata.issue_template)) fail('spec_metadata_invalid');
   } catch { fail('spec_metadata_invalid'); }
   const content = text.slice(match[0].length);
   if (!content.trim()) fail('spec_resources_invalid');

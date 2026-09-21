@@ -1,5 +1,11 @@
 ---
-description: "The Agent independently decides whether and when each step applies, with normal reporting of progress and results."
+description:
+  - issue: agent_decides
+  - branch_pr: agent_decides
+  - stage_commit_push: agent_decides
+  - merge_and_related_failures: agent_decides
+  - close_issue: agent_decides
+  - other_steps: agent_decides
 issue_template: ../_share/issue.en.json
 ---
 

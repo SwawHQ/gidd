@@ -1,5 +1,11 @@
 ---
-description: "Require an Issue and authorization before commit/push; no separate branch required; other stages proceed automatically."
+description:
+  - issue: required
+  - branch_pr: optional
+  - stage_commit_push: ask
+  - merge_and_related_failures: auto
+  - close_issue: auto
+  - other_steps: auto
 issue_template: ../_share/issue.en.json
 ---
 

@@ -1,5 +1,11 @@
 ---
-description: "要求 Issue，其余各步骤是否适用及何时执行...原则上围绕 Issue 展开，具体由 Agent 自主决定。"
+description:
+  - issue: required
+  - branch_pr: optional
+  - stage_commit_push: auto
+  - merge_and_related_failures: auto
+  - close_issue: auto
+  - other_steps: auto
 issue_template: ../_share/issue.zh-CN.json
 ---
 

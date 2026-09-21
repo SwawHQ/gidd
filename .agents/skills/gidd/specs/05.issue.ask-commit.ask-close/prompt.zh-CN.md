@@ -1,5 +1,11 @@
 ---
-description: "要求 Issue、不自动 commit、询问是否关闭 Issue，其余由 Agent 自动继续。"
+description:
+  - issue: required
+  - branch_pr: optional
+  - stage_commit_push: ask
+  - merge_and_related_failures: auto
+  - close_issue: ask
+  - other_steps: auto
 issue_template: ../_share/issue.zh-CN.json
 ---
 

@@ -12,7 +12,8 @@ export const specCatalogHint = 'Repair specs/<name>/prompt.en.md and prompt.zh-C
 
 function promptsAt(root, name) {
   const prompts = Object.fromEntries(specLanguages.map(lang => [lang, readSpecPrompt(join(root, name, 'prompt.' + lang + '.md'))]));
-  if (Object.hasOwn(prompts.en.metadata, 'issue_template') !== Object.hasOwn(prompts['zh-CN'].metadata, 'issue_template')) throw new Error('spec_metadata_mismatch');
+  if (Object.hasOwn(prompts.en.metadata, 'issue_template') !== Object.hasOwn(prompts['zh-CN'].metadata, 'issue_template') ||
+      JSON.stringify(prompts.en.metadata.description) !== JSON.stringify(prompts['zh-CN'].metadata.description)) throw new Error('spec_metadata_mismatch');
   for (const prompt of Object.values(prompts)) {
     if (prompt.metadata.issue_template) specResourcePath(root, prompt.path, prompt.metadata.issue_template);
   }

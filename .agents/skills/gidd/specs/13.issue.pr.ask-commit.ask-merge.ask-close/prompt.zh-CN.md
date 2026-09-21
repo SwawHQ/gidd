@@ -1,5 +1,11 @@
 ---
-description: "要求 Issue 和 PR；提交（含暂存、推送）、合并及相关异常处理、关闭 Issue 前询问，其余阶段由 Agent 自动继续。"
+description:
+  - issue: required
+  - branch_pr: required
+  - stage_commit_push: ask
+  - merge_and_related_failures: ask
+  - close_issue: ask
+  - other_steps: auto
 issue_template: ../_share/issue.zh-CN.json
 ---
 

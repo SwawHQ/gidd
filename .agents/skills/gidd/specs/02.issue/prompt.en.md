@@ -1,5 +1,11 @@
 ---
-description: "An Issue is required. Other steps generally revolve around the Issue; the Agent independently decides whether and when they apply."
+description:
+  - issue: required
+  - branch_pr: optional
+  - stage_commit_push: auto
+  - merge_and_related_failures: auto
+  - close_issue: auto
+  - other_steps: auto
 issue_template: ../_share/issue.en.json
 ---
 
