@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { managedToolValid } from '../../.agents/skills/gidd/scripts.js/storage.mjs';
-import { findTool } from '../../.agents/skills/gidd/scripts.js/tools.mjs';
+import { managedToolValid } from '../../.agents/skills/gidd/scripts.js/shared/storage.mjs';
+import { findTool } from '../../.agents/skills/gidd/scripts.js/shared/tools.mjs';
 const request = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 try {
   let result;

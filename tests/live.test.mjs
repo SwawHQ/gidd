@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import { publishRepositoryEntry, runRepositoryCommand } from './support/repository.mjs';
 import { toolsRoot, assert, copySkill, existsSync, fixture, join, json, ok, run, write, mkdirSync, dirname, findGit } from './support/helpers.mjs';
-import { toolEnvironment } from '../.agents/skills/gidd/scripts.js/tools.mjs';
+import { toolEnvironment } from '../.agents/skills/gidd/scripts.js/shared/tools.mjs';
 
 function createRepository(root) {
   const git = findGit();

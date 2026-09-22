@@ -2,7 +2,7 @@ import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { compareVersions, managedExecutable, plainPath, platformName, versionPattern } from './storage.mjs';
 import { minimums, toolEnvironment } from './tools.mjs';
-import { runCommand } from './github.mjs';
+import { runCommand } from './process.mjs';
 
 export const bindingPath = root => join(root, 'tool-bindings.json');
 export function readBindings(root) {

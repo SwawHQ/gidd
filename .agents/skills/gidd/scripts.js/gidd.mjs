@@ -1,20 +1,17 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-import { configure, configurationHint, readAuthorizationConfiguration } from './config.mjs';
-import { doctor } from './doctor.mjs';
-import { authorize } from './auth.mjs';
-import { toolsRoot } from './storage.mjs';
-import { boundTools, boundExecutor } from './bindings.mjs';
-import { parseSpecArguments, specCommand, specError } from './spec.mjs';
-import { passthrough } from './passthrough.mjs';
+import { configurationHint } from './shared/config.mjs';
+import { doctor } from './commands/doctor/index.mjs';
+import { auth } from './commands/gh/auth.mjs';
+import { parseSpecArguments, runSpec, specError } from './commands/spec/index.mjs';
+import { git } from './commands/git/index.mjs';
+import { gh } from './commands/gh/index.mjs';
+import { printHelp } from './commands/help.mjs';
+import { set } from './commands/set/index.mjs';
+import { show } from './commands/set/show.mjs';
+import { clear } from './commands/clear.mjs';
 
-function printHelp(requestedLanguage) {
-  const choice = requestedLanguage || process.env.GIDD_LANG || process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || Intl.DateTimeFormat().resolvedOptions().locale;
-  if ((requestedLanguage || process.env.GIDD_LANG) && !/^(zh|en)(?:$|[-_])/.test(choice)) throw new Error('unsupported_help_language');
-  const language = /^zh(?:$|[-_])/.test(choice) ? 'zh-CN' : 'en';
-  console.log(readFileSync(new URL(`../references/gidd.link.help.${language}.md`, import.meta.url), 'utf8'));
-}
-
+// Keep validation order, output channels and exit codes at the CLI boundary.
 export async function main(args, { boundRepository } = {}) {
   const route = (args.shift() || 'help').toLowerCase();
   const command = route.startsWith('spec.') ? 'spec' : route;
@@ -32,10 +29,7 @@ export async function main(args, { boundRepository } = {}) {
     if (['.gh', '.git'].includes(command)) {
       if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');
       if (!boundRepository) throw new Error('repository_binding_required');
-      const controller = new AbortController(), cancel = () => controller.abort();
-      process.on('SIGINT', cancel); process.on('SIGTERM', cancel);
-      try { return await passthrough(boundRepository, command.slice(1), args, { signal: controller.signal }); }
-      finally { process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel); }
+      return await (command === '.git' ? git : gh)(boundRepository, args);
     }
     if (!Object.hasOwn(schemas,command)) throw new Error('unknown_command');
     if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');
@@ -63,30 +57,13 @@ export async function main(args, { boundRepository } = {}) {
     if (!isAbsolute(repository)) throw new Error('repository_must_be_absolute');
     if (!['doctor', '.gh.auth'].includes(command) && !existsSync(resolve(repository, '.git'))) throw new Error('not_git_repository_root');
     schema = schemas[command];
-    if (command === 'spec') {
-      const result = await specCommand(repository, specOptions);
-      if (result.markdown !== undefined) process.stdout.write(result.markdown);
-      else if (specOptions.action === 'list' && result.exitCode === 0) {
-        // Keep each workflow on one line while preserving ordinary JSON parsing.
-        const rows = result.report.specs.map(spec => '    ' + JSON.stringify(spec)).join(',\n');
-        console.log(`{\n  "scope": ${JSON.stringify(result.report.scope)},\n  "specs": [\n${rows}\n  ]\n}`);
-      }
-      else console.log(JSON.stringify(result.report, null, 2));
-      return result.exitCode;
-    }
+    if (command === 'spec') return await runSpec(repository, specOptions);
     let report;
     if (command === 'doctor') report = await doctor(repository, { offline, fixedRepository: true });
-    else if (configurationCommand) report = configure(repository,command === 'set.show' ? 'show' : command,key,value);
-    else {
-      const github = readAuthorizationConfiguration(repository);
-      const { gh } = boundTools(toolsRoot(), ['gh']);
-      const execute = boundExecutor({ gh });
-      const options = { repository, ...github, gh: gh.path };
-      const controller = new AbortController(), cancel = () => controller.abort();
-      process.on('SIGINT',cancel); process.on('SIGTERM',cancel);
-      try { report = await authorize(options,{ execute, signal: controller.signal, onEvent: event => console.error(JSON.stringify(event)) }); }
-      finally { process.removeListener('SIGINT',cancel); process.removeListener('SIGTERM',cancel); }
-    }
+    else if (command === 'set') report = set(repository, key, value);
+    else if (command === 'set.show') report = show(repository);
+    else if (command === 'clear') report = clear(repository, key);
+    else report = await auth(repository);
     if (command === 'set.show') process.stdout.write(report.content);
     else console.log(JSON.stringify(report));
     return ['ready','local_ready','checks_passed','checks_incomplete'].includes(report.status) ? 0 : 1;

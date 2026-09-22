@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import { copyFileSync, statSync, symlinkSync } from 'node:fs';
-import { doctor } from '../.agents/skills/gidd/scripts.js/doctor.mjs';
-import { configure } from '../.agents/skills/gidd/scripts.js/config.mjs';
+import { doctor } from '../.agents/skills/gidd/scripts.js/commands/doctor/index.mjs';
+import { configure } from '../.agents/skills/gidd/scripts.js/shared/config.mjs';
 import { bindFixture, diagnosis, toolsRoot, assert, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, readFileSync, repo, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
 
 const configText = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[spec]\ncurrent = "02.issue"\n[repo]\nremote.account = "Octocat"\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\n';
@@ -57,6 +57,24 @@ test('doctor combines independent checks once; offline never invokes network or 
     const accountId='config.repo.remote.account..online', urlId='config.repo.remote.url..online';
     const before=snapshot(f.root), online=scenario(), report=await doctor(f.root,online);
     assert.equal(report.status,'checks_passed');assert.equal(report.checks.length,16);
+    assert.deepEqual(online.calls.map(call => call.key).sort(),
+      ['git', 'gh', 'inside', 'root', 'head', 'author', 'committer', 'remotes', 'url', 'token', 'api', 'gh_repo', 'read'].sort(),
+      'Shared observations execute once even when multiple check entries depend on them');
+    const firstRun = scenario({ token: success('first-fixture-token') });
+    const secondRun = scenario({ token: success('second-fixture-token'), api: success('Other') });
+    const [firstReport, secondReport] = await Promise.all([doctor(f.root, firstRun), doctor(f.root, secondRun)]);
+    assert.equal(byId(firstReport, accountId).status, 'ready');
+    assert.equal(byId(secondReport, accountId).status, 'mismatch');
+    assert.equal(firstRun.calls.find(call => call.key === 'api').options.env.GH_TOKEN, 'first-fixture-token');
+    assert.equal(secondRun.calls.find(call => call.key === 'api').options.env.GH_TOKEN, 'second-fixture-token');
+    assert.ok(!JSON.stringify([firstReport, secondReport]).includes('fixture-token'), 'Private observations stay out of reports');
+    const unavailableHead = { ok: false, reason: 'command_failed', text: '' };
+    for (const [symbolic, reason] of [[success('refs/heads/main'), 'unborn_branch'], [unavailableHead, 'head_unreadable']]) {
+      const headReport = await doctor(f.root, { ...scenario({ head: unavailableHead, symbolic }), offline: true });
+      assert.equal(byId(headReport, 'folder.git.worktree').reason, reason);
+      assert.equal(byId(headReport, 'folder.git.identity').status, 'ready', 'Readable worktrees still supply identities when HEAD is unavailable');
+      assert.equal(byId(headReport, 'config.repo.remote.url').status, 'ready', 'HEAD readiness does not block remote observations');
+    }
     assert.deepEqual(byId(report, 'folder.git.identity').details, {
       author: { name: 'Local Author', email: 'author@example.test' },
       committer: { name: 'Local Committer', email: 'committer@example.test' },

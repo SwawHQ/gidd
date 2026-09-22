@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import { symlinkSync, unlinkSync, realpathSync, statSync } from 'node:fs';
-import { configure, editConfiguration, readRemoteConfiguration, normalizeRepositoryIdentity } from '../.agents/skills/gidd/scripts.js/config.mjs';
-import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/storage.mjs';
+import { configure, editConfiguration, readRemoteConfiguration, normalizeRepositoryIdentity } from '../.agents/skills/gidd/scripts.js/shared/config.mjs';
+import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/shared/storage.mjs';
 import { prepare, toolsRoot, adapter, assert, compile, existsSync, fixture, hash, join, json, mkdirSync, ok, readFileSync, repo, snapshot, stub, write } from './support/helpers.mjs';
 
 const configText = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[repo]\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\nremote.account = "Octocat"\n';

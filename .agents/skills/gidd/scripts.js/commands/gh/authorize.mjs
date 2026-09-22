@@ -1,6 +1,7 @@
 import { statSync } from 'node:fs';
-import { runCommand, validateOptions } from './github.mjs';
-import { githubEnvironment, selectGitHubAccount } from './execution-env.mjs';
+import { validateOptions } from '../../shared/github.mjs';
+import { runCommand } from '../../shared/process.mjs';
+import { githubEnvironment, selectGitHubAccount } from '../../shared/execution-env.mjs';
 
 // Platform-neutral orchestration. Windows is the only verified launcher today.
 export async function authorize(input, { execute = runCommand, env = process.env, signal, onEvent = () => {}, timeoutMs = 900000 } = {}) {

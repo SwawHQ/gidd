@@ -2,8 +2,8 @@ import { bindFixture, prepare } from './support/helpers.mjs';
 import { test } from 'node:test';
 import { publishRepositoryEntry, runRepositoryCommand } from './support/repository.mjs';
 import { copyFileSync, mkdirSync } from 'node:fs';
-import { runCommand } from '../.agents/skills/gidd/scripts.js/github.mjs';
-import { authorize } from '../.agents/skills/gidd/scripts.js/auth.mjs';
+import { runCommand } from '../.agents/skills/gidd/scripts.js/shared/process.mjs';
+import { authorize } from '../.agents/skills/gidd/scripts.js/commands/gh/authorize.mjs';
 import { toolsRoot, adapter, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, ok, readFileSync, repo, run, stub, write } from './support/helpers.mjs';
 
 const options = { repository: repo, gh: join(repo, 'fixture-gh.exe'), git: findGit(), account: 'octocat' };

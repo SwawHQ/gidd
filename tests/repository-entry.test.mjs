@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import { realpathSync, renameSync, statSync } from 'node:fs';
 import { assertInstallationRepository, checkRepositoryLink, publishRepositoryEntry } from './support/repository.mjs';
-import { inspectRepositoryEntry } from '../.agents/skills/gidd/scripts.js/repository-check.mjs';
+import { inspectRepositoryEntry } from '../.agents/skills/gidd/scripts.js/shared/repository-check.mjs';
 import { adapter, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, readFileSync, readdirSync, rmSync, run, snapshot, stub, toolsRoot, write } from './support/helpers.mjs';
 
 const quote = value => '"' + value.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/g, '$1$1') + '"';

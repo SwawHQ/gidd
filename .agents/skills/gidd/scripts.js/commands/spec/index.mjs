@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
-import { configurationPath, parseConfiguration, readConfigurationText } from './storage.mjs';
-import { loadSpec, loadSpecCatalog, specCatalogHint, specNamePattern } from './specs.mjs';
+import { configurationPath, parseConfiguration, readConfigurationText } from '../../shared/storage.mjs';
+import { loadSpec, loadSpecCatalog, specCatalogHint, specNamePattern } from '../../shared/specs.mjs';
 
 function language(explicit) {
   const choice = explicit || process.env.GIDD_LANG || process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || Intl.DateTimeFormat().resolvedOptions().locale;
@@ -75,4 +75,17 @@ export function specCommand(repository, options) {
   const issueCommand = `gidd.link spec.issue ${mode} --lang ${zh ? 'zh' : 'en'}`;
   const content = prompt.content.replaceAll('@gidd.link spec.issue.current@', issueCommand);
   return { markdown: header + content, exitCode: 0 };
+}
+
+
+export async function runSpec(repository, specOptions) {
+  const result = await specCommand(repository, specOptions);
+  if (result.markdown !== undefined) process.stdout.write(result.markdown);
+  else if (specOptions.action === 'list' && result.exitCode === 0) {
+    // Keep each workflow on one line while preserving ordinary JSON parsing.
+    const rows = result.report.specs.map(spec => '    ' + JSON.stringify(spec)).join(',\n');
+    console.log('{\n  "scope": ' + JSON.stringify(result.report.scope) + ',\n  "specs": [\n' + rows + '\n  ]\n}');
+  }
+  else console.log(JSON.stringify(result.report, null, 2));
+  return result.exitCode;
 }

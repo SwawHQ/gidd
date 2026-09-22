@@ -1,4 +1,4 @@
-import { parseDocument } from './vendor/yaml.mjs';
+import { parseDocument } from '../vendor/yaml.mjs';
 
 export const specLanguages = Object.freeze(['en', 'zh-CN']);
 export const invalidSpecResource = () => { throw new Error('spec_resources_invalid'); };

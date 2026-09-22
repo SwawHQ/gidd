@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import { symlinkSync, unlinkSync } from 'node:fs';
-import { managedToolValid } from '../.agents/skills/gidd/scripts.js/storage.mjs';
-import { findTool, toolEnvironment } from '../.agents/skills/gidd/scripts.js/tools.mjs';
-import { boundTools, boundExecutor, readBindings } from '../.agents/skills/gidd/scripts.js/bindings.mjs';
+import { managedToolValid } from '../.agents/skills/gidd/scripts.js/shared/storage.mjs';
+import { findTool, toolEnvironment } from '../.agents/skills/gidd/scripts.js/shared/tools.mjs';
+import { boundTools, boundExecutor, readBindings } from '../.agents/skills/gidd/scripts.js/shared/bindings.mjs';
 import { prepare, diagnosis, toolsRoot, adapter as shellAdapter, assert, code, compile, dirname, existsSync, fixture, hash, installSpec, join, json, makeZip, mkdirSync, ok, ps, readFileSync, run, startAdapter as startShellAdapter, stub, until, write } from './support/helpers.mjs';
 
 test('gh launcher discovers bound Git with empty PATH and refreshes after Git rebinding', () => {

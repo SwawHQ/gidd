@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import { symlinkSync } from 'node:fs';
-import { configure } from '../.agents/skills/gidd/scripts.js/config.mjs';
-import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/storage.mjs';
-import { specCommand, parseSpecArguments } from '../.agents/skills/gidd/scripts.js/spec.mjs';
-import { loadSpec, loadSpecCatalog, specRoot } from '../.agents/skills/gidd/scripts.js/specs.mjs';
-import { readSpecPrompt } from '../.agents/skills/gidd/scripts.js/spec-resources.mjs';
-import { parseSpecYaml, validateIssueForms } from '../.agents/skills/gidd/scripts.js/spec-data.mjs';
+import { configure } from '../.agents/skills/gidd/scripts.js/shared/config.mjs';
+import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/shared/storage.mjs';
+import { specCommand, parseSpecArguments } from '../.agents/skills/gidd/scripts.js/commands/spec/index.mjs';
+import { loadSpec, loadSpecCatalog, specRoot } from '../.agents/skills/gidd/scripts.js/shared/specs.mjs';
+import { readSpecPrompt } from '../.agents/skills/gidd/scripts.js/shared/spec-resources.mjs';
+import { parseSpecYaml, validateIssueForms } from '../.agents/skills/gidd/scripts.js/shared/spec-data.mjs';
 import { publishRepositoryEntry, runRepositoryCommand } from './support/repository.mjs';
 import { adapter, assert, bindFixture, compile, copySkill, dirname, findGit, fixture, join, json, mkdirSync, ok,
   readFileSync, readdirSync, rmSync, run, snapshot, stub, toolsRoot, write } from './support/helpers.mjs';

@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { delimiter, dirname, isAbsolute, join, resolve, sep } from 'node:path';
-import { runCommand } from './github.mjs';
+import { runCommand } from './process.mjs';
 import { compareVersions, executableName, managedExecutable, managedToolValid, versionPattern } from './storage.mjs';
 
 export const check = (id, status, reason, details = {}) => ({ id, status, reason, details });

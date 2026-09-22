@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
-import { configure, readConfiguration } from '../.agents/skills/gidd/scripts.js/config.mjs';
-import { validateGitSettings } from '../.agents/skills/gidd/scripts.js/git-settings.mjs';
-import { gitConfigurationEnvironment, selectGitHubAccount } from '../.agents/skills/gidd/scripts.js/execution-env.mjs';
-import { runPassthrough } from '../.agents/skills/gidd/scripts.js/passthrough.mjs';
-import { executionTimeout, noninteractiveEnvironment, rejectInteractiveArguments } from '../.agents/skills/gidd/scripts.js/noninteractive.mjs';
+import { configure, readConfiguration } from '../.agents/skills/gidd/scripts.js/shared/config.mjs';
+import { validateGitSettings } from '../.agents/skills/gidd/scripts.js/shared/git-settings.mjs';
+import { gitConfigurationEnvironment, selectGitHubAccount } from '../.agents/skills/gidd/scripts.js/shared/execution-env.mjs';
+import { runPassthrough } from '../.agents/skills/gidd/scripts.js/shared/passthrough.mjs';
+import { executionTimeout, noninteractiveEnvironment, rejectInteractiveArguments } from '../.agents/skills/gidd/scripts.js/shared/noninteractive.mjs';
 import { publishRepositoryEntry, runRepositoryCommand } from './support/repository.mjs';
 import { assert, fixture, findGit, join, mkdirSync, write, run, ok, compile, bindFixture, copySkill, adapter,
   dirname, readFileSync, repo, until, existsSync } from './support/helpers.mjs';
@@ -378,7 +378,7 @@ test('account selection isolates parallel accounts and supports Enterprise token
 test('streaming execution has no output cap and cancellation returns a nonzero status', async () => {
   const f = fixture();
   try {
-    const entry = pathToFileURL(join(repo, '.agents/skills/gidd/scripts.js/passthrough.mjs')).href;
+    const entry = pathToFileURL(join(repo, '.agents/skills/gidd/scripts.js/shared/passthrough.mjs')).href;
     const script = `const {runPassthrough}=await import(${JSON.stringify(entry)});process.exitCode=await runPassthrough(process.execPath,['-e','process.stdin.pipe(process.stdout);process.stderr.write("stderr");process.exitCode=17']);`;
     const input = 'x'.repeat(1100000) + '\n中文\0\n';
     const output = run(process.execPath, ['--input-type=module', '-e', script], { input, maxBuffer: 2000000 });

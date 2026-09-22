@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { toolEnvironment } from './tools.mjs';
-import { runCommand, checkGitHubIdentity } from './github.mjs';
+import { checkGitHubIdentity } from './github.mjs';
+import { runCommand } from './process.mjs';
 
 const tokenNames = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'];
 export function withoutEnvironment(env, names) {

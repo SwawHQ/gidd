@@ -1,5 +1,6 @@
 import { selectGitHubAccount } from './execution-env.mjs';
-import { runCommand, validateOptions } from './github.mjs';
+import { validateOptions } from './github.mjs';
+import { runCommand } from './process.mjs';
 
 // Git's credential protocol is private stdin/stdout, not GIDD diagnostic output.
 // Delegate credential formatting to gh after selecting the configured account.
