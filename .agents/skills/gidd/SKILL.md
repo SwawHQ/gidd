@@ -36,7 +36,7 @@ gidd.pre.ensure.cmd --tools-only=gh
 > 有意启用 GIDD 时，才需按本节或下面的第三节操作
 
 1. 确认 `<目标仓库根>/.agents/skills/gidd/gidd.link.cmd` 是否已存在（若不存在表示仓库还未经配置，请跳到“三、GIDD 启用步骤”）
-2. 在 `<目标仓库根>` 下调用 `./.agents/skills/gidd/gidd.link.cmd doctor --offline` 查看诊断（`gidd.link.cmd` 会检查自身所归属的仓库，勿跨仓库混用）
+2. 在 `<目标仓库根>` 下调用 `./.agents/skills/gidd/gidd.link.cmd doctor --offline` 查看诊断（`gidd.link.cmd` 会检查自身所归属的仓库，勿跨仓库混用）；可用 `--lang zh|en` 指定语言，否则依次取 `GIDD_LANG`、系统语言。检查开关和双语诊断提示见 [doctor.toml](references/doctor.toml)，禁用或未声明的检查不代表通过
 3. 按诊断的提示进行配置或修复（有些必须要人类协助）并再次运行诊断，直至其退出码为 `0`，执行 `gidd.link.cmd spec.current`，便可按其输出的指引开展工作了
 4. `gidd.link.cmd` 若损坏，执行 `gidd.pre.ensure.cmd --repo <仓库路径>` 可重新创建
 

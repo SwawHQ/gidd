@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import { copyFileSync, statSync, symlinkSync } from 'node:fs';
-import { doctor } from '../.agents/skills/gidd/scripts.js/commands/doctor/index.mjs';
+import { pathToFileURL } from 'node:url';
+import { doctor as diagnose } from '../.agents/skills/gidd/scripts.js/commands/doctor/index.mjs';
+import { parseCatalog } from '../.agents/skills/gidd/scripts.js/commands/doctor/catalog.mjs';
 import { configure } from '../.agents/skills/gidd/scripts.js/shared/config.mjs';
-import { bindFixture, diagnosis, toolsRoot, assert, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, readFileSync, repo, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
+import { bindFixture, copySkill, diagnosis, toolsRoot, assert, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, readFileSync, repo, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
 
 const configText = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[spec]\ncurrent = "02.issue"\n[repo]\nremote.account = "Octocat"\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\n';
 const checkOrder = [
@@ -23,7 +25,141 @@ const byId = (report, id) => {
   assert.equal(matches.length, 1, id);
   return matches[0];
 };
+const doctor = (target, options = {}) => diagnose(target, { lang: 'en', ...options });
 const success = text => ({ ok: true, reason: 'process_exit', text });
+const catalogText = readFileSync(join(repo, '.agents/skills/gidd/references/doctor.toml'), 'utf8').replaceAll('\r\n', '\n');
+
+test('doctor catalog rejects malformed declarations before executing any checks', async () => {
+  const f = fixture();
+  try {
+    const catalogPath = join(f.root, 'doctor.toml'), ids = new Set(checkOrder);
+    assert.equal(parseCatalog(catalogText.replaceAll('\n', '\r\n'), ids).checks.size, checkOrder.length);
+    const invalid = [
+      [catalogText.replace('schema_version = 1', 'schema_version = 2'), 'invalid_syntax'],
+      [catalogText.replace('schema_version = 1', ''), 'invalid_schema'],
+      [catalogText + '\n[checks."tool.unknown"]\nenabled = true\n', 'unknown_check'],
+      [catalogText + '\n[checks."tool.git"]\nenabled = true\n', 'duplicate_table'],
+      [catalogText.replace('\nenabled = true', '\nenabled = true\nenabled = false'), 'duplicate_key'],
+      [catalogText.replace('\nenabled = true', '\nenabled = "true"'), 'invalid_enabled'],
+      [catalogText.replace('\nenabled = true', ''), 'invalid_enabled'],
+      [catalogText.replace('\nenabled = true', '\nenabled = true\nmodule = "../untrusted.mjs"'), 'unknown_field'],
+      [catalogText.replace('Inspect this check', 'Unknown {credential} in this check'), 'unknown_placeholder'],
+      [catalogText.replace('Inspect this check', 'Invalid {id in this check'), 'invalid_placeholder'],
+      [catalogText.replace('commands = []', 'commands = ["unknown"]'), 'unknown_command'],
+      [catalogText.replace('executable = "ensure"', 'executable = "shell"'), 'invalid_command'],
+      [catalogText.replace('args = ["--repo","{repository}"]', 'args = [1]'), 'invalid_syntax'],
+      [catalogText.replace('args = ["--repo","{repository}"]', 'args = ["{untrusted}"]'), 'unknown_placeholder'],
+      [catalogText.replace('required_inputs = ["{config_key}"]', 'required_inputs = true'), 'invalid_command'],
+      [catalogText.replace('requires_configuration_review = true', 'requires_configuration_review = "true"'), 'invalid_command'],
+      [catalogText.replace('push.en = "Push permission is not checked."', ''), 'missing_translation'],
+      [catalogText.replace('push.en = "Push permission is not checked."', 'push.en = "Unknown report context {id}"'), 'unknown_placeholder'],
+      [catalogText.replace('hint.en = "This check is disabled', 'typo.en = "This check is disabled'), 'unknown_field'],
+      [catalogText.replace(/^hint.zh-CN = .*\n/m, ''), 'missing_translation'],
+      [catalogText.replace('请启用 {id}', '请启用此检查'), 'translation_placeholders_mismatch'],
+      [catalogText.replace('hint.zh-CN =', 'hint.fr ='), 'unknown_field'],
+      [catalogText.replace(/^notes.gh.zh-CN = .*\n/m, ''), 'missing_translation'],
+      [catalogText.replace(/^notes.gh.zh-CN = .*$/m, 'notes.gh.zh-CN = "{id}"'), 'unknown_placeholder'],
+      [catalogText + '\n[reasons."offline"]\nhint.en = "Duplicate"\nhint.zh-CN = "Duplicate"\n', 'duplicate_table'],
+      [catalogText + '\n[checks."tool.git".reasons."bad*pattern"]\nhint.en = "Invalid pattern"\nhint.zh-CN = "Invalid pattern"\n', 'invalid_syntax'],
+      [catalogText + '\n#' + 'x'.repeat(131072), 'too_large'],
+    ];
+    for (const [text, reason] of invalid) {
+      assert.notEqual(text, catalogText, 'The invalid fixture must change the catalog: ' + reason);
+      write(catalogPath, text);
+      const result = await doctor(f.root, { catalogPath, execute: () => assert.fail('Invalid catalog executed a probe') });
+      assert.equal(result.status, 'needs_attention');
+      assert.ok(result.reason?.startsWith('doctor_catalog_' + reason), result.reason + ' expected ' + reason);
+      assert.deepEqual(result.checks, []);
+      assert.match(result.hint, /references\/doctor\.toml/);
+    }
+    rmSync(catalogPath);
+    assert.equal((await doctor(f.root, { catalogPath })).reason, 'doctor_catalog_missing');
+    mkdirSync(catalogPath);
+    assert.equal((await doctor(f.root, { catalogPath })).reason, 'doctor_catalog_not_a_file');
+    rmSync(catalogPath, { recursive: true });
+    write(catalogPath, Buffer.from([0xff]));
+    assert.equal((await doctor(f.root, { catalogPath })).reason, 'doctor_catalog_unreadable');
+    // Literal strings, trailing commas and hashes inside strings retain TOML meaning.
+    const syntax = catalogText.replace('hint.en = "Use the currently supported Windows x64 platform."',
+      "hint.en = 'Use # literal text.' # comment").replace('commands = ["ensure"]', "commands = ['ensure', ] # comment");
+    assert.equal(parseCatalog(syntax, ids).checks.get('tool.platform')['hint.en'], 'Use # literal text.');
+  } finally { f.dispose(); }
+});
+
+test('installed doctor loads its own catalog and returns nonzero for disabled or undeclared checks', () => {
+  const f = fixture();
+  try {
+    const skill = join(f.root, 'installed skill 中文 & space');
+    copySkill(skill);
+    const catalog = join(skill, 'references/doctor.toml'), driver = join(f.root, 'doctor-driver.mjs');
+    write(driver, 'import { main } from ' + JSON.stringify(pathToFileURL(join(skill, 'scripts.js/gidd.mjs')).href) +
+      '; process.exitCode = await main(["doctor", "--offline"], { boundRepository: ' + JSON.stringify(f.root) + ' });');
+    for (const [text, reason] of [
+      [catalogText.replaceAll('enabled = true', 'enabled = false'), 'disabled'],
+      [catalogText.slice(0, catalogText.indexOf('[checks.')), 'not_declared'],
+    ]) {
+      write(catalog, text);
+      const before = snapshot(f.root), output = run(process.execPath, [driver]);
+      assert.equal(output.status, 1);
+      assert.equal(json(output).status, 'checks_incomplete');
+      assert.ok(json(output).checks.every(c => c.reason === reason));
+      assert.deepEqual(snapshot(f.root), before);
+    }
+    write(catalog, 'bad TOML');
+    const damaged = run(process.execPath, [driver]);
+    assert.equal(damaged.status, 1);
+    assert.equal(json(damaged).status, 'needs_attention');
+    assert.match(json(damaged).reason, /^doctor_catalog_/);
+  } finally { f.dispose(); }
+});
+
+test('doctor CLI resolves language precedence and validates flags in installed copies', () => {
+  const f = fixture();
+  try {
+    const skill = join(f.root, 'installed bilingual skill 中文'), driver = join(f.root, 'language-driver.mjs');
+    copySkill(skill);
+    const catalog = join(skill, 'references/doctor.toml');
+    write(catalog, catalogText.replaceAll('enabled = true', 'enabled = false'));
+    write(driver, 'import { main } from ' + JSON.stringify(pathToFileURL(join(skill, 'scripts.js/gidd.mjs')).href) +
+      '; process.exitCode = await main(process.argv.slice(2), { boundRepository: ' + JSON.stringify(f.root) + ' });');
+    const invoke = (args, env = {}) => run(process.execPath, [driver, ...args], {
+      env: { GIDD_LANG: '', LC_ALL: '', LC_MESSAGES: '', LANG: 'en_US.UTF-8', ...env },
+    });
+    for (const [args, env, zh] of [
+      [['--lang', 'zh'], { GIDD_LANG: 'en' }, true],
+      [['--lang', 'en'], { GIDD_LANG: 'invalid', LC_ALL: 'zh_CN.UTF-8' }, false],
+      [['--lang', 'zh-CN'], {}, true],
+      [['--lang', 'zh_CN'], {}, true],
+      [[], { GIDD_LANG: 'zh', LC_ALL: 'en_US.UTF-8' }, true],
+      [[], { GIDD_LANG: 'en', LC_ALL: 'zh_CN.UTF-8' }, false],
+      [[], { LC_ALL: 'zh_CN.UTF-8', LC_MESSAGES: 'en_US.UTF-8' }, true],
+      [[], { LC_MESSAGES: 'zh_CN.UTF-8', LANG: 'en_US.UTF-8' }, true],
+      [[], { LANG: 'zh_TW.UTF-8' }, true],
+      [[], { LC_ALL: 'fr_FR.UTF-8', LANG: 'zh_CN.UTF-8' }, false],
+    ]) {
+      const result = invoke(['doctor', ...args, '--offline'], env), report = json(result);
+      assert.equal(result.status, 1); assert.equal(report.status, 'checks_incomplete');
+      assert.equal(/未发现错误/.test(report.hint), zh);
+      for (const item of report.checks) {
+        assert.equal(item.reason, 'disabled'); assert.equal(/已在/.test(item.hint), zh);
+        assert.ok(item.hint.includes(item.id));
+      }
+    }
+    assert.match(json(invoke(['doctor', '--offline', '--lang', 'zh'])).hint, /未执行联网检查/);
+    for (const args of [['--lang'], ['--lang', '--offline'], ['--lang', 'en', '--lang', 'zh'], ['--offline', '--offline'], ['--unknown']]) {
+      const result = invoke(['doctor', ...args]);
+      assert.equal(result.status, 2); assert.equal(json(result).reason, 'invalid_arguments');
+    }
+    for (const [args, env] of [[['--lang', 'fr'], {}], [[], { GIDD_LANG: 'fr' }]]) {
+      const result = invoke(['doctor', ...args], env);
+      assert.equal(result.status, 2); assert.equal(json(result).reason, 'unsupported_doctor_language');
+    }
+    write(catalog, 'invalid TOML');
+    const en = json(invoke(['doctor', '--lang', 'en'])), zh = json(invoke(['doctor', '--lang', 'zh']));
+    assert.equal(en.reason, zh.reason); assert.deepEqual(zh.checks, []);
+    assert.match(en.hint, /Repair or restore/); assert.match(zh.hint, /请修复或恢复/);
+  } finally { f.dispose(); }
+});
 
 test('doctor combines independent checks once; offline never invokes network or authentication', async () => {
   const f = fixture();
@@ -57,6 +193,37 @@ test('doctor combines independent checks once; offline never invokes network or 
     const accountId='config.repo.remote.account..online', urlId='config.repo.remote.url..online';
     const before=snapshot(f.root), online=scenario(), report=await doctor(f.root,online);
     assert.equal(report.status,'checks_passed');assert.equal(report.checks.length,16);
+    const localizedCatalogPath = join(f.root, 'bilingual-doctor.toml');
+    // Compare actual diagnoses and executed probes, including failures and skips.
+    // Only human-facing hints and notes may differ between languages.
+    const machineFields = value => JSON.parse(JSON.stringify(value, (key, item) => ['hint', 'note'].includes(key) ? undefined : item));
+    const failed = { ok: false, reason: 'command_failed', text: 'PRIVATE_TOKEN' };
+    for (const options of [
+      {},
+      { offline: true, config: configText.replace('credential.mode = "inherit"', 'credential.mode = "gh"') },
+      { overrides: { gh: failed } },
+      { overrides: { head: failed } },
+      { overrides: { url: success('git@github.com:owner/repo.git') } },
+      { catalog: catalogText.replace('[checks."tool.git"]\nenabled = true', '[checks."tool.git"]\nenabled = false') },
+      { catalog: catalogText.slice(0, catalogText.indexOf('[checks.')) },
+      { config: 'invalid TOML', offline: true },
+      { config: configText.replace('remote.url = "https://github.com/owner/repo"', 'remote.url = "bad url"') },
+    ]) {
+      write(localizedCatalogPath, options.catalog || catalogText);
+      write(join(f.root, '.agents/skills/gidd/config.toml'), options.config || configText);
+      const enRun = scenario(options.overrides), zhRun = scenario(options.overrides);
+      const en = await doctor(f.root, { ...enRun, offline: options.offline, catalogPath: localizedCatalogPath, lang: 'en' });
+      const zh = await doctor(f.root, { ...zhRun, offline: options.offline, catalogPath: localizedCatalogPath, lang: 'zh' });
+      assert.deepEqual(machineFields(zh), machineFields(en));
+      assert.deepEqual(zhRun.calls, enRun.calls);
+      assert.ok(!JSON.stringify(zh).includes('PRIVATE_TOKEN'));
+      const messages = r => [r.hint, ...r.checks.flatMap(c => [c.hint, c.details?.note]).filter(Boolean)];
+      assert.ok(messages(en).every(text => !/\p{Script=Han}/u.test(text)));
+      assert.ok(messages(zh).every(text => /\p{Script=Han}/u.test(text)));
+      assert.ok(messages(zh).every(text => !/[{}]/.test(text)));
+    }
+    rmSync(localizedCatalogPath);
+    write(join(f.root, '.agents/skills/gidd/config.toml'), configText);
     assert.deepEqual(online.calls.map(call => call.key).sort(),
       ['git', 'gh', 'inside', 'root', 'head', 'author', 'committer', 'remotes', 'url', 'token', 'api', 'gh_repo', 'read'].sort(),
       'Shared observations execute once even when multiple check entries depend on them');
@@ -112,6 +279,68 @@ test('doctor combines independent checks once; offline never invokes network or 
     assert.equal(local.status,'local_ready');assert.ok(!offline.calls.some(c=>['token','api','read','gh_repo'].includes(c.key)));
     for(const id of [accountId,urlId]) assert.equal(byId(local,id).reason,'offline');
     assert.deepEqual(snapshot(f.root),before);
+    const catalogPath = join(f.root, 'doctor.toml');
+    const withDisabled = (...ids) => ids.reduce((text, id) =>
+      text.replace(`[checks."${id}"]\nenabled = true`, `[checks."${id}"]\nenabled = false`), catalogText);
+    const selection = async (text, overrides = {}, offline = false) => {
+      write(catalogPath, text);
+      const sc = scenario(overrides), result = await doctor(f.root, { ...sc, catalogPath, offline });
+      return { result, calls: sc.calls };
+    };
+    for (const disabled of ['tool.git', 'tool.gh', 'folder.git.worktree', 'folder.git.identity', 'config.toml',
+      'config.repo.remote.name', 'config.repo.remote.url', 'config.repo.remote.account',
+      'config.git.user.mode', 'config.git.user.name', 'config.git.user.email', 'config.git.credential.mode', accountId, urlId]) {
+      const { result, calls } = await selection(withDisabled(disabled));
+      assert.equal(byId(result, disabled).reason, 'disabled');
+      assert.equal(result.status, 'checks_incomplete', disabled);
+      const forbidden = {
+        'tool.git': ['git', 'inside', 'root', 'head', 'author', 'committer', 'url', 'remotes', 'read'],
+        'tool.gh': ['gh', 'token', 'api', 'gh_repo'],
+        'folder.git.worktree': ['inside', 'root', 'head', 'author', 'committer', 'url', 'remotes', 'read'],
+        'folder.git.identity': ['author', 'committer'],
+        'config.toml': ['author', 'committer', 'url', 'remotes', 'token', 'api', 'gh_repo', 'read'],
+        'config.repo.remote.name': ['remotes', 'url', 'gh_repo', 'read'],
+        'config.repo.remote.url': ['url', 'token', 'api', 'gh_repo', 'read'],
+        'config.repo.remote.account': ['token', 'api', 'gh_repo'],
+        'config.git.user.mode': ['author', 'committer'],
+        'config.git.user.name': ['author', 'committer'],
+        'config.git.user.email': ['author', 'committer'],
+        'config.git.credential.mode': ['read'],
+        [accountId]: ['token', 'api', 'gh_repo'],
+        [urlId]: ['gh_repo', 'read'],
+      }[disabled];
+      assert.ok(!calls.some(call => forbidden.includes(call.key)), `Disabled ${disabled}: ${calls.map(c => c.key)}`);
+    }
+    const skipped = await selection(withDisabled(accountId, urlId), {}, true);
+    assert.equal(byId(skipped.result, accountId).reason, 'disabled', 'Explicit disabling wins over offline');
+    assert.equal(skipped.result.status, 'checks_incomplete');
+    assert.ok(!skipped.calls.some(c => ['token', 'api', 'gh_repo', 'read'].includes(c.key)));
+    const noChecks = await selection(catalogText.slice(0, catalogText.indexOf('[checks.')));
+    assert.equal(noChecks.result.status, 'checks_incomplete'); assert.equal(noChecks.calls.length, 0);
+    assert.ok(noChecks.result.checks.every(c => c.reason === 'not_declared'));
+    const disabledAll = await selection(catalogText.replaceAll('enabled = true', 'enabled = false'));
+    assert.equal(disabledAll.result.status, 'checks_incomplete'); assert.equal(disabledAll.calls.length, 0);
+    assert.ok(disabledAll.result.checks.every(c => c.reason === 'disabled'));
+    const customized = await selection(catalogText + '\n[checks."tool.gh".reasons."command_failed"]\nhint.en = "Repair {id}: {reason}."\nhint.zh-CN = "Repair {id}: {reason}."\ncommands = []\n',
+      { gh: { ok: false, reason: 'command_failed', text: 'PRIVATE_TOKEN' } });
+    const customCheck = byId(customized.result, 'tool.gh');
+    assert.equal(customCheck.hint, 'Repair tool.gh: command_failed.'); assert.equal(customCheck.commands, undefined);
+    assert.ok(!JSON.stringify(customized.result).includes('PRIVATE_TOKEN'));
+    const disabledHint = await selection(withDisabled(accountId) +
+      '\n[checks."' + accountId + '".reasons."disabled"]\nhint.en = "Account probe disabled: {id}."\nhint.zh-CN = "Account probe disabled: {id}."\n');
+    assert.equal(byId(disabledHint.result, accountId).hint, 'Account probe disabled: ' + accountId + '.');
+    assert.ok(!disabledHint.calls.some(c => ['token', 'api', 'gh_repo'].includes(c.key)));
+    const patterns = catalogText + '\n[reasons."command_*"]\nhint.en = "Shared reason."\nhint.zh-CN = "Shared reason."\n' +
+      '\n[checks."tool.gh".reasons."command_*"]\nhint.en = "Check reason prefix."\nhint.zh-CN = "Check reason prefix."\n' +
+      '\n[checks."tool.gh".reasons."command_fail*"]\nhint.en = "Longer reason prefix."\nhint.zh-CN = "Longer reason prefix."\n';
+    const failure = { gh: { ok: false, reason: 'command_failed', text: '' } };
+    assert.equal(byId((await selection(patterns, failure)).result, 'tool.gh').hint, 'Longer reason prefix.');
+    assert.equal(byId((await selection(patterns + '\n[checks."tool.gh".reasons."command_failed"]\nhint.en = "Exact reason."\nhint.zh-CN = "Exact reason."\n', failure)).result,
+      'tool.gh').hint, 'Exact reason.');
+    const partial = catalogText.replace('[checks."tool.js_runtime"]\nenabled = true\n', '');
+    assert.equal(byId((await selection(partial)).result, 'tool.js_runtime').reason, 'not_declared');
+    // Selection and templates are reloaded per invocation and never mutate the registry.
+    assert.equal((await selection(catalogText)).result.status, 'checks_passed');
     for(const key of ['api','read','gh_repo']) {
       const failed=scenario({[key]:{ok:false,reason:'process_timeout',text:'PRIVATE_TOKEN'}}), r=await doctor(f.root,failed);
       assert.equal(r.status,'needs_attention');assert.ok(!JSON.stringify(r).includes('PRIVATE_TOKEN'));

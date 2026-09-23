@@ -9,8 +9,6 @@ export function run(context) {
     const mode = context.configuration().git?.credential?.mode;
     if (mode === undefined) throw new Error('config_missing_git_credential_mode');
     validateGitField('credential.mode', mode);
-    return { id, status: 'ready', details: { mode,
-      note: mode === 'gh' ? 'gh credentials apply to HTTPS; SSH uses its native configuration.' :
-        'Git authentication is inherited; the push account is not verified.' } };
+    return { id, status: 'ready', details: { mode } };
   } catch (error) { return { id, status: 'invalid', reason: error.message }; }
 }

@@ -9,11 +9,15 @@ export async function run(context) {
   if (blocker) return blockCheck(check(id, 'ready'), blocker.id);
   const accountId = 'config.repo.remote.account..online';
   const account = await context.run(accountId), { env } = await context.account();
+  const credential = await context.run('config.git.credential.mode');
   const probes = {};
   if (account.status !== 'ready') probes.gh_remote_read = { status: 'not_checked', reason: 'dependency_unavailable', blocked_by: accountId };
   else probes.gh_remote_read = await checkGitHubRepository({ gh: context.bindings().bindings.gh.path, ...context.apiTarget() },
     (exe, args) => context.execute(exe, args, { cwd: context.targetExists ? context.target : undefined, env, timeoutMs: 15000 }));
   if (url.details.protocol !== 'https') probes.git_remote_read = { status: 'not_checked', reason: 'ssh_probe_unsupported' };
+  else if (credential.status !== 'ready') {
+    probes.git_remote_read = { status: 'not_checked', reason: 'dependency_unavailable', blocked_by: credential.id };
+  }
   else if (context.configuration().git?.credential?.mode === 'gh' && account.status !== 'ready') {
     probes.git_remote_read = { status: 'not_checked', reason: 'dependency_unavailable', blocked_by: accountId };
   } else {

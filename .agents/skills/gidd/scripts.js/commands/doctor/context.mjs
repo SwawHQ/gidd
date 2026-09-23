@@ -12,7 +12,7 @@ import { inspectWorktree } from './shared/worktree.mjs';
 import { inspectAccount } from './shared/account.mjs';
 import { check, safeReason } from './shared/result.mjs';
 
-export function createContext(target, { offline, fixedRepository, execute }, entries) {
+export function createContext(target, { offline, fixedRepository, execute, catalog, lang }, entries) {
   if (target !== undefined && (!target || !isAbsolute(target))) throw new Error('repository_must_be_absolute');
   target = target === undefined ? null : resolve(target);
   let configRoot, targetExists = false, targetError;
@@ -27,13 +27,27 @@ export function createContext(target, { offline, fixedRepository, execute }, ent
     if (!observations.has(key)) observations.set(key, observe());
     return observations.get(key);
   };
+  const skipped = id => {
+    const declared = catalog.checks.get(id);
+    const reason = !declared ? 'not_declared' : !declared.enabled ? 'disabled' : offline && entries.get(id).online ? 'offline' : null;
+    return reason ? check(id, 'not_checked', reason) : null;
+  };
   const context = {
-    target, configRoot, targetExists, targetError, offline, fixedRepository, execute,
-    configuration: () => memo('configuration', () => inspectConfiguration(configRoot)),
+    target, configRoot, targetExists, targetError, offline, fixedRepository, execute, catalog, lang,
+    configuration: () => memo('configuration', () => {
+      const result = skipped('config.toml');
+      return result ? { result, remote: {} } : inspectConfiguration(configRoot);
+    }),
     bindings: () => memo('bindings', inspectBindings),
-    remote: key => memo('remote.' + key, () => remoteField(context.configuration(), key)),
-    worktree: () => memo('worktree', () => inspectWorktree(context)),
-    account: () => memo('account', () => inspectAccount(context)),
+    remote: key => memo('remote.' + key, () => skipped('config.repo.remote.' + key) || remoteField(context.configuration(), key)),
+    worktree: () => memo('worktree', () => {
+      const result = skipped('folder.git.worktree');
+      return result ? { result, readable: false } : inspectWorktree(context);
+    }),
+    account: () => memo('account', async () => {
+      const result = skipped('config.repo.remote.account..online');
+      return result ? { result, env: (await context.environment()).env } : inspectAccount(context);
+    }),
     apiTarget: () => memo('apiTarget', () => {
       const url = context.remote('url'), account = context.remote('account'), name = context.remote('name');
       return url.details?.expected && account.status === 'ready' ? githubTarget({
@@ -63,7 +77,7 @@ export function createContext(target, { offline, fixedRepository, execute }, ent
       if (!results.has(id)) results.set(id, Promise.resolve().then(() => {
         const entry = entries.get(id);
         // Skip network entries before entering their code or resolving prerequisites.
-        return offline && entry.online ? check(id, 'not_checked', 'offline') : entry.run(context);
+        return skipped(id) || entry.run(context);
       }));
       return results.get(id);
     },

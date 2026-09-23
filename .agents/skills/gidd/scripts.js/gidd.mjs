@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { configurationHint } from './shared/config.mjs';
-import { doctor } from './commands/doctor/index.mjs';
+import { doctor, parseDoctorArguments } from './commands/doctor/index.mjs';
 import { auth } from './commands/gh/auth.mjs';
 import { parseSpecArguments, runSpec, specError } from './commands/spec/index.mjs';
 import { git } from './commands/git/index.mjs';
@@ -44,12 +44,10 @@ export async function main(args, { boundRepository } = {}) {
       if (command === 'set') { value = args.shift(); if (value === undefined) throw new Error('invalid_arguments'); }
     }
     if (command === '.gh.auth' && args.some(arg => ['--hostname','--account','--remote'].includes(arg) || !arg.startsWith('--') && args.indexOf(arg) === 0)) throw new Error('github_parameters_moved_to_config');
-    let offline = false;
+    let doctorOptions;
     if (command === 'doctor') {
-      const flags = args.filter(arg => arg === '--offline');
-      if (flags.length > 1) throw new Error('invalid_arguments');
-      offline = flags.length === 1;
-      args = args.filter(arg => arg !== '--offline');
+      doctorOptions = parseDoctorArguments(args);
+      args = [];
     }
     if (args.length) throw new Error('invalid_arguments');
     if (!boundRepository) throw new Error('repository_binding_required');
@@ -59,13 +57,17 @@ export async function main(args, { boundRepository } = {}) {
     schema = schemas[command];
     if (command === 'spec') return await runSpec(repository, specOptions);
     let report;
-    if (command === 'doctor') report = await doctor(repository, { offline, fixedRepository: true });
+    if (command === 'doctor') report = await doctor(repository, { ...doctorOptions, fixedRepository: true });
     else if (command === 'set') report = set(repository, key, value);
     else if (command === 'set.show') report = show(repository);
     else if (command === 'clear') report = clear(repository, key);
     else report = await auth(repository);
     if (command === 'set.show') process.stdout.write(report.content);
     else console.log(JSON.stringify(report));
+    // Explicit omissions and blocked local checks cannot establish readiness.
+    // Preserve the existing zero exit for otherwise healthy, partial online probes.
+    if (command === 'doctor' && report.checks?.some(item => item.status === 'not_checked' &&
+      (!item.id.endsWith('..online') || ['disabled', 'not_declared'].includes(item.reason)))) return 1;
     return ['ready','local_ready','checks_passed','checks_incomplete'].includes(report.status) ? 0 : 1;
   } catch (error) {
     const reason = /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : 'operation_failed';

@@ -334,6 +334,12 @@ test('doctor and spec readers validate both languages and complete dependencies 
     rmSync(path);
     assert.equal(check(json(ok(s.invoke(['doctor', '--offline'])))).status, 'ready');
     const promptPath = join(s.root, '04.issue.ask-commit/prompt.en.md');
+    const originalPrompt = readFileSync(promptPath, 'utf8');
+    rmSync(promptPath);
+    const missingPrompt = check(s.diagnose());
+    assert.equal(missingPrompt.reason, 'spec_resources_missing');
+    assert.match(missingPrompt.hint, /specs\/<name>\//, 'Catalog failures have no validated spec name to interpolate');
+    write(promptPath, originalPrompt);
     write(promptPath, readFileSync(promptPath, 'utf8') + '\n@include ../_share/fragment.en.md@\n');
     write(path, '@include missing.md@\n');
     const before = snapshot(f.root);

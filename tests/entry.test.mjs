@@ -301,11 +301,11 @@ test('generated launcher pins an external Unicode/percent path and does not sear
     const failed=adapter(f.root,{action:'bootstrap',repositoryRoot:s.target,responses:{},downloads:{},yes:true,failPublish:true},
       {env:{...env,PATH:nextBin}});
     assert.notEqual(failed.status,0); assert.equal(hash(launcher),previous);
-    assert.match(ok(s.invoke(['help','en'],{...env,PATH:''})).stdout,/Check tools, repository and GitHub identity/);
+    assert.match(ok(s.invoke(['help','en'],{...env,PATH:''})).stdout,/GIDD \(Windows x64/);
 
     const log=join(f.root,'unexpected-probe.log'), fake=compile(f.root);
     stub(fake,join(toolsRoot(home),'bun/bun.exe'),undefined,true);
-    assert.match(ok(s.invoke(['help','en'],{...env,PATH:'',GIDD_TEST_PROBE_LOG:log})).stdout,/Check tools, repository and GitHub identity/);
+    assert.match(ok(s.invoke(['help','en'],{...env,PATH:'',GIDD_TEST_PROBE_LOG:log})).stdout,/GIDD \(Windows x64/);
     assert.equal(hash(launcher),previous); assert.equal(existsSync(log),false);
     rmSync(join(bin,`${name}.exe`));
     assert.notEqual(s.invoke(['help','en'],{...env,GIDD_TEST_PROBE_LOG:log}).status,0);
@@ -314,7 +314,7 @@ test('generated launcher pins an external Unicode/percent path and does not sear
     stub(process.execPath,join(root,name,`${name}.exe`),undefined,true);
     assert.equal(json(ok(s.ensure([],{...env,PATH:''}))).runtime.details.source,'managed');
     assert.doesNotMatch(readFileSync(launcher,'utf8'),/chcp|[^\x00-\x7f]/i);
-    assert.match(ok(s.invoke(['--help','en'],{...env,PATH:''})).stdout,/Check tools, repository and GitHub identity/);
+    assert.match(ok(s.invoke(['--help','en'],{...env,PATH:''})).stdout,/GIDD \(Windows x64/);
 
   } finally {f.dispose();}
 });
@@ -327,9 +327,9 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
     for (const alias of ['--help','-h']) {
       assert.equal(ok(s.invoke([alias,'zh'])).stdout, ok(s.invoke(['help','zh'])).stdout);
     }
-    assert.match(ok(s.invoke([])).stdout, /Check tools, repository and GitHub identity/);
+    assert.match(ok(s.invoke([])).stdout, /GIDD \(Windows x64/);
     assert.match(ok(s.invoke([], { GIDD_LANG: 'zh' })).stdout, /显示中文帮助/);
-    assert.match(ok(s.invoke(['help','en'], { GIDD_LANG: 'zh' })).stdout, /Check tools, repository and GitHub identity/);
+    assert.match(ok(s.invoke(['help','en'], { GIDD_LANG: 'zh' })).stdout, /GIDD \(Windows x64/);
     for (const language of ['en', 'zh']) {
       const help = ok(s.invoke(['help', language])).stdout;
       assert.equal(help.trim(), readFileSync(join(s.skill, `references/gidd.link.help.${language === 'zh' ? 'zh-CN' : 'en'}.md`), 'utf8').trim());

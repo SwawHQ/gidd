@@ -77,7 +77,7 @@ test('repository preparation runs entirely in PowerShell; generated commands run
     ok(s.invoke(entry,['--repo',target,'--jsruntime='+(process.versions.bun?'bun':'node')],{env}));
     const native=join(s.skill,'scripts.powershell');
     assert.ok(native.startsWith(f.root));rmSync(native,{recursive:true});
-    assert.match(ok(s.invoke(s.link(target),['help','en'],{env:{PATH:''}})).stdout,/Check tools, repository and GitHub identity/);
+    assert.match(ok(s.invoke(s.link(target),['help','en'],{env:{PATH:''}})).stdout,/GIDD \(Windows x64/);
     assert.equal(json(s.invoke(s.link(target),['doctor','--offline'],{env:{PATH:''}})).schema,'gidd.doctor/v1');
   } finally {f.dispose();}
 });
@@ -328,10 +328,10 @@ test('repository links repair generated contents and preserve target, arguments 
     assert.deepEqual(snapshot(f.root), tree); assert.equal(statSync(link).mtimeMs, modified);
     const replacement = join(f.root, 'replacement skill'); copySkill(replacement);
     assert.equal(publishRepositoryEntry(target, join(replacement, 'scripts.js/gidd.mjs')).action, 'updated');
-    assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /Check tools, repository and GitHub identity/);
+    assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /GIDD \(Windows x64/);
     assert.equal(publishRepositoryEntry(target, join(s.skill, 'scripts.js/gidd.mjs')).action, 'updated');
     assert.match(ok(s.invoke(link, ['help', 'zh'], { env: { PATH: '' } })).stdout, /显示中文帮助/);
-    assert.match(ok(s.invoke(link, [])).stdout, /Check tools, repository and GitHub identity/);
+    assert.match(ok(s.invoke(link, [])).stdout, /GIDD \(Windows x64/);
     const other = s.create('other');
     const output = s.invoke(link, ['doctor', '--offline'], { cwd: other, env: { GIT_DIR: join(other, '.git'), GIT_WORK_TREE: other } });
     const report = json(output); assert.equal(report.folder, target);
@@ -355,7 +355,7 @@ test('repository links repair generated contents and preserve target, arguments 
       assert.equal(repositoryCheck.reason, 'not_git_repository'); assert.equal(repositoryCheck.severity, 'error');
       assert.ok(repositoryCheck.hint);
       assert.equal(diagnosis.checks.find(c => c.id === 'config.toml').details.path, join(target, '.agents/skills/gidd/config.toml'));
-      assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /Check tools, repository and GitHub identity/);
+      assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /GIDD \(Windows x64/);
       const shown = s.invoke(link, ['set.show']);
       assert.equal(shown.status, 2); assert.equal(shown.stdout, '');
       assert.equal(JSON.parse(shown.stderr).reason, 'not_git_repository_root');
@@ -381,7 +381,7 @@ test('repository links repair generated contents and preserve target, arguments 
       assert.equal(readFileSync(link, 'utf8'), saved);
       assert.equal(readFileSync(config, 'utf8'), savedConfig);
       assert.deepEqual(snapshot(toolsRoot(f.root)), shared);
-      assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /Check tools, repository and GitHub identity/);
+      assert.match(ok(s.invoke(link, ['help', 'en'])).stdout, /GIDD \(Windows x64/);
     }
     rmSync(link); mkdirSync(link); write(join(link, 'keep.txt'), 'not a generated file');
     const occupied = snapshot(f.root);
@@ -419,7 +419,7 @@ test('repository-relative links survive moves and accept Git worktrees', { timeo
       const target = s.create('local-' + layout), skill = join(target, layout, 'skills/gidd'); copySkill(skill);
       const result = json(ok(s.ensure(target, [], join(skill, 'gidd.pre.ensure.cmd'))));
       assert.equal(result.entry.location, 'relative');
-      assert.match(ok(s.invoke(s.link(target), ['help', 'en'])).stdout, /Check tools, repository and GitHub identity/);
+      assert.match(ok(s.invoke(s.link(target), ['help', 'en'])).stdout, /GIDD \(Windows x64/);
       const moved = join(f.root, 'moved-' + layout); renameSync(target, moved);
       const report = json(s.invoke(s.link(moved), ['doctor', '--offline']));
       assert.equal(report.folder, moved);

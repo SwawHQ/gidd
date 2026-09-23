@@ -1,0 +1,274 @@
+# Doctor catalog. Check IDs are stable registry keys, never module paths.
+# Only declared checks with enabled = true run. Others remain visible as not_checked.
+# Disabled or undeclared checks make the report incomplete (exit 1).
+# --offline always skips network checks; disabled prerequisites are not re-enabled.
+# Tables, single-line quoted strings, booleans and string arrays are supported.
+# Reasons match exactly, then by longest prefix ending in *. Per-check rules win.
+# Templates: {id}, {reason}, {blocked_by}, {config_key}, {configured}, {repository}.
+# Commands are suggestions only. Arguments stay arrays and are never evaluated.
+# Executables: link = repository gidd.link.cmd, ensure = gidd.pre.ensure.cmd, git = bound Git.
+# 中英文提示共用检查开关和命令；检查 ID 是注册键，不是模块路径。
+# 仅执行已声明且 enabled = true 的检查；禁用或未声明会导致检查不完整（退出码 1）。
+# --offline 始终跳过联网检查；禁用的前置检查不会被自动重新启用。
+# Text pairs require en and zh-CN with matching placeholders; commands are shared.
+# 文本必须成对提供 en 和 zh-CN，且占位符一致；命令定义共用。
+# --lang > GIDD_LANG > system locale; zh variants use zh-CN.
+# 语言优先级：--lang > GIDD_LANG > 系统语言；中文变体使用 zh-CN。
+schema_version = 1
+
+[defaults]
+hint.en = "Inspect this check's reason and details, repair the reported problem, then rerun doctor."
+hint.zh-CN = "请查看此检查的 reason 和 details，修复报告的问题后重新运行 doctor。"
+commands = []
+
+[report]
+needs_attention.en = 'Resolve checks with severity "error", then rerun doctor.'
+needs_attention.zh-CN = "请解决 severity 为 \"error\" 的检查项，然后重新运行 doctor。"
+local_ready.en = "No local errors found."
+local_ready.zh-CN = "本地检查未发现错误。"
+checks_passed.en = "No errors found in local or online checks."
+checks_passed.zh-CN = "本地和联网检查均未发现错误。"
+checks_incomplete.en = "No errors found, but some checks are disabled, undeclared or unverified."
+checks_incomplete.zh-CN = "未发现错误，但部分检查已禁用、未声明或尚未验证。"
+online_incomplete.en = "No errors found, but some online checks remain unverified."
+online_incomplete.zh-CN = "未发现错误，但部分联网检查尚未验证。"
+warning.en = 'Review checks with severity "warning".'
+warning.zh-CN = "请查看 severity 为 \"warning\" 的检查项。"
+offline.en = "Online checks were not run."
+offline.zh-CN = "未执行联网检查。"
+push.en = "Push permission is not checked."
+push.zh-CN = "未检查推送权限。"
+
+[reasons."offline"]
+hint.en = "Not checked in offline mode. Run doctor without --offline to check GitHub identity and HTTPS remote access."
+hint.zh-CN = "离线模式下未检查。请去掉 --offline 后运行 doctor，以检查 GitHub 身份和 HTTPS 远端访问。"
+commands = []
+
+[reasons."disabled"]
+hint.en = "This check is disabled in references/doctor.toml. Enable {id} to include it."
+hint.zh-CN = "此检查已在 references/doctor.toml 中禁用。请启用 {id} 以执行检查。"
+commands = []
+
+[reasons."not_declared"]
+hint.en = "This check is not declared in references/doctor.toml. Declare and enable {id} to include it."
+hint.zh-CN = "此检查未在 references/doctor.toml 中声明。请声明并启用 {id} 以执行检查。"
+commands = []
+
+[reasons."dependency_unavailable"]
+hint.en = "Resolve the {blocked_by} check, then rerun doctor."
+hint.zh-CN = "请先解决 {blocked_by} 检查项的问题，然后重新运行 doctor。"
+commands = []
+
+[commands."ensure"]
+executable = "ensure"
+args = ["--repo","{repository}"]
+
+[commands."remotes"]
+executable = "git"
+args = ["-C","{repository}","remote","-v"]
+
+[commands."set_field"]
+executable = "link"
+args = ["set","{config_key}","<value>"]
+required_inputs = ["{config_key}"]
+
+[commands."set_url"]
+executable = "link"
+args = ["set","repo.remote.url","<value>"]
+required_inputs = ["repo.remote.url"]
+requires_configuration_review = true
+
+[commands."set_account"]
+executable = "link"
+args = ["set","repo.remote.account","<value>"]
+required_inputs = ["repo.remote.account"]
+
+[commands."clear_field"]
+executable = "link"
+args = ["clear","{config_key}"]
+
+[commands."managed_identity"]
+executable = "link"
+args = ["set","git.user.mode","managed"]
+
+[commands."identity_name"]
+executable = "link"
+args = ["set","git.user.name","<value>"]
+required_inputs = ["git.user.name"]
+
+[commands."identity_email"]
+executable = "link"
+args = ["set","git.user.email","<value>"]
+required_inputs = ["git.user.email"]
+
+[commands."spec_list"]
+executable = "link"
+args = ["spec.list"]
+
+[commands."spec_read"]
+executable = "link"
+args = ["spec","<name>"]
+required_inputs = ["spec.current"]
+
+[commands."spec_select"]
+executable = "link"
+args = ["set","spec.current","<name>"]
+required_inputs = ["spec.current"]
+
+[checks."tool.platform"]
+enabled = true
+hint.en = "Use the currently supported Windows x64 platform."
+hint.zh-CN = "请使用当前支持的 Windows x64 平台。"
+
+[checks."tool.js_runtime"]
+enabled = true
+
+[checks."tool.git"]
+enabled = true
+hint.en = "Run gidd.pre.ensure.cmd with this repository to repair shared tools and rebuild its entry."
+hint.zh-CN = "请针对本仓库运行 gidd.pre.ensure.cmd，修复共享工具并重建仓库入口。"
+commands = ["ensure"]
+
+[checks."tool.gh"]
+enabled = true
+hint.en = "Run gidd.pre.ensure.cmd with this repository to repair shared tools and rebuild its entry."
+hint.zh-CN = "请针对本仓库运行 gidd.pre.ensure.cmd，修复共享工具并重建仓库入口。"
+commands = ["ensure"]
+
+[checks."folder.git.worktree"]
+enabled = true
+hint.en = "Check the reported directory and its Git working-tree metadata. Restore the intended repository or explicitly initialize Git there, then rerun doctor; do not substitute a parent repository."
+hint.zh-CN = "请检查报告的目录及其 Git 工作区元数据。恢复目标仓库或明确在该目录初始化 Git 后，重新运行 doctor；不要用上级仓库替代。"
+
+[checks."folder.git.worktree".reasons."unborn_branch"]
+hint.en = "This repository has no commits yet. Create the first commit when there is work to save; local configuration can continue."
+hint.zh-CN = "此仓库尚无提交。有需要保存的工作时再创建首次提交；当前可以继续本地配置。"
+
+[checks."folder.git.worktree".reasons."head_unreadable"]
+hint.en = "Repair the repository HEAD, then rerun doctor."
+hint.zh-CN = "请修复仓库 HEAD，然后重新运行 doctor。"
+
+[checks."folder.git.worktree".reasons."target_required"]
+hint.en = "Run the actual skill gidd.pre.ensure.cmd --repo <Git-working-tree-root>, then invoke the generated gidd.link.cmd by its full path."
+hint.zh-CN = "请运行实际技能中的 gidd.pre.ensure.cmd --repo <Git-working-tree-root>，然后用完整路径调用生成的 gidd.link.cmd。"
+
+[checks."folder.git.identity"]
+enabled = true
+hint.en = "Check effective Git author and committer. Repair inherited Git identity, or select git.user.mode=managed and set both git.user.name and git.user.email."
+hint.zh-CN = "请检查实际生效的 Git 作者和提交者身份。修复继承的 Git 身份配置，或选择 git.user.mode=managed 并同时设置 git.user.name 和 git.user.email。"
+commands = ["managed_identity","identity_name","identity_email"]
+
+[checks."config.toml"]
+enabled = true
+hint.en = "Repair config.toml at the reported path, preserving unrelated settings and comments, then rerun doctor. Invalid values are omitted from this report."
+hint.zh-CN = "请修复报告路径下的 config.toml，保留无关设置和注释，然后重新运行 doctor。报告中已省略无效值。"
+
+[checks."config.toml".reasons."config_*"]
+hint.en = "Check config.toml using gidd.link set.show, gidd.link set or gidd.link clear. No configuration fallback or login was performed."
+hint.zh-CN = "请使用 gidd.link set.show、gidd.link set 或 gidd.link clear 检查 config.toml。本次未回退到其他配置，也未执行登录。"
+
+[checks."config.toml".reasons."config_missing"]
+hint.en = "Create config.toml with gidd.link set repo.remote.account <login>, then set repo.remote.url and review repo.remote.name."
+hint.zh-CN = "请用 gidd.link set repo.remote.account <login> 创建 config.toml，然后设置 repo.remote.url 并检查 repo.remote.name。"
+commands = ["set_account"]
+
+[checks."config.toml".reasons."config_retired_structure"]
+hint.en = "Replace [github] with [repo] remote.name, remote.url and remote.account; remove hostname and [tools]. Tool sources are internal preparation policy. Preserve unrelated comments and [spec]."
+hint.zh-CN = "请将 [github] 替换为 [repo] 下的 remote.name、remote.url 和 remote.account，移除 hostname 和 [tools]。工具来源由内部准备策略管理。请保留无关注释和 [spec]。"
+
+[checks."config.repo.remote.name"]
+enabled = true
+hint.en = "Review the local remote and the expected repository address, then repair the reported config field or the local remote. Do not accept a changed target automatically."
+hint.zh-CN = "请核对本地远端和预期仓库地址，再修复报告的配置字段或本地远端。不要自动接受已变更的目标。"
+commands = ["remotes","set_field"]
+
+[checks."config.repo.remote.url"]
+enabled = true
+hint.en = "Review the local remote and the expected repository address, then repair the reported config field or the local remote. Do not accept a changed target automatically."
+hint.zh-CN = "请核对本地远端和预期仓库地址，再修复报告的配置字段或本地远端。不要自动接受已变更的目标。"
+commands = ["remotes","set_url"]
+
+[checks."config.repo.remote.account"]
+enabled = true
+hint.en = "Set repo.remote.account to the expected GitHub login. This does not log in or change Git author information."
+hint.zh-CN = "请将 repo.remote.account 设为预期的 GitHub 登录名。此设置不会执行登录，也不会更改 Git 作者信息。"
+commands = ["remotes","set_field"]
+
+[checks."config.git.user.mode"]
+enabled = true
+hint.en = "Set git.user.mode explicitly to managed or inherit with gidd.link set."
+hint.zh-CN = "请用 gidd.link set 将 git.user.mode 明确设为 managed 或 inherit。"
+
+[checks."config.git.user.name"]
+enabled = true
+hint.en = "Set a valid git.user.name with gidd.link set; managed mode requires both name and email."
+hint.zh-CN = "请用 gidd.link set 设置有效的 git.user.name；managed 模式需要同时设置姓名和邮箱。"
+
+[checks."config.git.user.name".reasons."config_git_user_inherit_conflict"]
+hint.en = "Run gidd.link.cmd clear {config_key} in inherit mode, or select managed and provide both name and email."
+hint.zh-CN = "在 inherit 模式下，请运行 gidd.link.cmd clear {config_key}；或选择 managed 并同时提供姓名和邮箱。"
+commands = ["clear_field"]
+
+[checks."config.git.user.email"]
+enabled = true
+hint.en = "Set a valid git.user.email with gidd.link set; managed mode requires both name and email."
+hint.zh-CN = "请用 gidd.link set 设置有效的 git.user.email；managed 模式需要同时设置姓名和邮箱。"
+
+[checks."config.git.user.email".reasons."config_git_user_inherit_conflict"]
+hint.en = "Run gidd.link.cmd clear {config_key} in inherit mode, or select managed and provide both name and email."
+hint.zh-CN = "在 inherit 模式下，请运行 gidd.link.cmd clear {config_key}；或选择 managed 并同时提供姓名和邮箱。"
+commands = ["clear_field"]
+
+[checks."config.git.credential.mode"]
+enabled = true
+notes.gh.en = "gh credentials apply to HTTPS; SSH uses its native configuration."
+notes.gh.zh-CN = "gh 凭据用于 HTTPS；SSH 使用原生配置。"
+notes.inherit.en = "Git authentication is inherited; the push account is not verified."
+notes.inherit.zh-CN = "沿用 Git 身份验证配置；未验证推送账号。"
+hint.en = "Set git.credential.mode explicitly to gh or inherit with gidd.link set."
+hint.zh-CN = "请用 gidd.link set 将 git.credential.mode 明确设为 gh 或 inherit。"
+
+[checks."config.spec.current"]
+enabled = true
+hint.en = "Repair specs/{configured}/ and its referenced Markdown and Issue templates, then rerun doctor."
+hint.zh-CN = "请修复 specs/{configured}/ 及其引用的 Markdown 和 Issue 模板，然后重新运行 doctor。"
+
+[checks."config.spec.current".reasons."spec_current_missing"]
+hint.en = "Run gidd.link spec.list to see names and summaries, then gidd.link spec <name> to read the full instructions before selecting one with gidd.link set spec.current <name>."
+hint.zh-CN = "请运行 gidd.link spec.list 查看名称和摘要，再用 gidd.link spec <name> 阅读完整规范，最后用 gidd.link set spec.current <name> 选择规范。"
+commands = ["spec_list","spec_read","spec_select"]
+
+[checks."config.spec.current".reasons."spec_current_unsupported"]
+hint.en = "Run gidd.link spec.list to see names and summaries, then gidd.link spec <name> to read the full instructions before selecting one with gidd.link set spec.current <name>."
+hint.zh-CN = "请运行 gidd.link spec.list 查看名称和摘要，再用 gidd.link spec <name> 阅读完整规范，最后用 gidd.link set spec.current <name> 选择规范。"
+commands = ["spec_list","spec_read","spec_select"]
+
+[checks."config.spec.current".reasons."spec_list_*"]
+hint.en = "Repair specs/<name>/prompt.en.md and prompt.zh-CN.md, including their front matter, then rerun doctor."
+hint.zh-CN = "请修复 specs/<name>/prompt.en.md 和 prompt.zh-CN.md（包括文件头部元数据），然后重新运行 doctor。"
+
+[checks."config.spec.current".reasons."spec_directory_*"]
+hint.en = "Repair specs/<name>/prompt.en.md and prompt.zh-CN.md, including their front matter, then rerun doctor."
+hint.zh-CN = "请修复 specs/<name>/prompt.en.md 和 prompt.zh-CN.md（包括文件头部元数据），然后重新运行 doctor。"
+
+[checks."config.spec.current".reasons."spec_metadata_*"]
+hint.en = "Repair specs/<name>/prompt.en.md and prompt.zh-CN.md, including their front matter, then rerun doctor."
+hint.zh-CN = "请修复 specs/<name>/prompt.en.md 和 prompt.zh-CN.md（包括文件头部元数据），然后重新运行 doctor。"
+
+[checks."config.repo.remote.account..online"]
+enabled = true
+hint.en = "Check connectivity and saved gh credentials for the configured host/account. A failed API request does not prove login is required."
+hint.zh-CN = "请检查网络连接，以及配置的主机和账号所保存的 gh 凭据。API 请求失败并不一定表示需要登录。"
+
+[checks."config.repo.remote.account..online".reasons."unexpected_account"]
+hint.en = "The selected token does not belong to repo.remote.account. Review the configured account and saved gh credentials."
+hint.zh-CN = "选中的令牌不属于 repo.remote.account。请检查配置的账号和已保存的 gh 凭据。"
+
+[checks."config.repo.remote.account..online".reasons."account_token_unavailable"]
+hint.en = "Run gidd.link.cmd .gh.auth to authorize the configured account."
+hint.zh-CN = "请运行 gidd.link.cmd .gh.auth，为配置的账号授权。"
+
+[checks."config.repo.remote.url..online"]
+enabled = true
+hint.en = "Inspect details.gh_remote_read and details.git_remote_read. Skipped checks remain unverified; Git reading and API reading do not prove write permission."
+hint.zh-CN = "请查看 details.gh_remote_read 和 details.git_remote_read。已跳过的检查仍未验证；Git 和 API 的读取成功不能证明具有写入权限。"

@@ -1,12 +1,7 @@
 import { existsSync } from 'node:fs';
 import { configurationPath, parseConfiguration, readConfigurationText } from '../../shared/storage.mjs';
 import { loadSpec, loadSpecCatalog, specCatalogHint, specNamePattern } from '../../shared/specs.mjs';
-
-function language(explicit) {
-  const choice = explicit || process.env.GIDD_LANG || process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || Intl.DateTimeFormat().resolvedOptions().locale;
-  if ((explicit || process.env.GIDD_LANG) && !/^(zh|en)(?:$|[-_])/.test(choice)) throw new Error('unsupported_help_language');
-  return /^zh(?:$|[-_])/.test(choice) ? 'zh-CN' : 'en';
-}
+import { resolveLanguage } from '../../shared/language.mjs';
 
 export function parseSpecArguments(route, args) {
   const input = [...args];
@@ -24,7 +19,7 @@ export function parseSpecArguments(route, args) {
     if (flag === '--lang' && lang === undefined && input[0] && !input[0].startsWith('--')) { lang = input.shift(); continue; }
     throw new Error('invalid_arguments');
   }
-  return { action, selector, current, lang: language(lang) };
+  return { action, selector, current, lang: resolveLanguage(lang) };
 }
 
 export function specError(repository, mode, reason) {

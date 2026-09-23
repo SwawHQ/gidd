@@ -17,7 +17,8 @@ import * as onlineAccount from './checks/config.repo.remote.account..online.mjs'
 import * as onlineRemote from './checks/config.repo.remote.url..online.mjs';
 
 // Each entry owns one ID and returns a diagnostic (or null when inapplicable).
-// Add checks here explicitly; names and paths never come from repository config.
+// Add implementations here; references/doctor.toml enables them by stable ID.
+// Module names and paths never come from the catalog or repository config.
 // This is presentation order. run(context) resolves prerequisites on demand and
 // preserves independent errors; a failed prerequisite is not a blanket skip.
 // Shared observations stay in the invocation context, never on a module singleton.

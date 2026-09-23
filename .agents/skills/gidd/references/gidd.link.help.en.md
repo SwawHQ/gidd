@@ -2,8 +2,9 @@ GIDD (Windows x64 / PowerShell 5.1)
 
   gidd.link help zh           #显示中文帮助
   gidd.link help en           #Show English help
-  gidd.link doctor            #Check tools, repository and GitHub identity (includes network checks)
+  gidd.link doctor            #Run checks enabled in references/doctor.toml (includes network checks)
   gidd.link doctor --offline  #Check local tools, configuration and repository without network requests
+  gidd.link doctor --lang en  #Choose zh|en; default: GIDD_LANG, then system locale; accepts --offline
   gidd.link set.show          #Print config.toml as-is (TOML)
   gidd.link set <key> <value> #Set a field in config.toml
   gidd.link set spec.current 04.issue.ask-commit  #(Example) Set the current spec; list available specs: gidd.link spec.list
