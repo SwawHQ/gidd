@@ -164,17 +164,13 @@ hint.en = "Repair config.toml at the reported path, preserving unrelated setting
 hint.zh-CN = "请修复报告路径下的 config.toml，保留无关设置和注释，然后重新运行 doctor。报告中已省略无效值。"
 
 [checks."config.toml".reasons."config_*"]
-hint.en = "Check config.toml using gidd.link set.show, gidd.link set or gidd.link clear. No configuration fallback or login was performed."
-hint.zh-CN = "请使用 gidd.link set.show、gidd.link set 或 gidd.link clear 检查 config.toml。本次未回退到其他配置，也未执行登录。"
+hint.en = "Use the error code to repair config.toml at the reported path, then rerun doctor."
+hint.zh-CN = "请根据错误代码修复报告路径下的 config.toml，然后重新运行 doctor。"
 
 [checks."config.toml".reasons."config_missing"]
 hint.en = "Create config.toml with gidd.link set repo.remote.account <login>, then set repo.remote.url and review repo.remote.name."
 hint.zh-CN = "请用 gidd.link set repo.remote.account <login> 创建 config.toml，然后设置 repo.remote.url 并检查 repo.remote.name。"
 commands = ["set_account"]
-
-[checks."config.toml".reasons."config_retired_structure"]
-hint.en = "Replace [github] with [repo] remote.name, remote.url and remote.account; remove hostname and [tools]. Tool sources are internal preparation policy. Preserve unrelated comments and [spec]."
-hint.zh-CN = "请将 [github] 替换为 [repo] 下的 remote.name、remote.url 和 remote.account，移除 hostname 和 [tools]。工具来源由内部准备策略管理。请保留无关注释和 [spec]。"
 
 [checks."config.repo.remote.name"]
 enabled = true
@@ -205,8 +201,8 @@ hint.en = "Set a valid git.user.name with gidd.link set; managed mode requires b
 hint.zh-CN = "请用 gidd.link set 设置有效的 git.user.name；managed 模式需要同时设置姓名和邮箱。"
 
 [checks."config.git.user.name".reasons."config_git_user_inherit_conflict"]
-hint.en = "Run gidd.link.cmd clear {config_key} in inherit mode, or select managed and provide both name and email."
-hint.zh-CN = "在 inherit 模式下，请运行 gidd.link.cmd clear {config_key}；或选择 managed 并同时提供姓名和邮箱。"
+hint.en = "With git.user.mode=inherit, Git supplies the commit identity. Run gidd.link clear {config_key} to remove the conflicting field from gidd's config.toml."
+hint.zh-CN = "当前 git.user.mode=inherit，提交身份由 Git 提供。请运行 gidd.link clear {config_key}，移除 gidd 中冲突的配置字段。"
 commands = ["clear_field"]
 
 [checks."config.git.user.email"]
@@ -215,8 +211,8 @@ hint.en = "Set a valid git.user.email with gidd.link set; managed mode requires 
 hint.zh-CN = "请用 gidd.link set 设置有效的 git.user.email；managed 模式需要同时设置姓名和邮箱。"
 
 [checks."config.git.user.email".reasons."config_git_user_inherit_conflict"]
-hint.en = "Run gidd.link.cmd clear {config_key} in inherit mode, or select managed and provide both name and email."
-hint.zh-CN = "在 inherit 模式下，请运行 gidd.link.cmd clear {config_key}；或选择 managed 并同时提供姓名和邮箱。"
+hint.en = "With git.user.mode=inherit, Git supplies the commit identity. Run gidd.link clear {config_key} to remove the conflicting field from gidd's config.toml."
+hint.zh-CN = "当前 git.user.mode=inherit，提交身份由 Git 提供。请运行 gidd.link clear {config_key}，移除 gidd 中冲突的配置字段。"
 commands = ["clear_field"]
 
 [checks."config.git.credential.mode"]

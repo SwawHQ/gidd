@@ -12,7 +12,7 @@ GIDD（Windows x64 / PowerShell 5.1）
   gidd.link set repo.remote.name origin #(示例)记录对本地仓库使用的远端名
   gidd.link set repo.remote.url <url>   #记录对本地仓库使用的远端 url
   gidd.link set git.credential.mode gh  #(示例)必填;如何为远端 url 提供凭据，可选：gh|inherit
-  gidd.link set git.user.mode managed   #(示例)必填;如何为 git 指定署名信息，可选：managed|inherit
+  gidd.link set git.user.mode managed   #(示例)必填；managed 使用配置中的姓名和邮箱，inherit 沿用 Git 身份
   gidd.link set git.user.name <user>    #managed 模式必填，inherit 用 clear 删除；指定 git user.name
   gidd.link set git.user.email <email>  #managed 模式必填，inherit 用 clear 删除；指定 git user.email
   gidd.link clear <字段>            #删除 config.toml 中指定字段

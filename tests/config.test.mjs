@@ -7,7 +7,7 @@ import { prepare, toolsRoot, adapter, assert, compile, existsSync, fixture, hash
 
 const configText = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[repo]\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\nremote.account = "Octocat"\n';
 
-test('repository config uses three dotted fields and rejects retired or conflicting structure without writes', () => {
+test('repository config uses three dotted fields and rejects unsupported or conflicting structure without writes', () => {
   const f = fixture();
   try {
     const path = join(f.root, '.agents/skills/gidd/config.toml');
@@ -17,9 +17,14 @@ test('repository config uses three dotted fields and rejects retired or conflict
       assert.throws(() => configure(f.root, 'set', key, 'value'), /config_unknown_key/);
       assert.equal(readFileSync(path,'utf8'), configText);
     }
-    for (const text of ['schema_version = 1\n[github]\naccount="Octocat"\n', 'schema_version = 1\n[tools]\n', 'schema_version = 1\n[bootstrap]\n']) {
-      write(path, text); assert.throws(() => parseConfiguration(text), /config_retired_structure/);
+    for (const table of ['github', 'github.auth', 'tools', 'tools.gh', 'bootstrap', 'custom']) {
+      const text = 'schema_version = 1\n[' + table + ']\n';
+      write(path, text);
+      const unsupported = { message: 'config_unsupported_syntax_or_field:2' };
+      assert.throws(() => parseConfiguration(text), unsupported);
       assert.equal(configure(f.root,'show').content, text);
+      assert.throws(() => configure(f.root, 'set', 'repo.remote.account', 'Octocat'), unsupported);
+      assert.throws(() => configure(f.root, 'clear', 'git.user.name'), unsupported);
       assert.equal(readFileSync(path,'utf8'), text);
     }
     for (const suffix of ['remote.url.account = "a"\n','remote.name = "other"\n','hostname = "github.com"\n','[repo]\n','remote.token = "secret"\n']) {

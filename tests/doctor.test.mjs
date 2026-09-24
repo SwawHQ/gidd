@@ -207,6 +207,7 @@ test('doctor combines independent checks once; offline never invokes network or 
       { catalog: catalogText.replace('[checks."tool.git"]\nenabled = true', '[checks."tool.git"]\nenabled = false') },
       { catalog: catalogText.slice(0, catalogText.indexOf('[checks.')) },
       { config: 'invalid TOML', offline: true },
+      { config: configText.replace('user.mode = "inherit"', 'user.mode = "inherit"\nuser.name = "Configured"\nuser.email = "configured@example.test"') },
       { config: configText.replace('remote.url = "https://github.com/owner/repo"', 'remote.url = "bad url"') },
     ]) {
       write(localizedCatalogPath, options.catalog || catalogText);
@@ -406,9 +407,11 @@ test('doctor combines independent checks once; offline never invokes network or 
     const enterprise=scenario({url:success('git@github.example.test:owner/repo.git'),gh_repo:success('{"url":"https://github.example.test/owner/repo"}')});
     assert.equal(byId(await doctor(f.root,enterprise),accountId).details.hostname,'github.example.test');
     assert.equal(enterprise.calls.find(c=>c.key==='api').args[2],'github.example.test');
-    for(const text of ['invalid TOML','schema_version = 1\n[github]\n']) {
+    for (const [text, line] of [['invalid TOML', 1], ['schema_version = 1\n[github]\n', 2],
+      ['schema_version = 1\n[tools]\n', 2], ['schema_version = 1\n[bootstrap]\n', 2], ['schema_version = 1\n[custom]\n', 2]]) {
       write(config,text);const sc=scenario(), r=await doctor(f.root,sc);
       assert.equal(byId(r,'config.toml').status,'invalid');
+      assert.equal(byId(r,'config.toml').reason, 'config_unsupported_syntax_or_field:' + line);
       assert.equal(byId(r,'config.repo.remote.account').blocked_by,'config.toml');
       for (const field of ['mode', 'name', 'email']) assert.equal(byId(r, 'config.git.user.' + field).blocked_by, 'config.toml');
       assert.ok(!sc.calls.some(c=>['api','read','gh_repo'].includes(c.key)));

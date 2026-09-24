@@ -148,7 +148,7 @@ test('authorization uses bindings, rejects retired gh versions and never discove
     ok(run(git,['-C',f.root,'remote','add','origin','https://github.com/owner/repo.git']));
     bindFixture(f.root,{git,gh:managedGh});
     write(config, configText + '[tools]\ngh = { version = "2.99.0", source = "https://github.com/cli/cli/releases" }\n' + githubConfig);
-    assert.equal(json(invoke()).reason, 'config_retired_structure');
+    assert.equal(json(invoke()).reason, 'config_unsupported_syntax_or_field:2');
     write(config, configText + githubConfig);
     ok(prepare(f.root,'gh',{env:{PATH:oldBin}}));
     bindFixture(f.root,{git,gh:managedGh});

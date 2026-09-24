@@ -12,7 +12,7 @@ GIDD (Windows x64 / PowerShell 5.1)
   gidd.link set repo.remote.name origin #(Example) Record the remote name used for the local repository
   gidd.link set repo.remote.url <url>   #Record the remote URL used for the local repository
   gidd.link set git.credential.mode gh  #(Example) Required; how to supply credentials for the remote URL: gh|inherit
-  gidd.link set git.user.mode managed   #(Example) Required; how to set Git commit identity: managed|inherit
+  gidd.link set git.user.mode managed   #Required: managed uses configured name/email; inherit uses Git identity
   gidd.link set git.user.name <user>    #Required in managed mode; remove with clear in inherit mode; sets git user.name
   gidd.link set git.user.email <email>  #Required in managed; remove with clear in inherit mode; sets git user.email
   gidd.link clear <key>             #Remove a field from config.toml

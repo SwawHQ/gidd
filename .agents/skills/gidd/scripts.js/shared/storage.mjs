@@ -46,7 +46,6 @@ export function parseConfiguration(text) {
     const line = input.replace(/\r$/, '');
     if (/[\x00-\x08\x0b-\x1f\x7f]/.test(line)) throw new Error('config_control_character:' + (index + 1));
     if (/^[ \t]*(?:#.*)?$/.test(line)) continue;
-    if (/^[ \t]*\[(?:tools|github|bootstrap)(?:\.|\])/.test(line)) throw new Error('config_retired_structure');
     const table = /^[ \t]*\[(repo|git|spec)\][ \t]*(?:#.*)?$/.exec(line);
     if (table) {
       section = table[1];
