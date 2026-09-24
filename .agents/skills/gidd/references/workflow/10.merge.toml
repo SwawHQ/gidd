@@ -1,0 +1,42 @@
+[zh-CN."issue.*direct-merge"]
+title = "本地合并"
+body = '''
+满足验收及仓库合并要求后，将本批开发分支的改动合并到任务记录中的本地目标分支。
+留意目标分支的新改动和并行任务，确认目标分支确已包含本批成果；随后由 push 环节推送目标分支。
+合并消息仅使用 Refs #NNN 关联 Issue。
+'''
+
+[zh-CN."no-issue.*direct-merge"]
+title = "本地合并"
+body = '''
+满足验收及仓库合并要求后，将本批开发分支的改动合并到任务记录中的本地目标分支。
+留意目标分支的新改动和并行任务，确认目标分支确已包含本批成果；随后由 push 环节推送目标分支。
+'''
+
+[zh-CN."issue.*pr-merge"]
+title = "PR 合并"
+body = '''
+本批成果满足验收条件及仓库的检查、审阅等合并要求后，将 PR 合并到预定的远端目标分支。
+确认目标分支确已收到本批交付；排队或等待自动合并时，仍需确认最终结果。
+合并消息仅使用 Refs #NNN 关联 Issue，Issue 由关闭环节单独处理。
+'''
+
+[zh-CN."no-issue.*pr-merge"]
+title = ""
+body = ""
+
+[en."issue.*direct-merge"]
+title = ""
+body = ""
+
+[en."no-issue.*direct-merge"]
+title = ""
+body = ""
+
+[en."issue.*pr-merge"]
+title = ""
+body = ""
+
+[en."no-issue.*pr-merge"]
+title = ""
+body = ""

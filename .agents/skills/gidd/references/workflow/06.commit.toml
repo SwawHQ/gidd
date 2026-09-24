@@ -1,0 +1,23 @@
+[zh-CN."issue.*"]
+title = "commit"
+body = '''
+将本批改动提交到本模式确定的工作分支。
+注意划分批次，避免大而混杂；跨 Issue 的改动分开提交。
+提交消息说明具体问题和改动；仅使用 Refs #NNN 关联。
+'''
+
+[zh-CN."no-issue.*"]
+title = "commit"
+body = '''
+将本批改动提交到本模式确定的工作分支。
+注意划分批次，避免大而混杂。
+提交消息说明具体问题和改动。
+'''
+
+[en."issue.*"]
+title = ""
+body = ""
+
+[en."no-issue.*"]
+title = ""
+body = ""

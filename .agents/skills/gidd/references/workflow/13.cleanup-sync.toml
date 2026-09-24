@@ -1,0 +1,21 @@
+[zh-CN."*.current-worktree.*"]
+title = "清理和同步"
+body = '''
+留意用户及并行任务的修改，按实际情况清理可清理临时文件。
+仍需使用的资源和恢复任务所需的现场予以保留，说明尚未完成的事项。
+'''
+
+[zh-CN."*.dedicated-worktree.*"]
+title = "清理和同步"
+body = '''
+留意用户及并行任务的修改，按实际情况清理可清理的分支、worktree 和临时文件，同步目标分支。
+仍需使用的资源和恢复任务所需的现场予以保留，说明尚未完成的事项。
+'''
+
+[en."*.current-worktree.*"]
+title = ""
+body = ""
+
+[en."*.dedicated-worktree.*"]
+title = ""
+body = ""

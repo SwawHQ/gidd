@@ -1,0 +1,17 @@
+[authorization_schema]
+development         = ["auto", "ask"]
+internal_acceptance = ["auto", "ask"]
+add                 = ["auto", "ask"]
+commit              = ["auto", "ask"]
+push                = ["auto", "ask"]
+push_error          = ["auto", "ask"]
+merge               = ["auto", "ask"]
+merge_error         = ["auto", "ask"]
+close_issue         = ["not_applicable"]
+cleanup_sync        = ["auto", "ask"]
+
+[zh-CN]
+description = "无需建立 Issue，从当前分支派生专用 worktree 开发，推送开发分支后通过 PR 合并到来源分支的远端同名分支。"
+
+[en]
+description = ""

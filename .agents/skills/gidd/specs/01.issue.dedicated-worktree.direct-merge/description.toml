@@ -1,0 +1,21 @@
+[authorization_schema]
+development         = ["auto", "ask"]
+internal_acceptance = ["auto", "ask"]
+add                 = ["auto", "ask"]
+commit              = ["auto", "ask"]
+push                = ["auto", "ask"]
+push_error          = ["auto", "ask"]
+merge               = ["auto", "ask"]
+merge_error         = ["auto", "ask"]
+close_issue         = ["auto", "ask"]
+cleanup_sync        = ["auto", "ask"]
+
+[issue_template]
+zh-CN = "../../references/issue.zh-CN.json"
+en = "../../references/issue.en.json"
+
+[zh-CN]
+description = "以 Issue 为依据，从当前分支派生专用 worktree 开发，将成果合并回来源本地分支后推送。"
+
+[en]
+description = ""

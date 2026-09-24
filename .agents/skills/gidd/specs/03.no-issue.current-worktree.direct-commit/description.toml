@@ -1,0 +1,17 @@
+[authorization_schema]
+development         = ["auto", "ask"]
+internal_acceptance = ["auto", "ask"]
+add                 = ["auto", "ask"]
+commit              = ["auto", "ask"]
+push                = ["auto", "ask"]
+push_error          = ["auto", "ask"]
+merge               = ["not_applicable"]
+merge_error         = ["not_applicable"]
+close_issue         = ["not_applicable"]
+cleanup_sync        = ["auto", "ask"]
+
+[zh-CN]
+description = "无需建立 Issue，在当前工作区的当前分支直接开发、提交并推送。"
+
+[en]
+description = ""

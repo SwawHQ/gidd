@@ -411,7 +411,7 @@ test('shell doctor and .gh.auth preserve JavaScript results, events and exit cod
   try {
     const s = installation(f), git = findGit();
     const config = join(s.target,'.agents/skills/gidd/config.toml');
-    const configured = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[spec]\ncurrent = "02.issue"\n[repo]\nremote.account = "Octocat"\nremote.name = "fixture"\nremote.url = "https://github.com/owner/repo"\n';
+    const configured = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[spec]\ncurrent = "issue.current-worktree.direct-commit/00.auto"\n[repo]\nremote.account = "Octocat"\nremote.name = "fixture"\nremote.url = "https://github.com/owner/repo"\n';
     write(config,configured);
     for (const args of [['init'], ['config','user.name','Fixture Author'], ['config','user.email','author@example.test'],
       ['remote','add','fixture','git@github.com:owner/repo.git']]) ok(run(git, ['-C',s.target,...args]));

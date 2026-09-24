@@ -41,12 +41,12 @@ user.email = "name@example.com"
 credential.mode = "gh"
 
 [spec]
-current = "04.issue.ask-commit"
+current = "00/04.ask-commit"
 ```
 
-`spec.current` is the explicit spec selection. `doctor` (including `--offline`) cannot pass when it is missing, unsupported, or its resources are damaged. For a missing/unsupported selection, its `config.spec.current` hint and commands guide three steps: `gidd.link spec.list` for summaries, `gidd.link spec <name>` for full instructions, then `gidd.link set spec.current <name>` to select. Summaries help identify candidates; read the full instructions before choosing. The former `spec.mode` field is not accepted. `clear spec.current` removes the selection and doctor then reports it missing. Damaged resources require repair.
+`spec.current` selects `<mode-id>/<name>` explicitly; mode IDs come from the two-digit directory prefixes (initially 00–05), not list positions or a second mapping in TOML/code. Full directory names and unprefixed mode names are also accepted. `doctor` (including `--offline`) checks directory naming and unique mode IDs/names, then requires a valid selection with complete dependencies in at least one language; it reports `resolved` and `available_languages`; duplicate directories appear in `details.conflicts`. Browse with `gidd.link spec.modes` and `gidd.link spec.list <mode-id>`, read `gidd.link spec <mode-id>/<name>`, then select with `gidd.link set spec.current <mode-id>/<name>`. Old spec names are not automatically migrated. `clear spec.current` removes the selection, which doctor then reports missing.
 
-`spec.list --lang en|zh` returns `scope` and `specs`, sorted by full spec name. Each entry has `name` and a `description` array of six single-key objects, preserving source order. Both prompt languages must use identical keys, values and order. `spec <name>` and `spec.current` print the workflow body; `spec.issue <name>` and `spec.issue.current` return its declared JSON form. See [spec authoring](specs/AGENTS.md) for entry metadata, includes and template-command replacement.
+`spec.modes` reports each mode's `name` (the directory name including its numeric prefix), `description` and `specs` (the number of available specs). `spec.list <mode-id>` lists each preset with only `name` and `authorization`; unfinished or invalid presets include `error`. Availability means at least one complete language. `spec <mode-id>/<name>` and `spec.current` generate the mode description, flow, authorization and matching reference guidance. These commands require the requested language to be complete, without a mixed-language fallback. All spec commands accept `--lang en|zh`. `spec.issue <mode-id>/<name>` and `spec.issue.current` print the relative JSON template declared by the mode, independently of unfinished reference prose; modes without Issues report that no template applies. Read-only commands do not alter the current selection or execute the generated instructions. See [spec authoring](../AGENTS.md) and [spec definitions](specs/README.md).
 
 Both Git modes are required and independent:
 
@@ -86,9 +86,9 @@ hooks、alias、扩展、签名代理及任意外部程序可能自行等待或�
 
 Git for Windows 遇到文件占用时也不询问是否重试；先解决文件访问问题，再重新执行命令。
 
-当前规范配置为 `[spec]` 下的 `current = "04.issue.ask-commit"`，设置命令为 `gidd.link set spec.current <名称>`，旧 `spec.mode` 字段不再接受。doctor（含离线模式）的 `config.spec.current` 检查要求显式选择有效规范，且相关资源完整；未选或选择无效时，提示和命令依次引导：运行 `spec.list` 查看简介，运行 `spec <名称>` 阅读全文，最后设置 `spec.current`。简介用于初步识别，选择前应阅读全文。`clear spec.current` 会移除选择，之后 doctor 报告缺失；资源损坏时提示修复。
+当前规范配置为 `[spec]` 下的 `current = "00/04.ask-commit"`。使用 `gidd.link spec.modes` 查看六种模式，`name` 为含编号的完整目录名，`specs` 表示可用规范数量，`spec.list <mode-id>` 查看规范和授权配置，`spec <mode-id>/<name>` 阅读完整提示，最后通过 `set spec.current <mode-id>/<name>` 选择。旧规范名不自动迁移；`clear spec.current` 移除选择。doctor（含离线模式）先检查模式目录命名及编号、模式名的唯一性，再检查当前规范及其依赖，至少一种语言完整才就绪，并报告完整解析结果和可用语言；重号时列出 details.conflicts，其他规范的未完成正文不影响当前规范。
 
-`spec.list` 按完整规范名排序返回 `scope` 和 `specs`，每项含 `name` 和由六个单键对象组成的 `description` 数组，保留源文件顺序；双语的键、值及顺序必须一致。`spec <名称>`、`spec.current` 打印流程正文；`spec.issue <名称>`、`spec.issue.current` 返回所声明的 JSON 表单。入口元数据、include 和模板命令替换见 [规范编写](specs/AGENTS.md)。
+`spec.list <mode-id>` 每项只返回规范名 `name` 和授权配置 `authorization`；未完成或无效的规范增加 `error`。可用数量按至少一种语言完整统计。`spec <mode-id>/<name>`、`spec.current` 组装模式说明、流程、授权及适用经验，所选语言必须完整，不混用语言；各 spec 命令均支持 `--lang en|zh`。`spec.issue <mode-id>/<name>`、`spec.issue.current` 读取模式声明的相对路径 JSON 模板，不受经验正文未翻译影响；不使用 Issue 的模式报告无模板。只读命令不会改变当前选择或执行生成的指引。定义格式见 [规范编写](../AGENTS.md) 与 [规范定义](specs/README.md)。
 
 `gidd.link .gh.auth` 是独立授权入口：复用配置账号已核验的凭据；取不到该账号的 token 时发起设备授权，输出网址和设备码，完成后核验账号，凭据由 gh 保存。保留 `gidd.auth/v1` 和 `gidd.auth.event/v1` JSON 格式，旧 `auth` 入口移除。它不转发为 `.gh auth`；`.gh` 包装在执行原生参数前要求已有可验证的 token。
 

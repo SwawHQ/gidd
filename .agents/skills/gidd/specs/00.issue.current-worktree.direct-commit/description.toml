@@ -1,0 +1,21 @@
+[authorization_schema]
+development         = ["auto", "ask"]
+internal_acceptance = ["auto", "ask"]
+add                 = ["auto", "ask"]
+commit              = ["auto", "ask"]
+push                = ["auto", "ask"]
+push_error          = ["auto", "ask"]
+merge               = ["not_applicable"]
+merge_error         = ["not_applicable"]
+close_issue         = ["auto", "ask"]
+cleanup_sync        = ["auto", "ask"]
+
+[issue_template]
+zh-CN = "../../references/issue.zh-CN.json"
+en = "../../references/issue.en.json"
+
+[zh-CN]
+description = "以 Issue 为依据，在当前工作区的当前分支直接开发、提交并推送。"
+
+[en]
+description = ""

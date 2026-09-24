@@ -1,0 +1,11 @@
+[authorization]
+development         = "auto"           # 开发
+internal_acceptance = "auto"           # 内部验收，准备交付
+add                 = "auto"           # 暂存
+commit              = "auto"           # 提交
+push                = "auto"           # 推送
+push_error          = "auto"           # 处理推送阻碍
+merge               = "not_applicable" # 合并
+merge_error         = "not_applicable" # 处理合并阻碍
+close_issue         = "ask"            # 显式关闭 Issue
+cleanup_sync        = "auto"           # 清理和同步

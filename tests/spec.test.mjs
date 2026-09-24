@@ -1,430 +1,421 @@
 import { test } from 'node:test';
-import { symlinkSync } from 'node:fs';
+import { cpSync, realpathSync, renameSync, rmdirSync, symlinkSync } from 'node:fs';
 import { configure } from '../.agents/skills/gidd/scripts.js/shared/config.mjs';
 import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/shared/storage.mjs';
-import { specCommand, parseSpecArguments } from '../.agents/skills/gidd/scripts.js/commands/spec/index.mjs';
-import { loadSpec, loadSpecCatalog, specRoot } from '../.agents/skills/gidd/scripts.js/shared/specs.mjs';
-import { readSpecPrompt } from '../.agents/skills/gidd/scripts.js/shared/spec-resources.mjs';
-import { parseSpecYaml, validateIssueForms } from '../.agents/skills/gidd/scripts.js/shared/spec-data.mjs';
+import { specCommand, parseSpecArguments, renderSpec } from '../.agents/skills/gidd/scripts.js/commands/spec/index.mjs';
+import { discoverModes, listModes, listSpecs, loadSpec, matchesMode, specRoot } from '../.agents/skills/gidd/scripts.js/shared/specs.mjs';
+import { authorizationKeys, modeNames } from '../.agents/skills/gidd/scripts.js/shared/spec-modes.mjs';
+import { readSpecToml } from '../.agents/skills/gidd/scripts.js/shared/spec-resources.mjs';
+import { validateIssueForms } from '../.agents/skills/gidd/scripts.js/shared/spec-data.mjs';
+import { stringify } from '../.agents/skills/gidd/scripts.js/vendor/toml.mjs';
 import { publishRepositoryEntry, runRepositoryCommand } from './support/repository.mjs';
-import { adapter, assert, bindFixture, compile, copySkill, dirname, findGit, fixture, join, json, mkdirSync, ok,
-  readFileSync, readdirSync, rmSync, run, snapshot, stub, toolsRoot, write } from './support/helpers.mjs';
+import { adapter, assert, copySkill, dirname, fixture, join, json, mkdirSync, ok,
+  readFileSync, rmSync, snapshot, write } from './support/helpers.mjs';
 
-const names = [
-  "00.all.auto",
-  "01.all.ask",
-  "02.issue",
-  "03.issue.ask-close",
-  "04.issue.ask-commit",
-  "05.issue.ask-commit.ask-close",
-  "06.issue.pr",
-  "07.issue.pr.ask-close",
-  "08.issue.pr.ask-commit",
-  "09.issue.pr.ask-commit.ask-close",
-  "10.issue.pr.ask-merge",
-  "11.issue.pr.ask-merge.ask-close",
-  "12.issue.pr.ask-commit.ask-merge",
-  "13.issue.pr.ask-commit.ask-merge.ask-close"
-];
-const chosen = 'schema_version = 1\n[spec]\ncurrent = "04.issue.ask-commit"\n';
+const mode = 'issue.current-worktree.direct-commit', directory = '00.' + mode, auto = directory + '/00.auto', ask = directory + '/04.ask-commit';
+const configText = selector => 'schema_version = 1\n[spec]\ncurrent = "' + selector + '"\n';
 const configPath = root => join(root, '.agents/skills/gidd/config.toml');
-const description = [{ issue: 'required' }, { branch_pr: 'optional' }, { stage_commit_push: 'ask' },
-  { merge_and_related_failures: 'auto' }, { close_issue: 'auto' }, { other_steps: 'auto' }];
-const meta = (body, template, summary = description) => '---\ndescription: ' + JSON.stringify(summary) + '\n' +
-  (template ? 'issue_template: ' + template + '\n' : '') + '---\n' + body;
 const check = report => report.checks.find(item => item.id === 'config.spec.current');
-function installation(f, config = chosen) {
+const options = (route, args = [], lang = 'zh') => parseSpecArguments(route, [...args, '--lang', lang]);
+function resources(f) {
+  const root = join(f.root, 'resources/specs');
+  cpSync(specRoot, root, { recursive: true });
+  cpSync(join(specRoot, '../references'), join(root, '../references'), { recursive: true });
+  return { root, preset: join(root, auto + '.toml'), description: join(root, directory, 'description.toml'),
+    experience: name => join(root, '../references/workflow', name + '.toml'), load: (selector = auto) => loadSpec(selector, root) };
+}
+function installation(f, config = configText(ask)) {
   const skill = join(f.root, "installed 中文 & ' spaces"), target = join(f.root, 'target');
   copySkill(skill); mkdirSync(join(target, '.git'), { recursive: true });
   if (config !== null) write(configPath(target), config);
   ok(adapter(f.root, { action: 'bootstrap', repositoryRoot: target, responses: {}, downloads: {}, yes: true }, { env: { PATH: dirname(process.execPath) } }));
   publishRepositoryEntry(target, join(skill, 'scripts.js/gidd.mjs'));
-  const invoke = (args, env = {}) => runRepositoryCommand(target, args, { cwd: f.root, env: { PATH: '', GIDD_LANG: 'en', ...env } });
-  return { skill, target, invoke, root: join(skill, 'specs'), diagnose: () => json(invoke(['doctor', '--offline'])) };
-}
-function resourceFixture(f) {
-  const root = join(f.root, 'specs'), prompt = join(root, 'sample/prompt.en.md');
-  const save = (body, template) => {
-    for (const lang of ['en', 'zh-CN']) write(join(root, 'sample/prompt.' + lang + '.md'), meta(body, template));
-  };
-  save('# Sample\n');
-  return { root, prompt, save, load: () => loadSpec('sample', loadSpecCatalog(root), root) };
+  const invoke = (args, env = {}) => runRepositoryCommand(target, args, { cwd: f.root, env: { PATH: '', GIDD_LANG: 'zh', ...env } });
+  return { skill, target, invoke, root: join(skill, 'specs'), diagnose: () => json(invoke(['doctor', '--offline', '--lang', 'en'])) };
 }
 
-test('fourteen presets expose bilingual summaries, expanded guidance and shared forms', () => {
-  const catalog = loadSpecCatalog();
-  for (const lang of ['en', 'zh-CN']) assert.deepEqual(catalog[lang].map(item => item.name), names);
-  const policies = [
-    Array(6).fill('agent_decides'), Array(6).fill('user_decides'),
-    ['required', 'optional', 'auto', 'auto', 'auto', 'auto'],
-    ['required', 'optional', 'auto', 'auto', 'ask', 'auto'],
-    ['required', 'optional', 'ask', 'auto', 'auto', 'auto'],
-    ['required', 'optional', 'ask', 'auto', 'ask', 'auto'],
-    ['required', 'required', 'auto', 'auto', 'auto', 'auto'],
-    ['required', 'required', 'auto', 'auto', 'ask', 'auto'],
-    ['required', 'required', 'ask', 'auto', 'auto', 'auto'],
-    ['required', 'required', 'ask', 'auto', 'ask', 'auto'],
-    ['required', 'required', 'auto', 'ask', 'auto', 'auto'],
-    ['required', 'required', 'auto', 'ask', 'ask', 'auto'],
-    ['required', 'required', 'ask', 'ask', 'auto', 'auto'],
-    ['required', 'required', 'ask', 'ask', 'ask', 'auto'],
-  ];
-  for (const lang of ['en', 'zh-CN']) catalog[lang].forEach((item, index) => {
-    assert.deepEqual(item.description.map(entry => Object.keys(entry)[0]), description.map(entry => Object.keys(entry)[0]));
-    assert.deepEqual(item.description.map(entry => Object.values(entry)[0]), policies[index]);
-  });
-  for (const name of names) {
-    const spec = loadSpec(name, catalog);
-    assert.deepEqual(readdirSync(join(specRoot, name)).sort(), ['prompt.en.md', 'prompt.zh-CN.md']);
-    for (const lang of ['en', 'zh-CN']) {
-      const text = spec.prompts[lang].content;
-      assert.ok(text.includes('# ' + name)); assert.doesNotMatch(text, /^@include|^description:|^issue_template:/m);
-      assert.ok(text.includes('gidd.link spec.issue.current'));
-      assert.ok(spec.issueForms[lang].body.length);
-      const rendered = specCommand(specRoot, parseSpecArguments('spec', [name, '--lang', lang])).markdown;
-      assert.ok(rendered.includes('gidd.link spec.issue ' + name + ' --lang ' + (lang === 'en' ? 'en' : 'zh')));
-      assert.ok(!rendered.includes('@gidd.link spec.issue.current@'));
-    }
+test('six modes list their own presets, authorizations and incomplete languages', () => {
+  const modes = listModes();
+  assert.deepEqual(modes.map(item => item.name), modeNames.map((name, index) => '0' + index + '.' + name));
+  assert.deepEqual(modes.map(item => item.specs), [16, 1, 1, 1, 1, 0]);
+  for (const item of modes) {
+    assert.deepEqual(Object.keys(item), ['name', 'description', 'specs']);
+    assert.equal(item.description, loadSpec(item.name + '/00.auto').definition['zh-CN'].description);
+    assert.ok(item.description && !/[\r\n]/.test(item.description));
+    assert.ok(!Object.hasOwn(item, 'title'));
+  }
+  assert.ok(listModes('en').every(item => item.description === ''));
+  const specs = listSpecs(mode);
+  assert.equal(specs.find(item => item.name === '04.ask-commit').authorization.commit, 'ask');
+  for (const item of specs) {
+    assert.deepEqual(Object.keys(item), ['name', 'authorization']);
+    assert.deepEqual(Object.keys(item.authorization).sort(), [...authorizationKeys].sort());
+    assert.equal(item.authorization.merge, 'not_applicable');
+  }
+  assert.equal(listSpecs(modeNames[5])[0].error, 'spec_language_unavailable');
+});
+
+test('fixed mode IDs resolve the same resources and prompts as full mode names', () => {
+  const catalog = discoverModes();
+  assert.deepEqual(catalog.map(({ id, name }) => [id, name]), [
+    ['00', 'issue.current-worktree.direct-commit'],
+    ['01', 'issue.dedicated-worktree.direct-merge'],
+    ['02', 'issue.dedicated-worktree.pr-merge'],
+    ['03', 'no-issue.current-worktree.direct-commit'],
+    ['04', 'no-issue.dedicated-worktree.direct-merge'],
+    ['05', 'no-issue.dedicated-worktree.pr-merge'],
+  ]);
+  for (const { id, name, directory } of catalog) {
+    assert.deepEqual(listSpecs(id), listSpecs(name));
+    assert.deepEqual(listSpecs(directory), listSpecs(name));
+    const short = loadSpec(id + '/00.auto'), full = loadSpec(name + '/00.auto');
+    assert.deepEqual(short, full);
+    assert.deepEqual(loadSpec(directory + '/00.auto'), full);
+    assert.deepEqual(loadSpec(id + '/00'), full);
+    assert.deepEqual(loadSpec(name + '/00'), full);
+    if (short.available_languages.includes('zh-CN')) assert.equal(renderSpec('target', short, 'zh-CN'), renderSpec('target', full, 'zh-CN'));
   }
 });
 
-test('routes separate names from operations and reject retired syntax', () => {
+test('mode IDs come from directory prefixes, not fixed mappings, sort order or TOML fields', () => {
+  const f = fixture();
+  try {
+    const s = resources(f), oldPath = join(s.root, directory), newPath = join(s.root, '27.' + mode);
+    assert.ok(oldPath.startsWith(f.root + '\\') && newPath.startsWith(f.root + '\\'));
+    renameSync(oldPath, newPath);
+    const spec = s.load('27/00');
+    assert.equal(spec.selector, '27.' + mode + '/00.auto');
+    assert.equal(spec.mode, mode);
+    assert.match(renderSpec(f.root, spec, 'zh-CN'), /Refs #NNN/);
+    assert.deepEqual(s.load(mode + '/00'), spec);
+    assert.ok(listModes('zh-CN', s.root).some(item => item.name === '27.' + mode));
+    assert.throws(() => s.load('00/00'), /spec_mode_missing/);
+    assert.throws(() => s.load(auto), /spec_mode_missing/);
+    const path = join(newPath, 'description.toml'), definition = readSpecToml(path);
+    definition.id = '00'; write(path, stringify(definition));
+    assert.throws(() => s.load('27/00'), /spec_mode_invalid/);
+  } finally { f.dispose(); }
+});
+
+test('duplicate mode IDs and names fail discovery even for fully named selections', () => {
+  const f = fixture();
+  try {
+    const s = resources(f), conflicting = '00.' + modeNames[1];
+    mkdirSync(join(s.root, conflicting));
+    const conflict = error => error.message === 'spec_mode_id_conflict' && error.conflicts[0].id === '00' &&
+      error.conflicts[0].directories.includes(directory) && error.conflicts[0].directories.includes(conflicting);
+    assert.throws(() => discoverModes(s.root), conflict);
+    assert.throws(s.load, conflict);
+    for (const [route, args] of [['spec.modes', []], ['spec.list', ['00']], ['spec', [auto]], ['spec.issue', ['00/00']]]) {
+      const result = specCommand(f.root, options(route, args), s.root);
+      assert.equal(result.exitCode, 2); assert.equal(result.report.error, 'spec_mode_id_conflict');
+      assert.equal(result.report.conflicts[0].id, '00');
+    }
+    rmdirSync(join(s.root, conflicting));
+    mkdirSync(join(s.root, '27.' + mode));
+    assert.throws(s.load, /spec_mode_name_conflict/);
+    rmdirSync(join(s.root, '27.' + mode));
+    mkdirSync(join(s.root, '0.' + mode));
+    assert.throws(s.load, /spec_mode_directory_invalid/);
+  } finally { f.dispose(); }
+});
+
+test('preset numbers match exact filename prefixes and never choose among ambiguous or unavailable presets', () => {
+  const f = fixture();
+  try {
+    const s = resources(f);
+    assert.equal(s.load('00/04').selector, ask);
+    assert.throws(() => s.load('00/99'), /spec_number_missing/);
+    write(join(s.root, directory, '00.draft.toml'), '');
+    assert.throws(() => s.load('00/00'), /spec_number_ambiguous/);
+    assert.equal(s.load(auto).selector, auto);
+    const report = specCommand(f.root, options('spec.issue', ['00/00']), s.root).report;
+    assert.equal(report.error, 'spec_number_ambiguous');
+    assert.match(report.hint, /完整规范名/);
+    write(join(s.root, directory, '99.draft.toml'), '');
+    assert.throws(() => s.load('00/99'), /spec_resources_invalid/);
+    assert.equal(listSpecs('00', s.root).find(item => item.name === '00.auto').error, undefined);
+  } finally { f.dispose(); }
+});
+
+test('mode flows distinguish local merge before push from PR merge after push', () => {
+  for (const name of modeNames) {
+    const spec = loadSpec(name + '/00.auto'), flow = spec.definition.flow;
+    assert.ok(flow.indexOf('internal_acceptance') < flow.indexOf('add'));
+    assert.ok(flow.indexOf('commit') < flow.indexOf('push'));
+    assert.equal(flow.includes('close_issue'), name.startsWith('issue.'));
+    assert.ok(!flow.includes('push_error') && !flow.includes('merge_error'));
+    assert.equal(flow.at(-1), 'cleanup_sync');
+    if (name.endsWith('.direct-commit')) {
+      assert.ok(!flow.includes('merge') && !flow.includes('pr'));
+      assert.deepEqual(spec.definition.errors, ['push_error']);
+    } else {
+      assert.deepEqual(spec.definition.errors, ['push_error', 'merge_error']);
+      if (name.endsWith('.pr-merge')) assert.ok(flow.indexOf('push') < flow.indexOf('pr') && flow.indexOf('pr') < flow.indexOf('merge'));
+      else assert.ok(flow.indexOf('merge') < flow.indexOf('push') && !flow.includes('pr'));
+    }
+  }
+  const issue = renderSpec('target', loadSpec(ask), 'zh-CN');
+  assert.match(issue, /\| commit \| ask \|/);
+  assert.match(issue, /\| add \| auto \|/);
+  assert.match(issue, /Refs #NNN/);
+  assert.ok(issue.includes('gidd.link spec.issue ' + ask + ' --lang zh'));
+  const task = renderSpec('target', loadSpec(modeNames[3] + '/00.auto'), 'zh-CN');
+  assert.ok(!task.includes('Refs #NNN') && !task.includes('gidd.link spec.issue'));
+  assert.ok(!task.includes('### merge') && !task.includes('### close-issue'));
+});
+
+test('routes require a mode or complete selector and reject old or unsafe syntax', () => {
   for (const [route, args, action, current, selector] of [
-    ['spec.list', [], 'list', false, undefined], ['spec.current', [], 'show', true, undefined],
-    ['spec.issue.current', [], 'issue', true, undefined], ['spec', ['07.issue.pr.ask-close'], 'show', false, '07.issue.pr.ask-close'],
-    ['spec.issue', ['00.all.auto'], 'issue', false, '00.all.auto'], ['spec', ['current'], 'show', false, 'current'],
-  ]) assert.deepEqual(parseSpecArguments(route, [...args, '--lang', 'zh']), { action, current, selector, lang: 'zh-CN' });
-  for (const route of ['spec.current.issue', 'spec.issue-direct', 'spec.all.ask', 'spec.list.issue']) assert.throws(() => parseSpecArguments(route, []), /invalid_spec_route/);
-  for (const [route, args] of [['spec', []], ['spec.issue', []], ['spec', ['../outside']], ['spec', ['a..b']],
-    ['spec', ['_share']], ['spec.current', ['issue']], ['spec.list', ['issue']], ['spec.issue.current', ['current']],
-    ['spec', ['issue', '--lang', 'en', '--lang', 'zh']], ['spec', ['issue', '--json']]]) assert.throws(() => parseSpecArguments(route, args), /invalid_arguments/);
-  assert.throws(() => parseSpecArguments('spec.current', ['--lang', 'fr']), /unsupported_help_language/);
+    ['spec.modes', [], 'modes', false, undefined], ['spec.list', [mode], 'list', false, mode],
+    ['spec.list', ['00'], 'list', false, '00'], ['spec', ['00/00.auto'], 'show', false, '00/00.auto'],
+    ['spec', ['00/00'], 'show', false, '00/00'], ['spec.issue', ['00/04'], 'issue', false, '00/04'],
+    ['spec.list', ['27'], 'list', false, '27'], ['spec', ['27/00'], 'show', false, '27/00'],
+    ['spec.list', [directory], 'list', false, directory],
+    ['spec.issue', ['03/00.auto'], 'issue', false, '03/00.auto'],
+    ['spec', [auto], 'show', false, auto], ['spec.issue', [auto], 'issue', false, auto],
+    ['spec.current', [], 'show', true, undefined], ['spec.issue.current', [], 'issue', true, undefined],
+  ]) assert.deepEqual(options(route, args), { action, current, selector, lang: 'zh-CN' });
+  for (const route of ['spec.current.issue', 'spec.all.ask', 'spec.specs']) assert.throws(() => options(route), /invalid_spec_route/);
+  for (const [route, args] of [['spec', []], ['spec.issue', []], ['spec.list', []], ['spec.list', [auto]],
+    ['spec.modes', [mode]], ['spec.current', [auto]], ['spec.issue.current', [auto]],
+    ...['1', '001', '-1', '../01'].flatMap(id => [['spec.list', [id]], ['spec', [id + '/00.auto']]]),
+    ...['02.issue', mode, mode + '/description', mode + '/00.auto.toml', mode + '/../00.auto', mode + '\\00.auto',
+      mode + '/a/b', mode + '/_helper', mode + '/a..b', '00/0', '00/000', '00/00.', '00/-1'].map(value => ['spec', [value]]),
+    ['spec', [auto, '--lang', 'en']], ['spec', [auto, '--json']]]) assert.throws(() => options(route, args), /invalid_arguments/);
+  assert.throws(() => options('spec.current', [], 'fr'), /unsupported_help_language/);
 });
 
-test('numbered names select exact resources without numeric or unnumbered aliases', () => {
+test('schemas enforce applicability and presets require explicit authorization for every stage', () => {
   const f = fixture();
   try {
-    for (const route of ['spec', 'spec.issue']) {
-      assert.equal(specCommand(f.root, parseSpecArguments(route, ['00.all.auto'])).exitCode, 0);
-      assert.equal(specCommand(f.root, parseSpecArguments(route, ['all.auto'])).report.error, 'spec_current_unsupported');
-      for (const name of ['00', '0.all.auto', '000.all.auto', '00..all.auto']) assert.throws(() => parseSpecArguments(route, [name]), /invalid_arguments/);
+    const s = resources(f), original = readSpecToml(s.preset), definition = readSpecToml(s.description);
+    for (const change of [data => { delete data.authorization.commit; }, data => { data.authorization.unknown = 'auto'; },
+      data => { data.authorization.commit = 'auto|ask'; }, data => { data.authorization.add = true; },
+      data => { data.authorization.commit = 'not_applicable'; }, data => { data.authorization.merge = 'auto'; },
+      data => { data.description = {}; }]) {
+      const data = structuredClone(original); change(data); write(s.preset, stringify(data));
+      assert.throws(s.load, /spec_authorization_invalid/);
     }
-    configure(f.root, 'set', 'spec.current', '13.issue.pr.ask-commit.ask-merge.ask-close');
-    assert.equal(parseConfiguration(readFileSync(configPath(f.root), 'utf8')).spec.current, '13.issue.pr.ask-commit.ask-merge.ask-close');
-    const before = snapshot(f.root);
-    for (const name of ['13', 'issue.pr.ask-commit.ask-merge.ask-close']) assert.throws(() => configure(f.root, 'set', 'spec.current', name), /spec_current_unsupported/);
+    write(s.preset, stringify(original));
+    for (const value of [[], ['auto', 'auto'], ['skip'], ['not_applicable'], 'auto|ask']) {
+      const data = structuredClone(definition); data.authorization_schema.commit = value;
+      write(s.description, stringify(data)); assert.throws(s.load, /spec_schema_invalid/);
+    }
+    const invalid = structuredClone(definition); invalid.authorization_schema.merge = ['auto', 'ask'];
+    write(s.description, stringify(invalid)); assert.throws(s.load, /spec_schema_invalid/);
+    definition.authorization_schema.commit = ['ask']; write(s.description, stringify(definition));
+    assert.throws(s.load, /spec_authorization_invalid/);
+    original.authorization.commit = 'ask'; write(s.preset, stringify(original));
+    assert.equal(s.load().authorization.commit, 'ask');
+    // Authorization comes from the file, not the conventional preset name.
+    assert.equal(listSpecs(mode, s.root)[0].authorization.commit, 'ask');
+  } finally { f.dispose(); }
+});
+
+test('TOML supports quoted patterns and multiline prose without include or command expansion', () => {
+  const f = fixture();
+  try {
+    const s = resources(f), path = s.experience('06.commit');
+    write(path, '[zh-CN."issue.*"]\ntitle = "commit"\nbody = \'\'\'\n第一行\n@include ../../outside@\n@gidd.link spec.issue.current@\n\'\'\'\n[en."issue.*"]\ntitle = ""\nbody = ""\n');
+    const before = snapshot(f.root), text = renderSpec(f.root, s.load(), 'zh-CN');
+    assert.match(text, /第一行\n@include ..\/..\/outside@\n@gidd.link spec.issue.current@/);
     assert.deepEqual(snapshot(f.root), before);
-  } finally { f.dispose(); }
-});
-
-test('discovery skips helpers and placeholders but validates bilingual metadata', () => {
-  const f = fixture();
-  try {
-    const s = resourceFixture(f);
-    write(join(s.root, '_lib/broken/prompt.en.md'), 'not a spec'); write(join(s.root, 'placeholder/.gitkeep'), '');
-    write(join(s.root, 'AGENTS.md'), '# Authoring instructions, not a selectable spec');
-    assert.deepEqual(loadSpecCatalog(s.root).en.map(item => item.name), ['sample']);
-    for(const lang of ['en','zh-CN']) write(join(s.root,'current/prompt.'+lang+'.md'), meta('# named current'));
-    assert.deepEqual(loadSpecCatalog(s.root).en.map(item => item.name), ['current', 'sample']);
-    rmSync(join(s.root, 'sample/prompt.zh-CN.md')); assert.throws(() => loadSpecCatalog(s.root), /spec_resources_missing/);
-    s.save('# restored');
-    for (const invalid of ['# no front matter', '---\ndescription: ""\n---\n# body', '---\ndescription: x\ndescription: y\n---\n# body',
-      '---\ndescription: [x]\n---\n# body', meta('# body').replace('\n---\n# body', '\nextra: no\n---\n# body'),
-      meta('# body', '5'), meta('')]) {
-      write(s.prompt, invalid); assert.throws(() => loadSpecCatalog(s.root), /spec_(metadata|resources)_invalid/);
+    for (const invalid of ['x = 1\nx = 2', '[broken', '[a]\nx = 1\n[a]\nx = 2', 'body = "secret invalid', 'body = bare']) {
+      write(path, invalid);
+      assert.throws(s.load, error => error.message === 'spec_toml_invalid' && error.path === path && !error.message.includes('secret'));
     }
-    s.save('# restored'); write(s.prompt, meta('# only English template', '../_share/issue.en.json'));
-    assert.throws(() => loadSpecCatalog(s.root), /spec_metadata_mismatch/);
-    s.save('# restored'); symlinkSync(join(s.root, 'sample'), join(s.root, 'linked'), 'junction');
-    assert.throws(() => loadSpecCatalog(s.root), /spec_directory_invalid/);
-  } finally { f.dispose(); }
-});
-
-test('descriptions require six unique single-key entries with field-specific values', () => {
-  const f = fixture();
-  try {
-    const s = resourceFixture(f);
-    const invalid = [null, false, 1, 'legacy summary', {}, [], Object.assign({}, ...description),
-      description.slice(1), [...description, { issue: 'required' }],
-      ...[null, [], 'issue', 1, {}, { issue: 'required', branch_pr: 'optional' },
-        { unknown: 'required' }, { Issue: 'required' }, { branch_pr: 'optional' },
-        { issue: 'ask' }, { issue: true }, { issue: ['required'] }, { issue: 'Required' },
-        { issue: 'required\n' }].map(item => [item, ...description.slice(1)]),
-      [...description.slice(0, 2), { stage_commit_push: 'required' }, ...description.slice(3)],
-      [...description.slice(0, 5), { other_steps: 'optional' }],
-    ];
-    for (const value of invalid) {
-      write(s.prompt, meta('# body', undefined, value));
-      assert.throws(() => readSpecPrompt(s.prompt), /spec_metadata_invalid/, JSON.stringify(value));
-    }
-    for (const choice of ['agent_decides', 'user_decides']) {
-      const value = description.map(item => ({ [Object.keys(item)[0]]: choice }));
-      write(s.prompt, meta('# body', undefined, value));
-      assert.deepEqual(readSpecPrompt(s.prompt).metadata.description, value);
-    }
-    const value = [...description.slice(0, 5), { other_steps: 'ask' }];
-    write(s.prompt, meta('# body', undefined, value));
-    assert.deepEqual(readSpecPrompt(s.prompt).metadata.description, value);
-  } finally { f.dispose(); }
-});
-
-test('description order follows the source and bilingual values and order must match', () => {
-  const f = fixture();
-  try {
-    const s = resourceFixture(f), reordered = [...description].reverse();
-    const translated = join(s.root, 'sample/prompt.zh-CN.md');
-    for (const path of [s.prompt, translated]) write(path, meta('# body', undefined, reordered));
-    const before = snapshot(f.root), catalog = loadSpecCatalog(s.root);
-    for (const lang of ['en', 'zh-CN']) assert.deepEqual(catalog[lang][0].description, reordered);
-    assert.deepEqual(snapshot(f.root), before);
-    for (const mismatch of [description, [...reordered.slice(0, 5), { issue: 'optional' }]]) {
-      write(translated, meta('# body', undefined, mismatch));
-      assert.throws(() => loadSpecCatalog(s.root), /spec_metadata_mismatch/);
+    for (const invalid of [Buffer.from([0xff, 0xfe]), '\0', ' ', 'x'.repeat(65537)]) {
+      write(path, invalid); assert.throws(s.load, /spec_resources_invalid/);
     }
   } finally { f.dispose(); }
 });
 
-test('includes resolve per source, allow repeated fragments and preserve code examples', () => {
+test('pattern matching is anchored, only star is special, and ambiguity is rejected', () => {
+  assert.ok(matchesMode('issue.*', mode)); assert.ok(!matchesMode('issue.*', 'no-' + mode));
+  assert.ok(matchesMode('*.pr-merge', modeNames[2])); assert.ok(!matchesMode('issue.*', 'issueXcurrent'));
   const f = fixture();
   try {
-    const s = resourceFixture(f), ticks = String.fromCharCode(96).repeat(3);
-    write(join(s.root, '_share/a.md'), 'A\n@include nested/b.md@\n'); write(join(s.root, '_share/nested/b.md'), '中文 B');
-    const code = '\n~~~md\n@include missing.md@\n~~~\n' + ticks + 'text\n@include missing.md@\n' + ticks + '\n    @include indented.md@\n';
-    s.save('@include ../_share/a.md@\n@include ../_share/a.md@\n' + code);
-    const before = snapshot(f.root);
-    assert.equal(s.load().prompts.en.content, 'A\n中文 B\nA\n中文 B\n' + code);
-    assert.deepEqual(snapshot(f.root), before);
-    write(join(s.root, '_share/rule.md'), '---\nA thematic break, not metadata.\n');
-    s.save('@include ../_share/rule.md@\n');
-    assert.equal(s.load().prompts.en.content, '---\nA thematic break, not metadata.\n');
-    for (const newline of ['\n', '\r\n']) {
-      write(s.prompt, '\uFEFF' + meta('# custom\n').replace(/\n/g, newline)); assert.ok(readSpecPrompt(s.prompt).content.includes('# custom'));
-    }
+    const s = resources(f), path = s.experience('06.commit'), original = readSpecToml(path);
+    const attempt = (change, reason) => { const data = structuredClone(original); change(data); write(path, stringify(data)); assert.throws(s.load, new RegExp(reason)); };
+    attempt(data => { for (const lang of ['en', 'zh-CN']) data[lang]['*'] = data[lang]['issue.*']; }, 'spec_pattern_ambiguous');
+    attempt(data => { for (const lang of ['en', 'zh-CN']) delete data[lang]['issue.*']; }, 'spec_pattern_missing');
+    attempt(data => { delete data.en['no-issue.*']; }, 'spec_pattern_mismatch');
+    attempt(data => { data.en['never.*'] = data.en['issue.*']; }, 'spec_pattern_invalid');
+    attempt(data => { data.en['issue.?'] = data.en['issue.*']; }, 'spec_pattern_invalid');
+    write(path, stringify(original)); assert.deepEqual(s.load().available_languages, ['zh-CN']);
   } finally { f.dispose(); }
 });
 
-test('include failures reject missing, cyclic, escaping, nonplain and excessive resources', () => {
+test('unrelated drafts and inapplicable modules cannot block a selected spec', () => {
   const f = fixture();
   try {
-    const s = resourceFixture(f), shared = join(s.root, '_share');
-    write(join(shared, 'a.md'), '@include b.md@\n'); write(join(shared, 'b.md'), '@include a.md@\n');
-    for (const [body, reason] of [
-      ['@include ../_share/missing.md@\n', 'spec_resources_missing'], ['@include ../_share/a.md@\n', 'spec_include_cycle'],
-      ['@include ../../outside.md@\n', 'spec_resource_path_invalid'], ['@include C:/outside.md@\n', 'spec_resource_path_invalid'],
-      ['@include ../../references/rules.md@\n', 'spec_resource_path_invalid'],
-      ['@include https://example.test/a.md@\n', 'spec_resource_path_invalid'], ['@include ../_share/a.md', 'spec_include_invalid'],
-      ['@include ../_share/form.json@\n', 'spec_include_invalid'],
-    ]) { s.save(body); assert.throws(s.load, new RegExp(reason)); }
-    write(join(shared, 'front.md'), meta('# fragment')); s.save('@include ../_share/front.md@\n'); assert.throws(s.load, /spec_include_metadata/);
-    for (const value of [Buffer.from([255]), 'text\0hidden', ' ', 'x'.repeat(65537)]) {
-      write(join(shared, 'bad.md'), value); s.save('@include ../_share/bad.md@\n'); assert.throws(s.load, /spec_resources_invalid/);
-    }
-    const outside = join(f.root, 'outside'); write(join(outside, 'secret.md'), 'outside');
-    symlinkSync(outside, join(shared, 'linked'), 'junction'); s.save('@include ../_share/linked/secret.md@\n'); assert.throws(s.load, /spec_resource_path_invalid/);
-    write(join(shared, 'large.md'), 'x'.repeat(60000)); s.save(('@include ../_share/large.md@\n').repeat(5)); assert.throws(s.load, /spec_include_limit/);
-    for (let i = 0; i < 18; i++) write(join(shared, i + '.md'), i === 17 ? 'end' : '@include ' + (i+1) + '.md@\n');
-    s.save('@include ../_share/0.md@\n'); assert.throws(s.load, /spec_include_limit/);
+    const s = resources(f);
+    write(join(s.root, directory, '99.draft.toml'), '');
+    write(join(s.root, directory, '_notes.toml'), 'not toml');
+    write(join(s.root, '02.' + modeNames[2], 'description.toml'), 'not toml');
+    rmSync(s.experience('10.merge'));
+    assert.deepEqual(s.load().available_languages, ['zh-CN']);
+    const list = listSpecs(mode, s.root);
+    assert.equal(list.length, 17); assert.equal(list.find(item => item.name === '99.draft').error, 'spec_resources_invalid');
+    assert.equal(listModes('zh-CN', s.root)[0].specs, 16);
+    assert.equal(listModes('zh-CN', s.root)[2].error, 'spec_toml_invalid');
+    assert.deepEqual(Object.keys(listModes('zh-CN', s.root)[2]), ['name', 'specs', 'error']);
+    assert.equal(listModes('zh-CN', s.root)[2].name, '02.' + modeNames[2]);
+    assert.equal(listModes('zh-CN', s.root)[3].name, '03.' + modeNames[3]);
+    rmSync(s.experience('06.commit')); assert.throws(s.load, /spec_resources_missing/);
   } finally { f.dispose(); }
 });
 
-test('templates follow explicit local, shared or references JSON paths without fallback', () => {
+test('language completeness is checked before any prompt is emitted; Issue templates remain independently usable', () => {
   const f = fixture();
   try {
-    const s = resourceFixture(f), forms = loadSpec('02.issue').issueForms;
-    const setForms = directory => {
-      for (const lang of ['en', 'zh-CN']) {
-        write(join(s.root, directory, 'issue.' + lang + '.json'), JSON.stringify(forms[lang]));
-        write(join(s.root, 'sample/prompt.' + lang + '.md'), meta('# template', (directory === 'sample' ? './' : '../' + directory + '/') + 'issue.' + lang + '.json'));
-      }
-    };
-    setForms('_share'); assert.deepEqual(s.load().issueForms, forms);
-    for (const lang of ['en', 'zh-CN']) write(join(s.root, 'sample/issue.' + lang + '.json'), '{}');
-    assert.deepEqual(s.load().issueForms, forms);
-    rmSync(join(s.root, '_share/issue.en.json')); assert.throws(s.load, /spec_resources_missing/);
-    setForms('../references'); assert.deepEqual(s.load().issueForms, forms);
-    rmSync(join(s.root, '../references/issue.en.json')); assert.throws(s.load, /spec_resources_missing/);
-    setForms('../references');
-    write(join(s.root, '../references/issue.en.json'), '{bad'); assert.throws(s.load, /spec_resources_invalid/);
-    setForms('../references');
-    const outside = join(f.root, 'outside');
-    write(join(outside, 'issue.json'), JSON.stringify(forms.en));
+    const s = resources(f);
+    const result = specCommand(f.root, options('spec', [auto], 'en'), s.root);
+    assert.equal(result.exitCode, 2); assert.equal(result.markdown, undefined);
+    assert.equal(result.report.error, 'spec_language_unavailable'); assert.equal(result.report.path, s.description);
+    const description = readSpecToml(s.description);
+    description.en = { title: 'Example', body: 'Mode text' };
+    write(s.description, stringify(description));
+    assert.throws(s.load, /spec_translation_invalid/);
+    description.en = { description: 'Mode text' };
+    write(s.description, stringify(description));
+    assert.equal(specCommand(f.root, options('spec', [auto], 'en'), s.root).report.path, s.experience('00.common'));
+    for (const item of s.load().experiences) {
+      const data = readSpecToml(item.path);
+      for (const value of Object.values(data.en)) Object.assign(value, { title: 'Example', body: 'English reference' });
+      write(item.path, stringify(data));
+    }
+    const prompt = specCommand(f.root, options('spec', [auto], 'en'), s.root).markdown;
+    assert.match(prompt, /English reference/);
+    assert.ok(prompt.includes('# ' + auto + '\n\nMode text\n\n## Flow and authorization'));
+    for (const lang of ['zh', 'en']) assert.equal(specCommand(f.root, options('spec.issue', [auto], lang), s.root).exitCode, 0);
+    const noIssue = specCommand(f.root, options('spec.issue', [modeNames[3] + '/00.auto']), s.root);
+    assert.equal(noIssue.report.error, 'spec_issue_template_missing');
+    const unfinished = specCommand(f.root, options('spec', [modeNames[5] + '/00.auto']), s.root);
+    assert.equal(unfinished.report.path, s.experience('10.merge'));
+  } finally { f.dispose(); }
+});
+
+test('relative templates are confined to installed references, including junctions', () => {
+  const f = fixture();
+  try {
+    const s = resources(f), definition = readSpecToml(s.description), original = definition.issue_template.en;
+    for (const ref of ['https://example.test/a.json', 'C:/outside.json', '../../../outside.json', '../00.auto.toml', '../../specs/private.json', '/root.json']) {
+      definition.issue_template.en = ref; write(s.description, stringify(definition));
+      assert.throws(s.load, /spec_resource_path_invalid/);
+    }
+    const outside = join(f.root, 'outside'); mkdirSync(outside);
     symlinkSync(outside, join(s.root, '../references/linked'), 'junction');
-    s.save('# junction', '../../references/linked/issue.json'); assert.throws(s.load, /spec_resource_path_invalid/);
-    for (const reference of ['../../references-other/issue.json', '../../references/../outside/issue.json',
-      '../../scripts.js/issue.json', 'C:/outside.json', 'https://example.test/issue.json']) {
-      s.save('# escape', reference); assert.throws(s.load, /spec_resource_path_invalid/);
-    }
-    setForms('sample'); assert.deepEqual(s.load().issueForms, forms);
-    for (const text of ['{bad', '{}', JSON.stringify({ ...forms.en, body: [...forms.en.body].reverse() })]) {
-      write(join(s.root, 'sample/issue.en.json'), text); assert.throws(s.load, /spec_resources_invalid/);
-    }
-    setForms('sample'); s.save('# without template'); assert.equal(s.load().issueForms, undefined);
-    s.save('# escape', '../../outside.json'); assert.throws(s.load, /spec_resource_path_invalid/);
+    definition.issue_template.en = '../../references/linked/issue.json'; write(s.description, stringify(definition));
+    assert.throws(s.load, /spec_resource_path_invalid/);
+    definition.issue_template.en = original; write(s.description, stringify(definition));
+    assert.ok(s.load().issueForms.en.body.length);
+    const selected = join(s.root, directory); assert.ok(selected.startsWith(f.root + '\\')); rmSync(selected, { recursive: true });
+    symlinkSync(join(specRoot, directory), selected, 'junction');
+    assert.throws(s.load, /spec_resource_path_invalid/);
   } finally { f.dispose(); }
 });
 
-test('configuration edits preserve text and dotted choices, and reject retired fields', () => {
+test('selection preserves config comments and newline style, and rejects invalid selectors without mutation', () => {
   const f = fixture();
   try {
     const path = configPath(f.root);
     for (const newline of ['\n', '\r\n']) {
-      const text = '\uFEFF' + ['# 用户注释', 'schema_version = 1', '[spec]', "current = 'unknown' # keep", ''].join(newline);
-      write(path, text); configure(f.root, 'set', 'spec.current', '09.issue.pr.ask-commit.ask-close');
-      assert.equal(readFileSync(path, 'utf8'), text.replace("'unknown'", '"09.issue.pr.ask-commit.ask-close"'));
-      configure(f.root, 'clear', 'spec.current'); assert.equal(parseConfiguration(readFileSync(path, 'utf8')).spec.current, undefined);
+      const original = '\uFEFF# preserved' + newline + configText(auto).replaceAll('\n', newline);
+      write(path, original); configure(f.root, 'set', 'spec.current', ask);
+      assert.equal(readFileSync(path, 'utf8'), original.replace(auto, ask));
+      assert.equal(parseConfiguration(readFileSync(path, 'utf8')).spec.current, ask);
     }
-    assert.throws(() => configure(f.root, 'set', 'spec.current', 'missing'), /spec_current_unsupported/);
-    assert.throws(() => configure(f.root, 'set', 'spec.mode', 'issue'), /config_unknown_key/);
-    assert.throws(() => parseConfiguration('schema_version = 1\n[spec]\nmode = "issue"\n'), /config_unsupported_syntax_or_field/);
-  } finally { f.dispose(); }
-});
-
-test('CLI lists without config and prints named/current bilingual instructions and templates without writes', () => {
-  const f = fixture();
-  try {
-    const s = installation(f, null);
-    assert.deepEqual(json(ok(s.invoke(['spec.list']))).specs.map(item => item.name), names);
-    const reordered = [...description].reverse();
-    for (const lang of ['en', 'zh-CN']) {
-      const path = join(s.root, '04.issue.ask-commit/prompt.' + lang + '.md'), prompt = readSpecPrompt(path);
-      write(path, meta(prompt.content, prompt.metadata.issue_template, reordered));
-    }
-    for (const lang of ['en', 'zh']) {
-      const output = ok(s.invoke(['spec.list', '--lang', lang])), listed = json(output).specs;
-      const lines = output.stdout.trimEnd().split(/\r?\n/);
-      assert.equal(lines.length, names.length + 5);
-      assert.deepEqual(lines.slice(3, -2).map(line => JSON.parse(line.replace(/,$/, ''))), listed);
-      assert.deepEqual(listed.find(item => item.name === '04.issue.ask-commit').description, reordered);
-    }
-    for (const content of [null, 'schema_version = 1\n', 'schema_version = 1\n[spec]\ncurrent = "missing"\n', 'broken TOML']) {
-      if (content !== null) write(configPath(s.target), content);
-      const before = snapshot(f.root), result = s.invoke(['spec.current']);
-      assert.equal(result.status, 1); assert.ok(['spec_current_missing', 'spec_current_unsupported', 'spec_configuration_unreadable'].includes(json(result).error));
-      ok(s.invoke(['spec', '00.all.auto'])); ok(s.invoke(['spec.issue', '00.all.auto'])); assert.deepEqual(snapshot(f.root), before);
-    }
-    write(configPath(s.target), chosen);
-    for (const lang of ['en', 'zh']) {
-      const before = snapshot(f.root), current = ok(s.invoke(['spec.current', '--lang', lang])).stdout;
-      assert.equal(current, ok(s.invoke(['spec', '04.issue.ask-commit', '--lang', lang])).stdout);
-      assert.match(current, lang === 'en' ? /Prompt source:/ : /提示来源/); assert.doesNotMatch(current, /^@include|^description:/m);
-      assert.deepEqual(json(ok(s.invoke(['spec.issue.current', '--lang', lang]))), json(ok(s.invoke(['spec.issue', '04.issue.ask-commit', '--lang', lang]))));
+    const before = snapshot(f.root);
+    for (const selector of ['02.issue', '00.all.auto', '07/00.auto', '1/00.auto', mode + '/description', mode + '/missing', modeNames[5] + '/00.auto', '05/00.auto', '05/00', '00/99']) {
+      assert.throws(() => configure(f.root, 'set', 'spec.current', selector), /spec_/);
       assert.deepEqual(snapshot(f.root), before);
     }
-    assert.match(ok(s.invoke(['spec.current'], { GIDD_LANG: 'zh' })).stdout, /提示来源/);
-    assert.equal(json(s.invoke(['spec.current.issue'])).error, 'invalid_spec_route');
-    assert.equal(json(s.invoke(['spec', 'missing'])).error, 'spec_current_unsupported');
-    assert.equal(json(s.invoke(['spec.current', '--repository', f.root])).reason, 'repository_override_forbidden');
-    for (const lang of ['en', 'zh-CN']) write(join(s.root, 'no-template/prompt.' + lang + '.md'), meta('# No template'));
-    const noTemplate = json(s.invoke(['spec.issue', 'no-template']));
-    assert.equal(noTemplate.error, 'spec_issue_template_missing');
-    assert.match(noTemplate.hint, /does not declare issue_template/);
   } finally { f.dispose(); }
 });
 
-test('doctor and spec readers validate both languages and complete dependencies before output', () => {
+test('repository commands support discovery, selection, current prompts and template binding offline', () => {
   const f = fixture();
   try {
-    const s = installation(f, chosen + '[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[repo]\nremote.name = "origin"\nremote.account = "Octocat"\nremote.url = "https://github.com/owner/repo"\n');
-    const git = findGit(), gh = join(f.root, 'bin/gh.exe'); stub(compile(f.root), gh); bindFixture(f.root, { git, gh });
-    for (const args of [['init', '--quiet'], ['config', 'user.name', 'Test'], ['config', 'user.email', 'test@example.test'],
-      ['remote', 'add', 'origin', 'https://github.com/owner/repo']]) ok(run(git, ['-C', s.target, ...args]));
-    assert.equal(check(json(ok(s.invoke(['doctor', '--offline'])))).status, 'ready');
-    const path = join(s.root, '_share/fragment.en.md'), saved = '# Test fragment\n';
-    write(path, saved);
-    rmSync(path);
-    assert.equal(check(json(ok(s.invoke(['doctor', '--offline'])))).status, 'ready');
-    const promptPath = join(s.root, '04.issue.ask-commit/prompt.en.md');
-    const originalPrompt = readFileSync(promptPath, 'utf8');
-    rmSync(promptPath);
-    const missingPrompt = check(s.diagnose());
-    assert.equal(missingPrompt.reason, 'spec_resources_missing');
-    assert.match(missingPrompt.hint, /specs\/<name>\//, 'Catalog failures have no validated spec name to interpolate');
-    write(promptPath, originalPrompt);
-    write(promptPath, readFileSync(promptPath, 'utf8') + '\n@include ../_share/fragment.en.md@\n');
-    write(path, '@include missing.md@\n');
-    const before = snapshot(f.root);
-    assert.equal(check(s.diagnose()).reason, 'spec_resources_missing');
-    const failed = s.invoke(['spec.current', '--lang', 'zh']);
-    assert.equal(failed.status, 1); assert.equal(failed.stderr, ''); assert.equal(json(failed).error, 'spec_resources_missing');
-    assert.deepEqual(snapshot(f.root), before); write(path, saved); assert.equal(check(s.diagnose()).status, 'ready');
-    const translationPath = join(s.root, '04.issue.ask-commit/prompt.zh-CN.md');
-    const translation = readFileSync(translationPath, 'utf8'), translated = readSpecPrompt(translationPath);
-    write(translationPath, meta(translated.content, translated.metadata.issue_template,
-      [{ issue: 'optional' }, ...description.slice(1)]));
-    const mismatched = snapshot(f.root);
-    assert.equal(check(s.diagnose()).reason, 'spec_metadata_mismatch');
-    for (const args of [['spec.list'], ['spec.current'], ['spec.issue.current'], ['set', 'spec.current', '02.issue']]) {
-      const result = s.invoke(args);
-      assert.notEqual(result.status, 0);
-      if (args[0] === 'set') assert.match(result.stderr, /^Repair specs\//);
-      else assert.equal(result.stderr, '');
-      const report = json(result);
-      assert.equal(report.error ?? report.reason, 'spec_metadata_mismatch');
-    }
-    assert.deepEqual(snapshot(f.root), mismatched);
-    write(translationPath, translation);
-    write(configPath(s.target), 'schema_version = 1\n');
-    const missing = check(s.diagnose());
-    assert.deepEqual(missing.commands.map(c => c.args), [['spec.list'], ['spec', '<name>'], ['set', 'spec.current', '<name>']]);
-    assert.deepEqual(missing.details.available_names, names);
-  } finally { f.dispose(); }
-});
-
-test('printed template commands bind the selected name and language after includes without execution', () => {
-  const f = fixture();
-  try {
-    const s = installation(f), marker = '@gidd.link spec.issue.current@';
-    const ticks = String.fromCharCode(96).repeat(3);
-    for (const lang of ['en', 'zh-CN']) {
-      const body = '# Rendered\nInline: ' + marker + '\n@include ../_share/render.md@\n';
-      write(join(s.root, '02.issue/prompt.' + lang + '.md'), meta(body, '../../references/issue.' + lang + '.json'));
-    }
-    write(join(s.root, '_share/render.md'), ticks + '\n' + marker + '\n' + ticks + '\n@gidd.link .gh issue create@\n');
-    for (const lang of ['en', 'zh']) {
-      const before = snapshot(f.root), text = ok(s.invoke(['spec', '02.issue', '--lang', lang])).stdout;
-      const command = 'gidd.link spec.issue 02.issue --lang ' + lang;
-      assert.equal(text.split(command).length - 1, 2);
-      assert.ok(!text.includes(marker)); assert.ok(!text.includes('spec.issue 04.issue.ask-commit'));
-      assert.ok(text.includes('@gidd.link .gh issue create@'));
-      assert.deepEqual(snapshot(f.root), before);
-      write(configPath(s.target), 'schema_version = 1\n[spec]\ncurrent = "00.all.auto"\n');
-      assert.equal(ok(s.invoke(['spec', '02.issue', '--lang', lang])).stdout, text);
-      write(configPath(s.target), chosen);
-      assert.ok(ok(s.invoke(['spec.current', '--lang', lang])).stdout.includes('gidd.link spec.issue 04.issue.ask-commit --lang ' + lang));
-    }
-    assert.ok(ok(s.invoke(['spec', '02.issue'], { GIDD_LANG: 'zh' })).stdout.includes('gidd.link spec.issue 02.issue --lang zh'));
-    const templatePath = join(s.skill, 'references/issue.en.json'), form = JSON.parse(readFileSync(templatePath, 'utf8'));
-    form.body[0].attributes.placeholder = marker;
-    write(templatePath, JSON.stringify(form));
-    assert.equal(json(ok(s.invoke(['spec.issue', '02.issue', '--lang', 'en']))).form.body[0].attributes.placeholder, marker);
-  } finally { f.dispose(); }
-});
-
-test('spec guidance requires neither tools nor remote probes', () => {
-  const f = fixture();
-  try {
-    write(configPath(f.root), chosen); write(join(toolsRoot(f.root), 'tool-bindings.json'), 'broken bindings');
-    const before = snapshot(f.root);
-    for (const [route, args] of [['spec.current', []], ['spec.issue.current', []], ['spec', ['02.issue']], ['spec.issue', ['02.issue']]]) assert.equal(specCommand(f.root, parseSpecArguments(route, args)).exitCode, 0);
+    const s = installation(f, null), before = snapshot(f.root);
+    assert.deepEqual(json(ok(s.invoke(['spec.modes']))).modes.map(item => item.name), modeNames.map((name, index) => '0' + index + '.' + name));
+    assert.equal(json(ok(s.invoke(['spec.list', mode]))).specs.length, 16);
+    assert.deepEqual(json(ok(s.invoke(['spec.list', '00']))).specs, json(ok(s.invoke(['spec.list', mode]))).specs);
+    assert.equal(json(s.invoke(['spec.current'])).error, 'spec_current_missing');
+    assert.ok(ok(s.invoke(['spec', auto])).stdout.includes('gidd.link spec.issue ' + auto + ' --lang zh'));
+    assert.ok(json(ok(s.invoke(['spec.issue', auto, '--lang', 'en']))).form.body.length);
     assert.deepEqual(snapshot(f.root), before);
+    ok(s.invoke(['set', 'spec.current', '00/04']));
+    assert.equal(parseConfiguration(readFileSync(configPath(s.target), 'utf8')).spec.current, '00/04');
+    const selected = snapshot(f.root), current = ok(s.invoke(['spec.current'])).stdout;
+    assert.equal(current, ok(s.invoke(['spec', ask])).stdout);
+    assert.equal(current, ok(s.invoke(['spec', '00/04.ask-commit'])).stdout);
+    assert.equal(current, ok(s.invoke(['spec', '00/04'])).stdout);
+    const source = current.match(/^提示来源: `([^`\r\n]+)`/m)[1], scope = current.match(/^适用范围: `([^`\r\n]+)`/m)[1];
+    assert.equal(realpathSync.native(source), realpathSync.native(join(s.root, ask + '.toml')));
+    assert.equal(realpathSync.native(scope), realpathSync.native(s.target));
+    assert.ok(ok(s.invoke(['spec', auto])).stdout.includes('gidd.link spec.issue ' + auto + ' --lang zh'));
+    assert.deepEqual(json(ok(s.invoke(['spec.issue.current']))), json(ok(s.invoke(['spec.issue', '00/04']))));
+    assert.deepEqual(json(ok(s.invoke(['spec.issue.current']))).form, json(ok(s.invoke(['spec.issue', ask]))).form);
+    assert.equal(json(s.invoke(['spec.current', '--lang', 'en'])).error, 'spec_language_unavailable');
+    assert.equal(json(s.invoke(['spec.list'])).error, 'invalid_arguments');
+    assert.equal(json(s.invoke(['spec.current.issue'])).error, 'invalid_spec_route');
+    assert.equal(json(s.invoke(['spec.issue', modeNames[3] + '/00.auto'])).error, 'spec_issue_template_missing');
+    assert.deepEqual(snapshot(f.root), selected);
   } finally { f.dispose(); }
 });
 
-test('front matter YAML rejects duplicate keys, aliases, tags and multiple documents', () => {
-  for (const text of ['key: one\nkey: two', 'text: [unclosed', '---\none: 1\n---\ntwo: 2', 'text: !unknown value',
-    'first: &shared text\nsecond: *shared', '%YAML 1.1\n---\nvalue: true', '? [one, two]\n: value', 'section:\n\tkey: value']) assert.throws(() => parseSpecYaml(text));
+test('doctor validates only the selected dependencies, supports partial translations, and guides old selections', () => {
+  const f = fixture();
+  try {
+    const s = installation(f, configText('00/04'));
+    assert.equal(check(s.diagnose()).status, 'ready');
+    assert.equal(check(s.diagnose()).details.resolved, ask);
+    assert.deepEqual(check(s.diagnose()).details.available_languages, ['zh-CN']);
+    write(join(s.root, directory, '99.draft.toml'), '');
+    assert.equal(check(s.diagnose()).status, 'ready');
+    const path = join(s.root, ask + '.toml'), saved = readFileSync(path, 'utf8');
+    write(path, saved.replace('commit              = "ask"', 'commit              = "invalid"'));
+    const invalid = check(s.diagnose());
+    assert.equal(invalid.reason, 'spec_authorization_invalid'); assert.equal(invalid.details.field, 'commit');
+    write(path, saved);
+    write(configPath(s.target), configText('02.issue'));
+    const before = snapshot(f.root), old = check(s.diagnose());
+    assert.equal(old.reason, 'spec_current_unsupported');
+    assert.deepEqual(old.commands.map(command => command.args), [['spec.modes'], ['spec.list', '<mode-id>'], ['spec', '<mode-id>/<name>'], ['set', 'spec.current', '<mode-id>/<name>']]);
+    assert.deepEqual(snapshot(f.root), before);
+    write(configPath(s.target), 'schema_version = 1\n');
+    assert.equal(check(s.diagnose()).reason, 'spec_current_missing');
+    write(configPath(s.target), configText(modeNames[5] + '/00.auto'));
+    assert.equal(check(s.diagnose()).reason, 'spec_language_unavailable');
+    mkdirSync(join(s.root, '00.' + modeNames[1]));
+    const collisionSnapshot = snapshot(f.root), collision = check(s.diagnose());
+    assert.equal(collision.reason, 'spec_mode_id_conflict');
+    assert.equal(collision.details.conflicts[0].id, '00');
+    assert.ok(collision.hint.includes('directory'));
+    assert.equal(json(s.invoke(['spec.modes'])).error, 'spec_mode_id_conflict');
+    assert.equal(json(s.invoke(['set', 'spec.current', '00/04'])).reason, 'spec_mode_id_conflict');
+    assert.deepEqual(snapshot(f.root), collisionSnapshot);
+    write(configPath(s.target), 'schema_version = 1\n');
+    assert.equal(check(s.diagnose()).reason, 'spec_mode_id_conflict');
+    const catalog = join(s.skill, 'references/doctor.toml');
+    write(catalog, readFileSync(catalog, 'utf8').replace('[checks."config.spec.current"]\nenabled = true', '[checks."config.spec.current"]\nenabled = false'));
+    const disabled = check(s.diagnose()); assert.equal(disabled.reason, 'disabled');
+  } finally { f.dispose(); }
 });
+
 test('forms reject invalid native fields, translation drift and misplaced GIDD checks', () => {
-  const spec = loadSpec('02.issue');
+  const spec = loadSpec(auto);
   for (const change of [f => { delete f.en; }, f => { f.fr = f.en; },
     f => { f.en.body[0].attributes.label = ''; }, f => { f.en.body[0].attributes.label = 'Goal\nInjected'; },
     f => { f.en.body[0].attributes.placeholders = ['typo']; }, f => { f.en.body[0].attributes.value = false; },
     f => { f.en.body[0].type = 'unknown'; }, f => { f.en.body[0].type = 'input'; },
     f => { f.en.body[0].validations.required = false; }, f => { f.en.body[0].id = 'bad id'; },
     f => { f.en.body[0].min_task_items = 1; }, f => { f.en.body[0].validations = null; },
-    f => { f.en.body[0].id = f.en.body[1].id; },
-    f => { f.en.body.reverse(); }, f => { f.en.body.pop(); }, f => { f.en.body = []; },
-    f => { f.en.name = 'x'; }, f => { f.en.name = f['zh-CN'].name; }, f => { f.en.description = ''; },
+    f => { f.en.body[0].id = f.en.body[1].id; }, f => { f.en.body.reverse(); },
+    f => { f.en.body.pop(); }, f => { f.en.body = []; }, f => { f.en.name = 'x'; },
+    f => { f.en.name = f['zh-CN'].name; }, f => { f.en.description = ''; },
     f => { f.en.schema = 'gidd.issue-definition/v1'; }, f => { f.en.labels = false; }]) {
     const forms = structuredClone(spec.issueForms); change(forms);
     assert.throws(() => validateIssueForms(forms), /spec_resources_invalid/);
@@ -432,15 +423,13 @@ test('forms reject invalid native fields, translation drift and misplaced GIDD c
 });
 
 test('native form validation preserves metadata, input and display-only markdown', () => {
-  const spec = loadSpec('02.issue'), forms = structuredClone(spec.issueForms);
+  const forms = structuredClone(loadSpec(auto).issueForms);
   for (const form of Object.values(forms)) {
     Object.assign(form, { title: '[Task]: ', labels: ['development'], assignees: ['octocat'], projects: ['owner/1'], type: 'Task' });
     form.body[0].type = 'input'; form.body[0].id = 'Goal_1';
-    form.body[0].attributes.value = 'Useful default';
-    form.body[3].attributes.render = 'shell';
+    form.body[0].attributes.value = 'Useful default'; form.body[3].attributes.render = 'shell';
     form.body.unshift({ type: 'markdown', attributes: { value: '## Visible guidance only' } });
   }
   const before = structuredClone(forms);
-  assert.deepEqual(validateIssueForms(forms), before);
-  assert.deepEqual(forms, before);
+  assert.deepEqual(validateIssueForms(forms), before); assert.deepEqual(forms, before);
 });

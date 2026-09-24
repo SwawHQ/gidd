@@ -139,8 +139,10 @@ export function readAuthorizationConfiguration(repository) {
 }
 
 export function configurationHint(reason) {
-  if (reason === 'spec_current_unsupported') return specSelectionHint;
-  if (/^spec_(list|directory|metadata)_/.test(reason)) return specCatalogHint;
+  if (['spec_current_unsupported', 'spec_number_missing', 'spec_mode_missing'].includes(reason)) return specSelectionHint;
+  if (reason === 'spec_number_ambiguous') return 'This number matches multiple presets. Use the full preset name, for example 00/00.auto.';
+  if (reason === 'spec_mode_id_conflict' || reason === 'spec_mode_name_conflict') return 'Run gidd.link spec.modes to locate conflicting mode directories; their IDs and mode names must be unique.';
+  if (reason.startsWith('spec_')) return specCatalogHint;
   if (reason === 'config_missing') return 'Create config with: gidd.link.cmd set repo.remote.account <login>. Then set repo.remote.url and review repo.remote.name.';
   if (/^config_(missing|invalid)_git_user_mode$/.test(reason)) return 'Set git.user.mode explicitly to managed or inherit with gidd.link set.';
   const userField = /^config_(?:missing|invalid)_git_user_(name|email)$/.exec(reason);

@@ -101,18 +101,23 @@ executable = "link"
 args = ["set","git.user.email","<value>"]
 required_inputs = ["git.user.email"]
 
+[commands."spec_modes"]
+executable = "link"
+args = ["spec.modes"]
+
 [commands."spec_list"]
 executable = "link"
-args = ["spec.list"]
+args = ["spec.list","<mode-id>"]
+required_inputs = ["mode-id"]
 
 [commands."spec_read"]
 executable = "link"
-args = ["spec","<name>"]
+args = ["spec","<mode-id>/<name>"]
 required_inputs = ["spec.current"]
 
 [commands."spec_select"]
 executable = "link"
-args = ["set","spec.current","<name>"]
+args = ["set","spec.current","<mode-id>/<name>"]
 required_inputs = ["spec.current"]
 
 [checks."tool.platform"]
@@ -226,30 +231,48 @@ hint.zh-CN = "请用 gidd.link set 将 git.credential.mode 明确设为 gh 或 i
 
 [checks."config.spec.current"]
 enabled = true
-hint.en = "Repair specs/{configured}/ and its referenced Markdown and Issue templates, then rerun doctor."
-hint.zh-CN = "请修复 specs/{configured}/ 及其引用的 Markdown 和 Issue 模板，然后重新运行 doctor。"
+hint.en = "Inspect details.path and details.field; repair the selected spec, mode description.toml or referenced workflow/Issue template, then rerun doctor."
+hint.zh-CN = "请查看 details.path 和 details.field，修复所选规范、模式 description.toml 或其依赖的环节经验及 Issue 模板，然后重新运行 doctor。"
+
+[checks."config.spec.current".reasons."spec_mode_id_conflict"]
+hint.en = "Mode directory prefixes must be unique. Rename the conflicting directories listed in details.conflicts, then rerun doctor."
+hint.zh-CN = "模式目录的编号前缀必须唯一。请重命名 details.conflicts 列出的冲突目录，然后重新运行 doctor。"
+
+[checks."config.spec.current".reasons."spec_mode_name_conflict"]
+hint.en = "A workflow mode must have exactly one directory. Resolve the duplicate mode names in details.conflicts, then rerun doctor."
+hint.zh-CN = "同一种模式只能对应一个目录。请处理 details.conflicts 列出的重复模式目录，然后重新运行 doctor。"
+
+[checks."config.spec.current".reasons."spec_mode_directory_invalid"]
+hint.en = "Use a two-digit prefix and supported mode name for each mode directory, such as 00.issue.current-worktree.direct-commit."
+hint.zh-CN = "模式目录使用两位数字前缀及受支持的模式名，例如 00.issue.current-worktree.direct-commit。"
+
+[checks."config.spec.current".reasons."spec_mode_missing"]
+hint.en = "Run gidd.link spec.modes to find the current directory IDs, then select an existing mode and spec."
+hint.zh-CN = "请运行 gidd.link spec.modes 查看当前目录编号，再选择已有的模式和规范。"
+commands = ["spec_modes","spec_list","spec_read","spec_select"]
+
+[checks."config.spec.current".reasons."spec_number_missing"]
+hint.en = "Run gidd.link spec.list <mode-id> and select a preset number or complete name shown there."
+hint.zh-CN = "请运行 gidd.link spec.list <mode-id>，选择列表中存在的规范编号或完整名称。"
+commands = ["spec_list","spec_read","spec_select"]
+
+[checks."config.spec.current".reasons."spec_number_ambiguous"]
+hint.en = "Multiple presets have this number. Give them unique prefixes or select a complete preset name."
+hint.zh-CN = "多份规范使用了同一编号。请将规范前缀改为唯一编号，或用完整规范名明确选择。"
 
 [checks."config.spec.current".reasons."spec_current_missing"]
-hint.en = "Run gidd.link spec.list to see names and summaries, then gidd.link spec <name> to read the full instructions before selecting one with gidd.link set spec.current <name>."
-hint.zh-CN = "请运行 gidd.link spec.list 查看名称和摘要，再用 gidd.link spec <name> 阅读完整规范，最后用 gidd.link set spec.current <name> 选择规范。"
-commands = ["spec_list","spec_read","spec_select"]
+hint.en = "Run gidd.link spec.modes, then gidd.link spec.list <mode-id>. Read gidd.link spec <mode-id>/<name> before selecting it with gidd.link set spec.current <mode-id>/<name>."
+hint.zh-CN = "请运行 gidd.link spec.modes 和 gidd.link spec.list <mode-id> 查看模式与规范；用 gidd.link spec <mode-id>/<name> 阅读后，通过 gidd.link set spec.current <mode-id>/<name> 选择。"
+commands = ["spec_modes","spec_list","spec_read","spec_select"]
 
 [checks."config.spec.current".reasons."spec_current_unsupported"]
-hint.en = "Run gidd.link spec.list to see names and summaries, then gidd.link spec <name> to read the full instructions before selecting one with gidd.link set spec.current <name>."
-hint.zh-CN = "请运行 gidd.link spec.list 查看名称和摘要，再用 gidd.link spec <name> 阅读完整规范，最后用 gidd.link set spec.current <name> 选择规范。"
-commands = ["spec_list","spec_read","spec_select"]
+hint.en = "The stored selector is unsupported. Run gidd.link spec.modes and gidd.link spec.list <mode-id>, read gidd.link spec <mode-id>/<name>, then select it with gidd.link set spec.current <mode-id>/<name>."
+hint.zh-CN = "已保存的规范标识不受支持。请运行 gidd.link spec.modes 和 gidd.link spec.list <mode-id>，阅读 gidd.link spec <mode-id>/<name> 后，用 gidd.link set spec.current <mode-id>/<name> 重新选择。"
+commands = ["spec_modes","spec_list","spec_read","spec_select"]
 
-[checks."config.spec.current".reasons."spec_list_*"]
-hint.en = "Repair specs/<name>/prompt.en.md and prompt.zh-CN.md, including their front matter, then rerun doctor."
-hint.zh-CN = "请修复 specs/<name>/prompt.en.md 和 prompt.zh-CN.md（包括文件头部元数据），然后重新运行 doctor。"
-
-[checks."config.spec.current".reasons."spec_directory_*"]
-hint.en = "Repair specs/<name>/prompt.en.md and prompt.zh-CN.md, including their front matter, then rerun doctor."
-hint.zh-CN = "请修复 specs/<name>/prompt.en.md 和 prompt.zh-CN.md（包括文件头部元数据），然后重新运行 doctor。"
-
-[checks."config.spec.current".reasons."spec_metadata_*"]
-hint.en = "Repair specs/<name>/prompt.en.md and prompt.zh-CN.md, including their front matter, then rerun doctor."
-hint.zh-CN = "请修复 specs/<name>/prompt.en.md 和 prompt.zh-CN.md（包括文件头部元数据），然后重新运行 doctor。"
+[checks."config.spec.current".reasons."spec_language_unavailable"]
+hint.en = "The selected spec has no complete language. Complete its mode description and workflow references, or choose an available spec."
+hint.zh-CN = "所选规范尚无完整可用的语言。请补齐模式说明和环节参考经验，或选择已有可用正文的规范。"
 
 [checks."config.repo.remote.account..online"]
 enabled = true

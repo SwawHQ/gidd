@@ -1,5 +1,3 @@
-import { parseDocument } from '../vendor/yaml.mjs';
-
 export const specLanguages = Object.freeze(['en', 'zh-CN']);
 export const invalidSpecResource = () => { throw new Error('spec_resources_invalid'); };
 export const nonemptyText = value => typeof value === 'string' && !!value.trim();
@@ -9,15 +7,6 @@ export function fields(value, required, optional = []) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
       required.some(key => !Object.hasOwn(value, key)) ||
       Object.keys(value).some(key => !required.includes(key) && !optional.includes(key))) invalidSpecResource();
-}
-
-export function parseSpecYaml(text) {
-  const document = parseDocument(text, { version: '1.2', schema: 'core', strict: true,
-    uniqueKeys: true, stringKeys: true, resolveKnownTags: false });
-  // Inspect diagnostics ourselves: resource errors must not leak parser warnings
-  // onto the CLI streams. Specs use one YAML 1.2 document without aliases.
-  if (document.errors.length || document.warnings.length || document.directives.yaml.version !== '1.2') invalidSpecResource();
-  return document.toJS({ maxAliasCount: 0 });
 }
 
 // Validate shipped form resources without evaluating Issue bodies.
