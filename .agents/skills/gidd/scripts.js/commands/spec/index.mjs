@@ -64,17 +64,18 @@ export function renderSpec(repository, spec, lang) {
     ...authorizationKeys.map(key => `| ${key} | ${authorization[key]} |`), '',
     zh ? '验收未通过时返回开发和验收。推送受阻时进入 push_error；修复涉及的修改、提交和推送重新经过对应环节及授权。' : 'Failed acceptance returns to development and acceptance. A blocked push enters push_error; changes, commits and pushes required by a repair pass through their respective stages and authorization.', '',
   ];
-  if (definition.merge) lines.push(zh ? '合并受阻时进入 merge_error，修复后重新确认验收与合并条件；等待或启用自动合并不等于交付完成。' : 'A blocked merge enters merge_error. Recheck acceptance and merge requirements after repairs; waiting or enabling auto-merge does not establish delivery.', '');
+  if (definition.applicable.has('direct_merge')) lines.push(zh ? '本地合并受阻时进入 direct_merge_error，修复后重新确认验收与本地合并结果。' : 'A blocked local merge enters direct_merge_error. Recheck acceptance and the local merge result after repairs.', '');
+  if (definition.pr) lines.push(zh ? 'PR 合并受阻时进入 pr_merge_error，修复后重新确认验收与合并条件；等待或启用自动合并不等于交付完成。' : 'A blocked PR merge enters pr_merge_error. Recheck acceptance and merge requirements after repairs; waiting or enabling auto-merge does not establish delivery.', '');
   if (definition.issue) lines.push(zh ? 'Issue 模板：' : 'Issue template:', '', inlineCode(`gidd.link spec.issue ${spec.selector} --lang ${zh ? 'zh' : 'en'}`), '');
   lines.push(zh ? '## 公共参考经验' : '## Common reference guidance', '', experience('common').body.trim(), '', zh ? '## 各环节参考经验' : '## Stage reference guidance', '');
   for (const step of definition.flow) {
     const text = experience(step);
     lines.push(`### ${text.title}`, '', text.body.trim(), '');
-  }
-  lines.push(zh ? '## 受阻时的参考经验' : '## Reference guidance when blocked', '');
-  for (const step of definition.errors) {
-    const text = experience(step), trigger = step === 'push_error' ? 'push' : 'merge';
-    lines.push(`### ${text.title}`, '', zh ? `仅在 ${trigger} 受阻时适用，授权为 ${authorization[step]}。` : `Applies only when ${trigger} is blocked; authorization: ${authorization[step]}.`, '', text.body.trim(), '');
+    const errorStep = step + '_error';
+    if (definition.errors.includes(errorStep)) {
+      const blocked = experience(errorStep);
+      lines.push(`#### ${blocked.title}`, '', zh ? `仅在 ${step} 受阻时适用，授权为 ${authorization[errorStep]}。` : `Applies only when ${step} is blocked; authorization: ${authorization[errorStep]}.`, '', blocked.body.trim(), '');
+    }
   }
   return lines.join('\n');
 }

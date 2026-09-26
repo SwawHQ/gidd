@@ -48,9 +48,16 @@ test('six modes list their own presets, authorizations and incomplete languages'
   const specs = listSpecs(mode);
   assert.equal(specs.find(item => item.name === '04.ask-commit').authorization.commit, 'ask');
   for (const item of specs) {
+    if (item.error) {
+      assert.deepEqual(Object.keys(item), ['name', 'error']);
+      assert.equal(typeof item.error, 'string');
+      continue;
+    }
     assert.deepEqual(Object.keys(item), ['name', 'authorization']);
     assert.deepEqual(Object.keys(item.authorization).sort(), [...authorizationKeys].sort());
-    assert.equal(item.authorization.merge, 'not_applicable');
+    for (const key of ['direct_merge', 'direct_merge_error', 'pr_merge', 'pr_merge_error']) {
+      assert.equal(item.authorization[key], 'not_applicable');
+    }
   }
   assert.equal(listSpecs(modeNames[5])[0].error, 'spec_language_unavailable');
 });
@@ -144,15 +151,19 @@ test('mode flows distinguish local merge before push from PR merge after push', 
     assert.ok(flow.indexOf('internal_acceptance') < flow.indexOf('add'));
     assert.ok(flow.indexOf('commit') < flow.indexOf('push'));
     assert.equal(flow.includes('close_issue'), name.startsWith('issue.'));
-    assert.ok(!flow.includes('push_error') && !flow.includes('merge_error'));
+    assert.ok(!flow.some(step => step.endsWith('_error')));
     assert.equal(flow.at(-1), 'cleanup_sync');
     if (name.endsWith('.direct-commit')) {
-      assert.ok(!flow.includes('merge') && !flow.includes('pr'));
+      assert.ok(!flow.includes('direct_merge') && !flow.includes('pr_merge') && !flow.includes('pr'));
       assert.deepEqual(spec.definition.errors, ['push_error']);
+    } else if (name.endsWith('.pr-merge')) {
+      assert.deepEqual(spec.definition.errors, ['push_error', 'pr_merge_error']);
+      assert.ok(flow.indexOf('push') < flow.indexOf('pr') && flow.indexOf('pr') < flow.indexOf('pr_merge'));
+      assert.ok(!flow.includes('direct_merge'));
     } else {
-      assert.deepEqual(spec.definition.errors, ['push_error', 'merge_error']);
-      if (name.endsWith('.pr-merge')) assert.ok(flow.indexOf('push') < flow.indexOf('pr') && flow.indexOf('pr') < flow.indexOf('merge'));
-      else assert.ok(flow.indexOf('merge') < flow.indexOf('push') && !flow.includes('pr'));
+      assert.deepEqual(spec.definition.errors, ['direct_merge_error', 'push_error']);
+      assert.ok(flow.indexOf('commit') < flow.indexOf('direct_merge') && flow.indexOf('direct_merge') < flow.indexOf('push'));
+      assert.ok(!flow.includes('pr') && !flow.includes('pr_merge'));
     }
   }
   const issue = renderSpec('target', loadSpec(ask), 'zh-CN');
@@ -162,7 +173,33 @@ test('mode flows distinguish local merge before push from PR merge after push', 
   assert.ok(issue.includes('gidd.link spec.issue ' + ask + ' --lang zh'));
   const task = renderSpec('target', loadSpec(modeNames[3] + '/00.auto'), 'zh-CN');
   assert.ok(!task.includes('Refs #NNN') && !task.includes('gidd.link spec.issue'));
-  assert.ok(!task.includes('### merge') && !task.includes('### close-issue'));
+  assert.ok(!task.includes('### 本地合并') && !task.includes('### PR 合并') && !task.includes('### 关闭 Issue'));
+});
+
+test('rendered error guidance follows its triggering stage and cleanup remains last in both languages', () => {
+  for (const mode of modeNames) {
+    const spec = loadSpec(mode + '/00.auto');
+    for (const error of spec.definition.errors) spec.authorization[error] = 'ask';
+    const delivery = mode.endsWith('.direct-commit') ? ['push', 'push_error'] : mode.endsWith('.direct-merge')
+      ? ['direct_merge', 'direct_merge_error', 'push', 'push_error'] : ['push', 'push_error', 'pr', 'pr_merge', 'pr_merge_error'];
+    const expected = ['task_definition', 'workspace', 'development', 'internal_acceptance', 'add', 'commit',
+      ...delivery, ...(spec.definition.issue ? ['close_issue'] : []), 'cleanup_sync'];
+    for (const lang of ['zh-CN', 'en']) {
+      // Fill only this in-memory fixture; shipped translations remain unfinished.
+      spec.definition[lang].description = 'Example mode';
+      for (const item of spec.experiences) item[lang] = { title: item.step, body: item.step + ' reference' };
+      const prompt = renderSpec('target', spec, lang);
+      assert.deepEqual([...prompt.matchAll(/^#{3,4} (.+)$/gm)].map(match => match[1]), expected);
+      assert.ok(prompt.endsWith('### cleanup_sync\n\ncleanup_sync reference\n'));
+      assert.ok(!/## (受阻时的参考经验|Reference guidance when blocked)/.test(prompt));
+      for (const error of spec.definition.errors) {
+        const trigger = error.slice(0, -'_error'.length);
+        const condition = lang === 'zh-CN' ? `仅在 ${trigger} 受阻时适用，授权为 ask。`
+          : `Applies only when ${trigger} is blocked; authorization: ask.`;
+        assert.ok(prompt.includes(`#### ${trigger}_error\n\n${condition}\n`));
+      }
+    }
+  }
 });
 
 test('routes require a mode or complete selector and reject old or unsafe syntax', () => {
@@ -193,6 +230,7 @@ test('schemas enforce applicability and presets require explicit authorization f
     for (const change of [data => { delete data.authorization.commit; }, data => { data.authorization.unknown = 'auto'; },
       data => { data.authorization.commit = 'auto|ask'; }, data => { data.authorization.add = true; },
       data => { data.authorization.commit = 'not_applicable'; }, data => { data.authorization.merge = 'auto'; },
+      data => { data.authorization.merge_error = 'auto'; }, data => { data.authorization = Object.entries(data.authorization); },
       data => { data.description = {}; }]) {
       const data = structuredClone(original); change(data); write(s.preset, stringify(data));
       assert.throws(s.load, /spec_authorization_invalid/);
@@ -202,7 +240,7 @@ test('schemas enforce applicability and presets require explicit authorization f
       const data = structuredClone(definition); data.authorization_schema.commit = value;
       write(s.description, stringify(data)); assert.throws(s.load, /spec_schema_invalid/);
     }
-    const invalid = structuredClone(definition); invalid.authorization_schema.merge = ['auto', 'ask'];
+    const invalid = structuredClone(definition); invalid.authorization_schema.direct_merge = ['auto', 'ask'];
     write(s.description, stringify(invalid)); assert.throws(s.load, /spec_schema_invalid/);
     definition.authorization_schema.commit = ['ask']; write(s.description, stringify(definition));
     assert.throws(s.load, /spec_authorization_invalid/);
@@ -210,6 +248,63 @@ test('schemas enforce applicability and presets require explicit authorization f
     assert.equal(s.load().authorization.commit, 'ask');
     // Authorization comes from the file, not the conventional preset name.
     assert.equal(listSpecs(mode, s.root)[0].authorization.commit, 'ask');
+  } finally { f.dispose(); }
+});
+
+test('merge authorizations enforce the mode and keep each error grant independent', () => {
+  const f = fixture();
+  try {
+    const s = resources(f);
+    for (const { directory, name } of discoverModes(s.root)) {
+      const selector = directory + '/00.auto', spec = s.load(selector);
+      const original = readSpecToml(spec.path), description = spec.definition.path;
+      const schema = readSpecToml(description);
+      const active = name.endsWith('.direct-merge') ? 'direct_merge' : name.endsWith('.pr-merge') ? 'pr_merge' : undefined;
+      for (const key of ['direct_merge', 'direct_merge_error', 'pr_merge', 'pr_merge_error']) {
+        const applies = key === active || key === active + '_error';
+        assert.equal(original.authorization[key], applies ? 'auto' : 'not_applicable');
+        assert.deepEqual(schema.authorization_schema[key], applies ? ['auto', 'ask'] : ['not_applicable']);
+        const invalid = structuredClone(original);
+        invalid.authorization[key] = applies ? 'not_applicable' : 'auto';
+        write(spec.path, stringify(invalid));
+        assert.throws(() => s.load(selector), error => error.message === 'spec_authorization_invalid' && error.field === key);
+        delete invalid.authorization[key];
+        write(spec.path, stringify(invalid));
+        assert.throws(() => s.load(selector), /spec_authorization_invalid/);
+        write(spec.path, stringify(original));
+        const invalidSchema = structuredClone(schema);
+        invalidSchema.authorization_schema[key] = applies ? ['not_applicable'] : ['auto', 'ask'];
+        write(description, stringify(invalidSchema));
+        assert.throws(() => s.load(selector), error => error.message === 'spec_schema_invalid' && error.field === key);
+        write(description, stringify(schema));
+      }
+      if (active) {
+        for (const grant of [{ [active]: 'auto', [active + '_error']: 'ask' }, { [active]: 'ask', [active + '_error']: 'auto' }]) {
+          const data = structuredClone(original); Object.assign(data.authorization, grant);
+          write(spec.path, stringify(data));
+          const loaded = s.load(selector);
+          for (const [key, value] of Object.entries(grant)) assert.equal(loaded.authorization[key], value);
+        }
+        write(spec.path, stringify(original));
+      }
+    }
+  } finally { f.dispose(); }
+});
+
+test('authorization and schema table order do not change the flow or rendered prompt', () => {
+  const f = fixture();
+  try {
+    const s = resources(f), selector = '01/00', spec = s.load(selector);
+    const before = renderSpec(f.root, spec, 'zh-CN');
+    for (const [path, field] of [[spec.path, 'authorization'], [spec.definition.path, 'authorization_schema']]) {
+      const data = readSpecToml(path);
+      data[field] = Object.fromEntries(Object.entries(data[field]).reverse());
+      write(path, stringify(data));
+    }
+    const reordered = s.load(selector);
+    assert.deepEqual(reordered.definition.flow, spec.definition.flow);
+    assert.deepEqual(reordered.definition.errors, spec.definition.errors);
+    assert.equal(renderSpec(f.root, reordered, 'zh-CN'), before);
   } finally { f.dispose(); }
 });
 
@@ -254,10 +349,10 @@ test('unrelated drafts and inapplicable modules cannot block a selected spec', (
     write(join(s.root, directory, '99.draft.toml'), '');
     write(join(s.root, directory, '_notes.toml'), 'not toml');
     write(join(s.root, '02.' + modeNames[2], 'description.toml'), 'not toml');
-    rmSync(s.experience('10.merge'));
+    for (const name of ['07.direct-merge', '08.direct-merge-error', '12.pr-merge', '13.pr-merge-error']) rmSync(s.experience(name));
     assert.deepEqual(s.load().available_languages, ['zh-CN']);
     const list = listSpecs(mode, s.root);
-    assert.equal(list.length, 17); assert.equal(list.find(item => item.name === '99.draft').error, 'spec_resources_invalid');
+    assert.equal(list.length, listSpecs(mode).length + 1); assert.equal(list.find(item => item.name === '99.draft').error, 'spec_resources_invalid');
     assert.equal(listModes('zh-CN', s.root)[0].specs, 16);
     assert.equal(listModes('zh-CN', s.root)[2].error, 'spec_toml_invalid');
     assert.deepEqual(Object.keys(listModes('zh-CN', s.root)[2]), ['name', 'specs', 'error']);
@@ -293,7 +388,7 @@ test('language completeness is checked before any prompt is emitted; Issue templ
     const noIssue = specCommand(f.root, options('spec.issue', [modeNames[3] + '/00.auto']), s.root);
     assert.equal(noIssue.report.error, 'spec_issue_template_missing');
     const unfinished = specCommand(f.root, options('spec', [modeNames[5] + '/00.auto']), s.root);
-    assert.equal(unfinished.report.path, s.experience('10.merge'));
+    assert.equal(unfinished.report.path, s.experience('12.pr-merge'));
   } finally { f.dispose(); }
 });
 
@@ -340,7 +435,7 @@ test('repository commands support discovery, selection, current prompts and temp
   try {
     const s = installation(f, null), before = snapshot(f.root);
     assert.deepEqual(json(ok(s.invoke(['spec.modes']))).modes.map(item => item.name), modeNames.map((name, index) => '0' + index + '.' + name));
-    assert.equal(json(ok(s.invoke(['spec.list', mode]))).specs.length, 16);
+    assert.deepEqual(json(ok(s.invoke(['spec.list', mode]))).specs, listSpecs(mode));
     assert.deepEqual(json(ok(s.invoke(['spec.list', '00']))).specs, json(ok(s.invoke(['spec.list', mode]))).specs);
     assert.equal(json(s.invoke(['spec.current'])).error, 'spec_current_missing');
     assert.ok(ok(s.invoke(['spec', auto])).stdout.includes('gidd.link spec.issue ' + auto + ' --lang zh'));
@@ -380,6 +475,18 @@ test('doctor validates only the selected dependencies, supports partial translat
     const invalid = check(s.diagnose());
     assert.equal(invalid.reason, 'spec_authorization_invalid'); assert.equal(invalid.details.field, 'commit');
     write(path, saved);
+    for (const [selector, key] of [['01/00', 'direct_merge_error'], ['02/00', 'pr_merge_error']]) {
+      write(configPath(s.target), configText(selector));
+      const ready = check(s.diagnose());
+      assert.equal(ready.status, 'ready');
+      const mergeSpec = loadSpec(selector, s.root), mergePath = mergeSpec.path, original = readFileSync(mergePath, 'utf8');
+      const data = readSpecToml(mergePath); data.authorization[key] = 'not_applicable';
+      write(mergePath, stringify(data));
+      const blocked = check(s.diagnose());
+      assert.equal(blocked.reason, 'spec_authorization_invalid');
+      assert.equal(blocked.details.field, key);
+      write(mergePath, original);
+    }
     write(configPath(s.target), configText('02.issue'));
     const before = snapshot(f.root), old = check(s.diagnose());
     assert.equal(old.reason, 'spec_current_unsupported');
@@ -427,7 +534,7 @@ test('native form validation preserves metadata, input and display-only markdown
   for (const form of Object.values(forms)) {
     Object.assign(form, { title: '[Task]: ', labels: ['development'], assignees: ['octocat'], projects: ['owner/1'], type: 'Task' });
     form.body[0].type = 'input'; form.body[0].id = 'Goal_1';
-    form.body[0].attributes.value = 'Useful default'; form.body[3].attributes.render = 'shell';
+    form.body[0].attributes.value = 'Useful default'; form.body.find(field => field.id === 'acceptance').attributes.render = 'shell';
     form.body.unshift({ type: 'markdown', attributes: { value: '## Visible guidance only' } });
   }
   const before = structuredClone(forms);

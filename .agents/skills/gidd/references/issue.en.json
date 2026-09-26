@@ -1,38 +1,16 @@
 {
   "name": "Development task (English)",
-  "description": "Record the task's goal, scope, non-goals, an acceptance checklist with verification methods and results, and delivery status.",
+  "description": "Record the task's requirements, acceptance checklist (including verification methods and results), and completion status.",
   "body": [
     {
       "type": "textarea",
-      "id": "goal",
+      "id": "requirements",
       "attributes": {
-        "label": "Goal",
-        "placeholder": "Describe the problem and the expected outcome."
+        "label": "Requirements",
+        "placeholder": "Describe the problem, the outcomes to achieve in this task, and any necessary constraints or scope boundaries."
       },
       "validations": {
         "required": true
-      }
-    },
-    {
-      "type": "textarea",
-      "id": "scope",
-      "attributes": {
-        "label": "Scope",
-        "placeholder": "List the work to complete in this task."
-      },
-      "validations": {
-        "required": true
-      }
-    },
-    {
-      "type": "textarea",
-      "id": "non_goals",
-      "attributes": {
-        "label": "Non-goals",
-        "placeholder": "List related work that could be mistaken for part of this task but is explicitly excluded; leave blank if none."
-      },
-      "validations": {
-        "required": false
       }
     },
     {
@@ -49,11 +27,10 @@
     },
     {
       "type": "textarea",
-      "id": "delivery",
+      "id": "completion",
       "attributes": {
-        "label": "Delivery record",
-        "description": "May be left blank when creating the Issue. As work progresses, briefly record commits, PRs or other delivery locations used, whether the target branch has received the delivery, and any pending authorization or undelivered work. Keep verification results under their acceptance items rather than repeating them here. Completed checkboxes do not establish delivery or closure authorization; follow the selected spec before closing.",
-        "placeholder": "For example: PR #123 passed acceptance and awaits merge authorization; or delivered through PR #123 to main, with remote commit <actual commit ID>. Use actual task details."
+        "label": "Completion confirmation",
+        "value": "- [ ] All requirements of this task have passed acceptance, and delivery is complete under the selected mode."
       },
       "validations": {
         "required": false
