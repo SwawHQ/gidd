@@ -1,12 +1,12 @@
 # Issue 与本地记录 / Issue and local records
 
-Issue 正文包含一个 `gidd` JSON 代码块，保存 `schema: "gidd.issue/v1"`、`delivery_mode`、`target_branch`、`development_branch`。交付模式为 `direct-commit`、`direct-merge` 或 `pr-merge`；直接提交的开发分支为 null。通过 `spec.issue` 获取所选模式的模板，填写实际分支名称。
+Issue 记录需求、验收及交付关联，不承载机器配置。首次 `workflow.workspace <Issue编号>` 在线核验 Issue；交付模式取入口的 `spec.current`，目标分支取目标仓库当前分支。合并模式创建 `codex/issue-<编号>` 开发分支；直接提交的开发分支为 null。
 
-The Issue body contains one `gidd` JSON block with `schema: "gidd.issue/v1"`, `delivery_mode`, `target_branch` and `development_branch`. Modes are `direct-commit`, `direct-merge` and `pr-merge`; direct commit has a null development branch. Use `spec.issue` for the selected mode's template and fill in actual branch names.
+Issues contain requirements, acceptance and delivery links, without machine configuration. Initial `workflow.workspace <issue>` checks the Issue online, takes the delivery mode from the entry's `spec.current` and the target branch from the target checkout. Merge modes create `codex/issue-<number>`; direct commit has no development branch.
 
-workflow 命令显式接受 Issue 编号，每次读取 Issue 并核对本地记录；不会改写 Issue 正文。工作区路径、起始提交点、交付上下文快照及清理进度保存在本机。同一 Issue 在本机最多关联一个工作区，继续任务不会接管会话。PR 按仓库、分支和开发提交查找，无需预先保存编号。
+workflow 命令按 Issue 编号定位本地记录，后续沿用已保存的模式、分支、起始提交点及远端，不重新读取 Issue 或当前规范。resume 只核对本地记录与 Git 状态，不需要 GitHub 凭据或网络，也不接管会话。同一 Issue 在本机最多关联一个工作区。推送及交付核验按需访问远端；PR 按仓库、来源/目标分支和开发提交匹配，目标不同则报告，保留现场。
 
-Workflow commands require an Issue number, read the Issue and compare it with local records without editing its body. Paths, starting commits, delivery snapshots and cleanup progress stay local. Each Issue has at most one local workspace; resume does not claim a session. PRs are discovered by repository, branches and development commit, without a pre-recorded number.
+Workflow commands locate local records by Issue number and retain the saved mode, branches, starting commit and remote without rereading the Issue or current spec. Resume checks local records and Git state without GitHub credentials or network access, and does not claim a session. Each Issue has at most one local workspace. Push and delivery verification access remotes as needed; PR discovery checks repository, head/base branches and development commit, retaining resources when the target differs.
 
 # GIDD 本地数据目录 / Local data
 

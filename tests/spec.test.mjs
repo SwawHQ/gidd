@@ -615,26 +615,14 @@ test('forms reject invalid native fields, translation drift and misplaced GIDD c
   }
 });
 
-test('selected Issue templates require the GIDD configuration field and use the selected delivery mode', () => {
-  const f = fixture();
-  try {
-    const s = resources(f), paths = ['en', 'zh-CN'].map(lang => join(s.root, '../references/issue.' + lang + '.json'));
-    const originals = paths.map(path => JSON.parse(readFileSync(path, 'utf8')));
-    for (const [id, mode] of [['00', 'direct-commit'], ['01', 'direct-merge'], ['02', 'pr-merge']]) {
-      const form = s.load(id + '/00').issueForms.en;
-      const metadata = JSON.parse(form.body.find(field => field.id === 'gidd').attributes.value);
-      assert.equal(metadata.delivery_mode, mode);
-      assert.equal(metadata.development_branch, mode === 'direct-commit' ? null : '');
+test('all delivery modes use ordinary Issue forms without delivery configuration', () => {
+  for (const id of ['00', '01', '02']) {
+    const forms = loadSpec(id + '/00').issueForms;
+    for (const form of Object.values(forms)) {
+      assert.deepEqual(form.body.map(field => field.id), ['requirements', 'acceptance', 'completion']);
+      assert.ok(!JSON.stringify(form).includes('delivery_mode'));
     }
-    for (const change of [
-      form => { form.body = form.body.filter(field => field.id !== 'gidd'); },
-      form => { form.body.find(field => field.id === 'gidd').attributes.render = 'json'; },
-      form => { form.body.find(field => field.id === 'gidd').validations.required = false; },
-    ]) {
-      paths.forEach((path, index) => { const form = structuredClone(originals[index]); change(form); write(path, JSON.stringify(form)); });
-      assert.throws(s.load, /spec_issue_template_invalid/);
-    }
-  } finally { f.dispose(); }
+  }
 });
 
 test('native form validation preserves metadata, input and display-only markdown', () => {

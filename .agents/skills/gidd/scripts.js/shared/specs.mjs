@@ -99,18 +99,7 @@ export function loadIssueForms(spec, root = specRoot) {
     const text = readSpecResource(path);
     try { forms[lang] = JSON.parse(text); } catch { fail('spec_issue_template_invalid', path); }
   }
-  try {
-    validateIssueForms(forms);
-    const mode = spec.mode.split('.').at(-1);
-    for (const form of Object.values(forms)) {
-      const field = form.body.find(field => field.id === 'gidd');
-      if (field?.type !== 'textarea' || field.attributes.render !== 'gidd' || field.validations?.required !== true)
-        throw new Error('spec_issue_gidd_field_required');
-      field.attributes.value = JSON.stringify({ schema: 'gidd.issue/v1', delivery_mode: mode,
-        target_branch: '', development_branch: mode === 'direct-commit' ? null : '' }, null, 2);
-    }
-    return forms;
-  } catch { fail('spec_issue_template_invalid', spec.definition.path); }
+  try { return validateIssueForms(forms); } catch { fail('spec_issue_template_invalid', spec.definition.path); }
 }
 
 export function matchesMode(pattern, mode) {

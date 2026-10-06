@@ -726,10 +726,14 @@ test('repository entry selects workflows by Issue and inspects worktrees by dire
     s.native(['remote', 'add', 'origin', 'https://github.com/test/repo']);
     write(join(s.target, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[repo]\nremote.name = "origin"\nremote.url = "https://github.com/test/repo"\nremote.account = "tester"\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n');
     const issueFile = join(s.root, 'issue.json');
-    const define = (number, mode, branch) => write(issueFile, JSON.stringify({ number, state: 'open',
-      html_url: 'https://github.com/test/repo/issues/' + number,
-      body: '```gidd\n' + JSON.stringify({ schema: 'gidd.issue/v1', delivery_mode: mode, target_branch: 'main', development_branch: branch }) + '\n```' }));
-    define(7, 'direct-merge', 'codex/cli');
+    const define = (number, mode) => {
+      const config = join(s.target, '.agents/skills/gidd/config.toml');
+      const text = readFileSync(config, 'utf8').split('[spec]')[0];
+      write(config, text + '[spec]\ncurrent = "' + (mode === 'direct-commit' ? '00' : '01') + '/00"\n');
+      write(issueFile, JSON.stringify({ number, state: 'open',
+        html_url: 'https://github.com/test/repo/issues/' + number, body: 'Requirements and acceptance' }));
+    };
+    define(7, 'direct-merge');
     const env = { PATH: '', GIDD_ISSUE_FIXTURE: issueFile };
     const cli = (args, cwd = s.target) => runRepositoryCommand(s.target, args, { cwd, env });
     assert.deepEqual(json(ok(cli(['worktree.list']))).worktrees, []);
@@ -738,13 +742,13 @@ test('repository entry selects workflows by Issue and inspects worktrees by dire
     assert.equal(json(cli(['workflow.workspace', '7'], caller)).reason, 'execution_worktree_unregistered');
     const acquired = json(ok(cli(['workflow.workspace', '7'])));
     assert.deepEqual(acquired.issue, { number: 7, url: 'https://github.com/test/repo/issues/7' });
-    assert.equal(acquired.worktree.development_branch, 'codex/cli');
+    assert.equal(acquired.worktree.development_branch, 'codex/issue-7');
     assert.equal(acquired.worktree.start_commit, s.native(['rev-parse', 'main']));
     const beforeResume = readFileSync(s.record(acquired.id), 'utf8');
     mkdirSync(join(s.target, '7'));
     const resumed = json(ok(cli(['workflow.workspace', '--resume', '7'])));
     assert.equal(resumed.worktree.path, acquired.worktree.path);
-    assert.equal(resumed.worktree.checked_out_branch, 'codex/cli');
+    assert.equal(resumed.worktree.checked_out_branch, 'codex/issue-7');
     assert.equal(resumed.worktree.head, acquired.worktree.start_commit);
     assert.equal(json(ok(cli(['workflow.workspace', '--resume', '7'], acquired.worktree.path))).worktree.path, acquired.worktree.path);
     assert.equal(readFileSync(s.record(acquired.id), 'utf8'), beforeResume);
@@ -756,27 +760,27 @@ test('repository entry selects workflows by Issue and inspects worktrees by dire
     for (const field of ['record', 'id', 'git', 'workflow', 'workspace_path', 'worktree_path']) assert.equal(Object.hasOwn(shown, field), false);
     assert.equal(json(ok(cli(['worktree.show', relative(s.target, acquired.worktree.path)]))).worktree.path, acquired.worktree.path);
     assert.equal(json(ok(cli(['worktree.show', '.'], acquired.worktree.path))).worktree.path, acquired.worktree.path);
-    for (const value of ['codex/cli', acquired.id, 'main', '7'])
+    for (const value of ['codex/issue-7', acquired.id, 'main', '7'])
       for (const command of ['worktree.show', 'worktree.remove']) assert.equal(json(cli([command, value])).reason, 'worktree_unknown_selector');
     for (const command of ['workflow.workspace', 'workflow.push', 'workflow.merge', 'workflow.target-sync', 'workflow.cleanup'])
-      for (const value of ['codex/cli', acquired.worktree.path]) assert.equal(json(cli([command, value])).reason, 'invalid_arguments');
+      for (const value of ['codex/issue-7', acquired.worktree.path]) assert.equal(json(cli([command, value])).reason, 'invalid_arguments');
     const listing = json(ok(cli(['worktree.list'])));
     assert.equal(listing.worktrees.length, 2);
     const listed = listing.worktrees.find(row => row.issue?.number === 7);
-    assert.equal(listed.worktree.state, 'unreleased'); assert.equal(listed.worktree.development_branch, 'codex/cli');
+    assert.equal(listed.worktree.state, 'unreleased'); assert.equal(listed.worktree.development_branch, 'codex/issue-7');
     assert.equal(listing.worktrees.find(row => row.worktree.state === 'unmanaged').issue, undefined);
     s.native(['checkout', '-b', 'codex/changed'], acquired.worktree.path);
     const changed = json(ok(cli(['worktree.show', acquired.worktree.path])));
     assert.equal(changed.worktree.state, 'needs_check'); assert.equal(changed.worktree.checked_out_branch, 'codex/changed');
     assert.equal(json(cli(['workflow.workspace', '--resume', '7'])).reason, 'workflow_branch_changed');
-    s.native(['checkout', 'codex/cli'], acquired.worktree.path);
+    s.native(['checkout', 'codex/issue-7'], acquired.worktree.path);
     assert.equal(json(cli(['worktree.remove', acquired.worktree.path])).reason, 'worktree_not_released');
-    assert.equal((await s.command('cleanup', ['codex/cli'])).local_branch_deleted, true);
+    assert.equal((await s.command('cleanup', ['codex/issue-7'])).local_branch_deleted, true);
     const released = json(ok(cli(['worktree.show', acquired.worktree.path])));
     assert.equal(released.worktree.state, 'available'); assert.equal(released.worktree.release_commit, acquired.worktree.start_commit);
     assert.equal(json(cli(['workflow.workspace', '--resume', '7'])).reason, 'workflow_workspace_released');
     assert.equal(json(ok(cli(['worktree.remove', relative(s.target, acquired.worktree.path)]))).removed, true);
-    define(8, 'direct-commit', null);
+    define(8, 'direct-commit');
     ok(cli(['workflow.workspace', '8']));
     const contextPath = join(s.state, 'workflows', contextName(join(s.target, '.git'))), beforeDuplicate = readFileSync(contextPath, 'utf8');
     assert.equal(json(cli(['workflow.workspace', '8'])).reason, 'workflow_issue_registered');

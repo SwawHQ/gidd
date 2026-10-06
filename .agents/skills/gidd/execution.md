@@ -20,9 +20,9 @@ Authorization reads the bound entry directory's `config.toml`, derives the host 
 
 `gidd.pre.ensure --repo` invokes `gidd.link init` after preparing tools and the repository entry. Initialization prepares the fixed `<repository>.gidd` directory and preserves existing configuration and resources on repeat; it does not choose identity modes or a spec. It checks GIDD worktree paths and records before creating data. Initialization failures can be retried with `gidd.link init`; see [local data](references/data.md). Preparation's `--check` and `--tools-only` do not initialize repository data.
 
-`workflow.workspace <issue>` reads the Issue's GIDD configuration and records its number, delivery mode, branches, starting commit and configured remote locally. Direct commit requires the recorded target to be checked out in the entry repository. Merge modes create the specified new development branch and allocate a dedicated worktree; PR mode also checks the remote branches. Released directories can be reused. See [Issue and local records](references/data.md) for the configuration block.
+`workflow.workspace <issue>` verifies an open Issue in the configured repository. It takes the delivery mode from the entry's current spec and the target branch from the target repository's checkout, then records them with the Issue number, starting commit and configured remote. Direct commit uses the target checkout. Merge modes create `codex/issue-<number>` and allocate a dedicated worktree; PR mode also checks remote branches. Existing branches are not adopted. See [Issue and local records](references/data.md).
 
-`workflow.workspace --resume <issue>` verifies the existing local workspace against the current Issue configuration. Every workflow command requires an Issue number and reads the Issue through the configured GitHub account; a branch, path or omitted argument cannot select a task. Changed delivery settings, ambiguous bindings and released workspaces require inspection. Resume does not claim an agent session or create missing resources. Changing `spec.current` does not change recorded delivery settings; authorization still belongs to the selected spec and caller.
+`workflow.workspace --resume <issue>` checks only local records and Git state, without GitHub credentials or network access. Every workflow command requires an Issue number; a branch, path or omitted argument cannot select a task. Later operations retain the recorded delivery settings and do not reread the Issue body or current spec. Resume does not claim an agent session or create missing resources. Push and PR delivery still verify the relevant remote state; authorization belongs to the selected spec and caller.
 
 `workflow.push <issue>` pushes the target branch for direct delivery and the development branch for PR delivery. It publishes that branch's captured commit to its same-named remote branch, without force, other branches or tags. Direct merge first requires the target to contain the development tip.
 
@@ -110,7 +110,7 @@ gidd.link set git.user.mode inherit
 
 `.git` / `.gh` 始终读取原入口仓库的配置，仅允许从入口仓库和 `workflow.workspace` 登记的关联 worktree（含普通子目录）调用。直接从其他仓库、内部子仓库或子模块、未登记 worktree、非仓库目录调用时，报错列出调用目录、识别出的仓库、入口仓库和配置路径，不回退、不提供 force。
 
-workflow 命令统一显式接受 Issue 编号，从 Issue 的 gidd JSON 区块读取交付模式和分支约定。`workflow.workspace <Issue编号>` 准备工作区，`workflow.workspace --resume <Issue编号>` 核验原记录。每次操作都核对 Issue 与本地记录；不从调用目录猜测任务，也不回写 Issue 正文。结构见[Issue 与本地记录](references/data.md)。
+workflow 命令统一显式接受 Issue 编号。首次准备在线核验 Issue，按入口当前规范和目标仓库当前分支确定交付上下文；合并模式创建 `codex/issue-<编号>`。后续沿用本地记录，不读取 Issue 正文。`workflow.workspace --resume <Issue编号>` 离线核对记录与 Git 状态。结构见[Issue 与本地记录](references/data.md)。
 
 push 按模式推送目标分支或开发分支。merge 按模式执行本地合并或查找对应 PR 合并；PR 可选 `--squash`、`--rebase`，合并标题可用 `--message` 指定。本地冲突保留现场；PR 的检查、保护规则或排队未完成时不报告交付成功。target-sync 在核验 PR 交付后快进同步本地目标分支。
 
@@ -130,7 +130,7 @@ Git for Windows 遇到文件占用时也不询问是否重试；先解决文件�
 
 当前规范配置为 `[spec]` 下的 `current = "00/04.ask-commit"`。使用 `gidd.link spec.modes` 查看三种模式，`name` 为含编号的完整目录名，`specs` 表示可用规范数量，`spec.list <mode-id>` 查看规范和授权配置，`spec <mode-id>/<name>` 阅读完整提示，最后通过 `set spec.current <mode-id>/<name>` 选择。`clear spec.current` 移除选择。doctor（含离线模式）先检查模式目录命名及编号、模式名的唯一性，再检查当前规范及其依赖，至少一种语言完整才就绪，并报告完整解析结果和可用语言；重号时列出 details.conflicts，其他规范的未完成正文不影响当前规范。
 
-`spec.list <mode-id>` 每项只返回规范名 `name` 和授权配置 `authorization`；未完成或无效的规范增加 `error`。可用数量按至少一种语言完整统计。`spec <mode-id>/<name>`、`spec.current` 组装模式说明、流程、授权及适用经验，所选语言必须完整，不混用语言；各 spec 命令均支持 `--lang en|zh`。`spec.issue <mode-id>/<name>`、`spec.issue.current` 读取模式声明的相对路径 JSON 模板，不受经验正文未翻译影响；不使用 Issue 的模式报告无模板。只读命令不会改变当前选择或执行生成的指引。定义格式见 [规范编写](../AGENTS.md) 与 [规范定义](specs/README.md)。
+`spec.list <mode-id>` 每项只返回规范名 `name` 和授权配置 `authorization`；未完成或无效的规范增加 `error`。可用数量按至少一种语言完整统计。`spec <mode-id>/<name>`、`spec.current` 组装模式说明、流程、授权及适用经验，所选语言必须完整，不混用语言；各 spec 命令均支持 `--lang en|zh`。`spec.issue <mode-id>/<name>`、`spec.issue.current` 读取模式声明的相对路径 JSON 模板，不受经验正文未翻译影响；只读命令不会改变当前选择或执行生成的指引。定义格式见 [规范编写](../AGENTS.md) 与 [规范定义](specs/README.md)。
 
 `gidd.link .gh.auth` 是独立授权入口：复用配置账号已核验的凭据；取不到该账号的 token 时发起设备授权，输出网址和设备码，完成后核验账号，凭据由 gh 保存。结果和授权事件分别使用 `gidd.auth/v1` 和 `gidd.auth.event/v1` JSON 格式。它不转发为 `.gh auth`；`.gh` 包装在执行原生参数前要求已有可验证的 token。
 

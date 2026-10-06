@@ -28,13 +28,15 @@ function installation() {
   write(config, configuration);
   initializeDataFixture(target);
   const control = { issues: new Map(), pr: null, calls: [], intercept: null, fetchFailure: false };
-  const issue = (number, mode, branch = null, base = 'main') => control.issues.set(number, {
-    number, state: 'open', html_url: 'https://github.com/test/repo/issues/' + number,
-    body: '```gidd\n' + JSON.stringify({ schema: 'gidd.issue/v1', delivery_mode: mode, target_branch: base, development_branch: branch }) + '\n```',
+  const plans = new Map([[1, 'direct-commit'], [10, 'direct-commit'], [2, 'direct-merge'],
+    [3, 'pr-merge'], [4, 'pr-merge'], [5, 'pr-merge'], [6, 'pr-merge'], [7, 'pr-merge'], [8, 'direct-merge']]);
+  for (const number of plans.keys()) control.issues.set(number, {
+    number, state: 'open', html_url: 'https://github.com/test/repo/issues/' + number, body: 'Requirements and acceptance',
   });
-  issue(1, 'direct-commit'); issue(10, 'direct-commit'); issue(2, 'direct-merge', 'codex/direct');
-  issue(3, 'pr-merge', 'codex/reused'); issue(4, 'pr-merge', 'codex/one'); issue(5, 'pr-merge', 'codex/two');
-  issue(6, 'pr-merge', 'codex/taken'); issue(7, 'pr-merge', 'codex/pr'); issue(8, 'direct-merge', 'codex/a');
+  const select = mode => {
+    const id = { 'direct-commit': '00', 'direct-merge': '01', 'pr-merge': '02' }[mode];
+    write(config, configuration + '[spec]\ncurrent = "' + id + '/00"\n');
+  };
   const execute = async (exe, args, options) => {
     control.calls.push(args);
     const intercepted = await control.intercept?.(exe, args, options);
@@ -67,20 +69,25 @@ function installation() {
     const result = await runCommand(exe, redirected, options);
     return control.fetchFailure && args.includes('fetch') && result.ok ? { ok: false, reason: 'command_failed' } : result;
   };
-  const command = (action, args = [], cwd = target) => workflowCommand(target, parseWorkflowArguments('workflow.' + action, args), { execute, cwd }).then(workspaceReport);
+  const invoke = (action, args = [], cwd = target) => workflowCommand(target, parseWorkflowArguments('workflow.' + action, args), { execute, cwd }).then(workspaceReport);
+  const command = (action, args = [], cwd = target) => {
+    if (action === 'workspace' && args[0] !== '--resume') select(plans.get(Number(args[0])) ?? 'direct-commit');
+    return invoke(action, args, cwd);
+  };
   const show = path => worktreeCommand(target, { action: 'show', path });
   const change = (path, message = 'feature') => { write(join(path, 'tracked.txt'), message + '\n'); native(['commit', '-am', message], path); return native(['rev-parse', 'HEAD'], path); };
   async function delivery() {
     const workspace = await command('workspace', ['7']);
+    control.issues.delete(7); // Later operations must not depend on Issue availability.
     const head = change(workspace.worktree.path);
     await command('push', ['7'], workspace.worktree.path);
-    native(['merge', '--squash', 'codex/pr']); native(['commit', '-m', 'squash delivery']);
+    native(['merge', '--squash', 'codex/issue-7']); native(['commit', '-m', 'squash delivery']);
     const merge = native(['rev-parse', 'HEAD']); native(['push', bare, 'main']); native(['reset', '--hard', initial]);
     control.pr = { number: 42, state: 'closed', merged: true, merged_at: '2026-10-03T00:00:00Z', merge_commit_sha: merge,
-      head: { ref: 'codex/pr', sha: head, repo: { full_name: 'test/repo' } }, base: { ref: 'main', repo: { full_name: 'test/repo' } } };
+      head: { ref: 'codex/issue-7', sha: head, repo: { full_name: 'test/repo' } }, base: { ref: 'main', repo: { full_name: 'test/repo' } } };
     return { workspace, head, merge };
   }
-  return { ...f, git, target, bare, initial, native, config, configuration, control, issue, command, show, change, delivery };
+  return { ...f, git, target, bare, initial, native, config, configuration, control, select, invoke, binding, command, show, change, delivery };
 }
 
 test('workflow interfaces require an explicit Issue and reject branches, paths and mode overrides', () => {
@@ -159,14 +166,14 @@ test('dedicated direct delivery requires merge, selects the target and releases 
     const continued = await s.command('workspace', ['--resume', '2']);
     assert.equal(continued.worktree.head, head);
     assert.equal(continued.worktree.start_commit, s.initial);
-    assert.equal(continued.worktree.checked_out_branch, 'codex/direct');
+    assert.equal(continued.worktree.checked_out_branch, 'codex/issue-2');
     await assert.rejects(s.command('push', ['999']), /workflow_context_required/);
     await assert.rejects(s.command('push', ['2'], a.worktree.path), /worktree_not_delivered/);
     assert.equal((await s.command('merge', ['2'])).target.head, head);
     await assert.rejects(s.command('cleanup', ['2']), /workflow_target_not_pushed/);
     const result = await s.command('push', ['2']);
     assert.equal(result.pushed_branch, 'main'); assert.equal(result.pushed_commit, head);
-    assert.equal(s.native(['branch', '--list', 'codex/direct'], s.bare), '');
+    assert.equal(s.native(['branch', '--list', 'codex/issue-2'], s.bare), '');
     assert.equal((await s.command('cleanup', ['2'])).local_branch_deleted, true);
     assert.equal((await s.show(a.worktree.path)).worktree.state, 'available');
     await assert.rejects(s.command('workspace', ['--resume', '2']), /workflow_workspace_released/);
@@ -180,18 +187,18 @@ test('PR preparation checks remote branches; parallel workspaces never share a g
   const s = installation();
   try {
     s.native(['branch', 'absent']);
-    s.issue(4, 'pr-merge', 'codex/one', 'absent');
+    s.native(['checkout', 'absent']);
     await assert.rejects(s.command('workspace', ['4']), /workflow_remote_target_missing/);
-    s.issue(4, 'pr-merge', 'codex/one');
-    s.native(['push', s.bare, 'main:refs/heads/codex/taken']);
+    s.native(['checkout', 'main']);
+    s.native(['push', s.bare, 'main:refs/heads/codex/issue-6']);
     await assert.rejects(s.command('workspace', ['6']), /workflow_remote_branch_exists/);
     const a = await s.command('workspace', ['4']);
     const b = await s.command('workspace', ['5']);
     assert.notEqual(a.worktree.path, b.worktree.path);
     s.change(a.worktree.path, 'one'); s.change(b.worktree.path, 'two');
-    assert.equal((await s.command('push', ['4'], a.worktree.path)).pushed_branch, 'codex/one');
-    assert.equal(s.native(['branch', '--list', 'codex/two'], s.bare), '');
-    assert.equal((await s.command('push', ['5'])).pushed_branch, 'codex/two');
+    assert.equal((await s.command('push', ['4'], a.worktree.path)).pushed_branch, 'codex/issue-4');
+    assert.equal(s.native(['branch', '--list', 'codex/issue-5'], s.bare), '');
+    assert.equal((await s.command('push', ['5'])).pushed_branch, 'codex/issue-5');
     assert.equal(s.native(['rev-parse', 'main'], s.bare), s.initial);
     await assert.rejects(s.command('push', ['999']), /workflow_context_required/);
   } finally { s.dispose(); }
@@ -223,8 +230,8 @@ test('PR target sync verifies squash delivery, fast-forwards the checked out tar
     assert.deepEqual(cleaned.target, workspace.target);
     assert.equal(cleaned.delivery_mode, workspace.delivery_mode);
     assert.equal(cleaned.local_branch_deleted, true); assert.equal(cleaned.remote_branch_deleted, true);
-    assert.equal(s.native(['branch', '--list', 'codex/pr']), '');
-    assert.equal(s.native(['branch', '--list', 'codex/pr'], s.bare), '');
+    assert.equal(s.native(['branch', '--list', 'codex/issue-7']), '');
+    assert.equal(s.native(['branch', '--list', 'codex/issue-7'], s.bare), '');
     assert.equal((await s.show(workspace.worktree.path)).worktree.state, 'available');
   } finally { s.dispose(); }
 });
@@ -293,7 +300,7 @@ test('changed configuration, mismatched URLs, branch changes and network failure
     s.native(['config', '--unset', 'remote.origin.pushurl']);
     s.native(['checkout', '-b', 'renamed'], a.worktree.path);
     await assert.rejects(s.command('push', ['8']), /workflow_branch_changed/);
-    s.native(['checkout', 'codex/a'], a.worktree.path);
+    s.native(['checkout', 'codex/issue-8'], a.worktree.path);
     s.control.intercept = async (exe, args) => args.includes('push') ? { ok: false, reason: 'command_failed' } : undefined;
     await assert.rejects(s.command('push', ['8']), /workflow_remote_failed/);
     s.control.intercept = null; s.control.fetchFailure = true;
@@ -304,22 +311,52 @@ test('changed configuration, mismatched URLs, branch changes and network failure
   } finally { s.dispose(); }
 });
 
-test('Issue edits never retarget existing workspaces; new closed Issues and duplicate bindings are rejected', async () => {
+test('resume and direct delivery use only local context after Issue edits or credential loss', async () => {
   const s = installation();
   try {
     const a = await s.command('workspace', ['8']);
-    const original = s.control.issues.get(8);
-    s.issue(8, 'pr-merge', 'codex/a');
-    for (const action of ['push', 'merge', 'target-sync', 'cleanup'])
-      await assert.rejects(s.command(action, ['8']), /workflow_issue_changed/);
-    await assert.rejects(s.command('workspace', ['--resume', '8']), /workflow_issue_changed/);
-    assert.equal((await s.show(a.worktree.path)).record.workflow.mode, 'direct-merge');
-    s.control.issues.set(8, original);
-    await assert.rejects(s.command('workspace', ['8']), /workflow_issue_registered/);
-    original.state = 'closed';
-    assert.equal((await s.command('workspace', ['--resume', '8'])).issue.number, 8);
+    const head = s.change(a.worktree.path);
+    s.control.issues.set(8, { state: 'closed', body: 'Change the target and delivery mode' });
+    write(s.config, s.configuration + '[spec]\ncurrent = "invalid-selection"\n');
+    const bindings = JSON.parse(readFileSync(s.binding, 'utf8'));
+    delete bindings.tools.gh; write(s.binding, JSON.stringify(bindings));
+    s.control.intercept = (exe, args) => {
+      assert.notEqual(exe, process.execPath, 'Existing workflows must not invoke gh for local actions');
+      assert.ok(!args.some(arg => ['ls-remote', 'fetch', 'push'].includes(arg)), 'Resume and local merge must stay offline');
+    };
+    s.control.calls.length = 0;
+    const resumed = await s.command('workspace', ['--resume', '8']);
+    assert.equal(resumed.delivery_mode, 'direct-merge'); assert.equal(resumed.target.branch, 'main');
+    assert.equal(resumed.worktree.development_branch, 'codex/issue-8');
+    assert.equal((await s.command('merge', ['8'])).target.head, head);
+    assert.ok(s.control.calls.every(args => args[0] !== 'api' && args[0] !== 'auth'));
+    s.control.intercept = (exe, args) => {
+      assert.notEqual(exe, process.execPath, 'Push and direct cleanup do not read the Issue');
+    };
+    await s.command('push', ['8']);
+    await s.command('cleanup', ['8']);
+    assert.equal((await s.show(a.worktree.path)).worktree.state, 'available');
+  } finally { s.dispose(); }
+});
+
+test('new workspaces reject closed Issues, missing specs and duplicate bindings', async () => {
+  const s = installation();
+  try {
+    await assert.rejects(s.invoke('workspace', ['1']), /spec_current_missing/);
+    s.native(['checkout', '--detach']);
+    await assert.rejects(s.command('workspace', ['1']), /workflow_target_branch_required/);
+    s.native(['checkout', 'main']);
+    s.native(['branch', 'codex/issue-2']);
+    await assert.rejects(s.command('workspace', ['2']), /worktree_branch_exists/);
+    write(s.config, s.configuration + '[spec]\ncurrent = "invalid-selection"\n');
+    await assert.rejects(s.invoke('workspace', ['1']), /spec_/);
     s.control.issues.get(1).state = 'closed';
     await assert.rejects(s.command('workspace', ['1']), /workflow_issue_closed/);
+    s.control.issues.get(1).state = 'open';
+    await s.command('workspace', ['1']);
+    s.control.issues.get(1).state = 'closed';
+    await assert.rejects(s.command('workspace', ['1']), /workflow_issue_registered/);
+    assert.equal((await s.command('workspace', ['--resume', '1'])).issue.number, 1);
   } finally { s.dispose(); }
 });
 
@@ -347,15 +384,15 @@ test('PR proof failures and partial cleanup remain inspectable and retry through
     await assert.rejects(s.command('push', ['7']), /workflow_cleanup_pending/);
     // Ref deletion can succeed before branch configuration cleanup fails.
     // The original name must still locate the persisted cleanup record.
-    s.native(['config', 'branch.codex/pr.description', 'cleanup fixture']);
+    s.native(['config', 'branch.codex/issue-7.description', 'cleanup fixture']);
     s.control.intercept = async (exe, args) => args.includes('--remove-section')
       ? { ok: false, reason: 'command_failed' } : undefined;
     const deleted = await s.command('cleanup', ['7']);
     assert.equal(deleted.status, 'error'); assert.equal(deleted.local_branch_deleted, true);
     assert.equal(deleted.retry, 'workflow.cleanup 7');
-    assert.equal(s.native(['branch', '--list', 'codex/pr']), '');
+    assert.equal(s.native(['branch', '--list', 'codex/issue-7']), '');
     const detached = await s.command('workspace', ['--resume', '7']);
-    assert.equal(detached.worktree.development_branch, 'codex/pr');
+    assert.equal(detached.worktree.development_branch, 'codex/issue-7');
     assert.equal(detached.worktree.checked_out_branch, null);
     assert.equal(detached.worktree.head, pr.head.sha);
     assert.equal((await s.command('workspace', ['--resume', '7'], workspace.worktree.path)).worktree.state, 'needs_check');
@@ -410,11 +447,15 @@ test('PR merge requires a unique current head, confirms delivery and can be safe
   const s = installation();
   try {
     const workspace = await s.command('workspace', ['7']);
+    s.control.issues.delete(7);
     const head = s.change(workspace.worktree.path);
     await s.command('push', ['7']);
     const pr = { number: 42, state: 'open', draft: false, merged: false,
-      head: { ref: 'codex/pr', sha: head, repo: { full_name: 'test/repo' } },
+      head: { ref: 'codex/issue-7', sha: head, repo: { full_name: 'test/repo' } },
       base: { ref: 'main', repo: { full_name: 'test/repo' } } };
+    s.control.pr = { ...pr, base: { ...pr.base, ref: 'other-target' } };
+    await assert.rejects(s.command('merge', ['7']), /worktree_pr_not_found/);
+    assert.equal(s.native(['rev-parse', 'main']), s.initial);
     s.control.pr = { ...pr, head: { ...pr.head, sha: s.initial } };
     await assert.rejects(s.command('merge', ['7']), /workflow_pr_head_changed/);
     s.control.pr = [pr, { ...pr, number: 43 }];

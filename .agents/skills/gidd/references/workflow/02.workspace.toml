@@ -1,10 +1,10 @@
 [zh-CN."issue.*"]
 title = "工作目录准备"
 body = '''
-确认 Issue 的 GIDD 配置区块已填写交付模式、目标分支和开发分支；直接提交模式的开发分支为 null。
-新任务执行 `gidd.link workflow.workspace <Issue编号>`。直接提交使用目标仓库当前检出的目标分支；合并模式新建 Issue 约定的开发分支并领用专用 worktree。
+确认当前规范和目标仓库当前分支符合本次交付安排，再执行 `gidd.link workflow.workspace <Issue编号>`。命令首次在线核验 Issue，并将交付模式、目标分支和起始提交点保存到本地。
+直接提交使用目标仓库；合并模式新建 `codex/issue-<编号>` 开发分支并领用专用 worktree。
 记录返回的 Issue、目标仓库、目标分支、开发分支、工作目录和起始提交点，供后续报告使用。
-继续任务先确认原使用者已停止操作，再执行 `workflow.workspace --resume <Issue编号>`。查找和排查使用 `worktree.list`、`worktree.show <目录>`；原目录已释放、移除或复用时，先确定继续方式。
+继续任务先确认原使用者已停止操作，再执行 `workflow.workspace --resume <Issue编号>`，离线核对本地记录与 Git 状态；沿用原交付模式及分支。查找和排查使用 `worktree.list`、`worktree.show <目录>`；原目录已释放、移除或复用时，先确定继续方式。
 '''
 
 [en."issue.*"]

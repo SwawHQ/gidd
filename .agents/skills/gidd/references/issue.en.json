@@ -35,19 +35,6 @@
       "validations": {
         "required": false
       }
-    },
-    {
-      "type": "textarea",
-      "id": "gidd",
-      "attributes": {
-        "label": "GIDD configuration",
-        "description": "Set the delivery mode and target branch; merge modes also need a new development branch, while direct commit uses null. Keep the gidd code block.",
-        "render": "gidd",
-        "value": "{\n  \"schema\": \"gidd.issue/v1\",\n  \"delivery_mode\": \"direct-commit\",\n  \"target_branch\": \"\",\n  \"development_branch\": null\n}"
-      },
-      "validations": {
-        "required": true
-      }
     }
   ]
 }

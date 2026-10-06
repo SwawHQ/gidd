@@ -24,8 +24,8 @@ GIDD (Windows x64 / PowerShell 5.1)
   gidd.link spec.current --lang zh        #Choose zh|en; all spec commands support --lang
   gidd.link spec.issue 00/00              #Print the selected spec's Issue template
   gidd.link spec.issue.current            #Print the current spec's Issue template
-  gidd.link workflow.workspace <issue>                  #Prepare a workspace from the Issue configuration
-  gidd.link workflow.workspace --resume <issue>         #Verify the recorded workspace and show its state
+  gidd.link workflow.workspace <issue>                  #Prepare from the current spec and target checkout branch
+  gidd.link workflow.workspace --resume <issue>         #Inspect local records and Git state offline
   gidd.link workflow.push <issue>                       #Push the branch selected by delivery mode
   gidd.link workflow.merge <issue> [--squash|--rebase]  #Local or PR merge; defaults to merge; --message sets the title
   gidd.link workflow.target-sync <issue>                #Verify PR delivery and fast-forward the target

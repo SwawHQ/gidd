@@ -10,7 +10,8 @@ import { plainPath, toolsRoot } from '../../shared/storage.mjs';
 import { withSignals } from '../../shared/signals.mjs';
 import { parseList, validWorkflowContext, worktreeCommand, readRecords } from '../worktree/index.mjs';
 import { prConnection } from '../../shared/pull-requests.mjs';
-import { issueNumber, readWorkflowIssue, verifyIssueContext } from '../../shared/issue-workflow.mjs';
+import { issueNumber, readWorkflowIssue } from '../../shared/issue-workflow.mjs';
+import { readSpec } from '../../shared/specs.mjs';
 import { acquireStorageLock, locateStorage, initializeStorage, contextLocation, registryLocation, readJson } from '../../shared/managed-storage.mjs';
 
 const schema = 'gidd.workflow/v1';
@@ -159,16 +160,22 @@ export async function workflowCommand(repository, options, { execute, signal, cw
     const starting = options.action === 'workspace' && !options.resume;
     const current = starting ? null : await context();
     if (current) matchRemote(current);
-    const issueConnection = await repositoryConnection(repository, { execute, signal, github: true });
-    const issue = await readWorkflowIssue(issueConnection, options.issue);
-    if (current) verifyIssueContext(issue, current);
     if (starting) {
-      if (issue.state !== 'open') fail('workflow_issue_closed');
       if (readRecords(registryLocation(storage), storage.path).some(record => record.issue === options.issue)) fail('workflow_issue_registered');
       if (existsSync(contextPath) && readJson(contextPath).issue === options.issue) fail('workflow_issue_registered');
-      const workflow = snapshot(issue.delivery_mode), base = issue.target_branch, branch = issue.development_branch;
+      // Resolve the plan once. Issue prose never controls local delivery settings.
+      const selector = readConfiguration(repository).spec.current;
+      if (!selector) fail('spec_current_missing');
+      const mode = readSpec(selector).mode.split('.').at(-1);
+      const workflow = snapshot(mode);
+      const entry = (await rows()).find(row => same(row.path, repository));
+      const base = entry?.branch, branch = mode === 'direct-commit' ? null : `codex/issue-${options.issue}`;
+      if (!base) fail('workflow_target_branch_required');
       if (!validWorkflowContext(workflow)) fail('invalid_arguments');
       await refHead(base);
+      const issueConnection = await repositoryConnection(repository, { execute, signal, github: true });
+      const issue = await readWorkflowIssue(issueConnection, options.issue);
+      if (issue.state !== 'open') fail('workflow_issue_closed');
       if (workflow.mode === 'direct-commit') {
         if (!same(await git(cwd, ['rev-parse', '--show-toplevel']), repository)) fail('workflow_entry_required');
         // The entry checkout and target branch persist across tasks. Only the
@@ -221,12 +228,13 @@ export async function workflowCommand(repository, options, { execute, signal, cw
         await git(repository, ['update-ref', 'refs/heads/' + current.target_branch, source, previous]);
       } else {
         const checkout = checkouts[0];
+        const connection = await repositoryConnection(repository, { execute, signal });
         await cleanTarget(checkout);
         const before = (await rows()).find(row => same(row.path, checkout.path));
         if (before?.branch !== current.target_branch || before.head !== previous || await refHead(current.branch) !== source)
           fail('workflow_target_changed');
         try {
-          await issueConnection.git(checkout.path, ['-c', 'submodule.recurse=false', 'merge', '--ff', '--no-squash',
+          await connection.git(checkout.path, ['-c', 'submodule.recurse=false', 'merge', '--ff', '--no-squash',
             '--no-edit', '--no-autostash', '--no-overwrite-ignore', '-m', options.message ?? `chore: merge issue #${current.issue}`, source]);
         } catch (error) {
           // Preserve conflicts for the direct_merge_error stage; do not abort,

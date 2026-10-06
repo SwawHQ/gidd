@@ -42,7 +42,7 @@ test('issue guidance uses only the public preparation and repository commands', 
     assert.ok(source, 'The printed spec must identify its source file');
     assert.equal(realpathSync.native(source[1]), realpathSync.native(join(s.skill, 'specs/00.issue.current-worktree.direct-commit/00.auto.toml')));
     const form = json(ok(invoke(['spec.issue.current','--lang','en']))).form;
-    assert.deepEqual(form.body.map(field => field.id), ['requirements', 'acceptance', 'completion', 'gidd']);
+    assert.deepEqual(form.body.map(field => field.id), ['requirements', 'acceptance', 'completion']);
     assert.match(ok(invoke(['spec.current','--lang','zh'])).stdout, /gidd\.link spec\.issue 00\.issue\.current-worktree\.direct-commit\/00\.auto --lang zh/);
     const config = readFileSync(join(target,'.agents/skills/gidd/config.toml'));
     write(s.link(target),'damaged entry');

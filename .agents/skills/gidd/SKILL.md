@@ -40,7 +40,7 @@ gidd.pre.ensure.cmd --tools-only=gh
 3. 按诊断的提示进行配置或修复（有些必须要人类协助）并再次运行诊断，直至其退出码为 `0`，执行 `gidd.link.cmd spec.current`，便可按其输出的指引开展工作了
 4. `gidd.link.cmd` 若损坏，执行 `gidd.pre.ensure.cmd --repo <仓库路径>` 可重新创建
 
-`config.toml` 和生成的 `gidd.link.cmd` 是本机文件，由初始化生成的 `.gitignore` 忽略。开发流程以 Issue 为入口；workflow 命令通过 Issue 编号读取交付配置，worktree 命令按目录查询和移除本机资源。本地数据目录固定为 `<目标仓库>.gidd/`，关联 worktree 共用；目录检查及维护见 [本地数据目录](references/data.md)。
+`config.toml` 和生成的 `gidd.link.cmd` 是本机文件，由初始化生成的 `.gitignore` 忽略。开发流程以 Issue 为入口；workflow 命令通过 Issue 编号定位本地工作区；首次准备按当前规范和目标仓库当前分支确定交付上下文，worktree 命令按目录查询和移除本机资源。本地数据目录固定为 `<目标仓库>.gidd/`，关联 worktree 共用；目录检查及维护见 [本地数据目录](references/data.md)。
 
 ## 三、GIDD 启用步骤
 
