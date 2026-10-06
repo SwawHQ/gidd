@@ -133,13 +133,6 @@ try {
             $lock = Open-GiddInstallLock $request.root
             Write-GiddInstallationGuide $request.root
         }
-        'legacy-lock' {
-            $cache = Join-Path $request.root '.cache'
-            [void][IO.Directory]::CreateDirectory($cache)
-            $lock = [IO.File]::Open((Join-Path $cache 'install.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
-            [IO.File]::WriteAllText(($RequestPath + '.locked'),'locked')
-            Start-Sleep -Seconds 30
-        }
         'install' {
             $definition = [IO.File]::ReadAllText($request.definitionPath) | ConvertFrom-Json
             if ($request.fixtureDirectory) {

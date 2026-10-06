@@ -237,20 +237,12 @@ test('Native installers exclude each other and reclaim a killed owner', { timeou
       ok(shellAdapter(f.root,spec));
       assert.equal(existsSync(join(root,'bun/install.json')),true);
     }
-    // Retire the old unlocked empty file without accepting an unknown file.
-    const root = join(f.root,'legacy'); write(join(root,'.cache/install.lock'),'');
-    ok(shellAdapter(f.root,{ action: 'guide', root }));
-    write(join(root,'.cache/install.lock'),'unknown owner data');
-    assert.match(shellAdapter(f.root,{ action: 'guide', root }).stderr,/install_locked/);
-    assert.equal(readFileSync(join(root,'.cache/install.lock'),'utf8'),'unknown owner data');
-    const legacyRoot = join(f.root,'legacy-running');
-    const old = startShellAdapter(f.root,{ action: 'legacy-lock', root: legacyRoot });
-    try {
-      await until(() => existsSync(old.marker));
-      for (const invoke of [shellAdapter]) assert.notEqual(invoke(f.root,{ action: 'guide', root: legacyRoot }).status,0,'Never retire a live legacy OS lock');
-      assert.equal(existsSync(join(legacyRoot,'.cache/install.lock')),true);
-    } finally { old.child.kill(); await old.result; }
-    ok(shellAdapter(f.root,{ action: 'guide', root: legacyRoot }));
+    const root = join(f.root,'file-in-lock-location');
+    for (const text of ['', 'unknown owner data']) {
+      write(join(root,'.cache/install.lock'),text);
+      assert.match(shellAdapter(f.root,{ action: 'guide', root }).stderr,/install_locked/);
+      assert.equal(readFileSync(join(root,'.cache/install.lock'),'utf8'),text);
+    }
   } finally { f.dispose(); }
 });
 

@@ -44,11 +44,7 @@ function Open-GiddInstallLock {
             Assert-GiddPlainPath $lockPath
             if (Test-Path -LiteralPath $lockPath) {
                 $item = Get-Item -LiteralPath $lockPath -Force
-                if (-not $item.PSIsContainer -and $item.Length -eq 0) {
-                    $retired = Join-Path $cacheRoot "legacy-$token"
-                    try { [IO.File]::Move($lockPath,$retired); [IO.File]::Delete($retired) }
-                    catch { throw 'install_locked_or_unwritable' }
-                } elseif ($item.PSIsContainer) {
+                if ($item.PSIsContainer) {
                     $entries = @(Get-ChildItem -LiteralPath $lockPath -Force)
                     if (-not $entries.Count) { try { [IO.Directory]::Delete($lockPath) } catch {}; continue }
                     if ($entries.Count -ne 1 -or $entries[0].Name -notmatch '^owner-[a-f0-9-]{36}\.json$' -or $entries[0].Length -gt 1024) { throw 'install_locked_or_unwritable' }
