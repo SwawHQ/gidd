@@ -215,6 +215,9 @@ export async function worktreeCommand(repository, options, { execute, signal, st
       if (records.some(item => item.cleanup && !item.ready_head && item.branch?.toLowerCase() === options.branch.toLowerCase())) fail('worktree_cleanup_pending');
       if (!branches.includes('refs/heads/' + base)) fail('worktree_base_missing');
       const start = await git(repository, ['rev-parse', '--verify', 'refs/heads/' + base + '^{commit}']);
+      // Workspace preparation has already synchronized and verified this tip.
+      // Do not silently allocate from a native concurrent branch update.
+      if (options.expected_start !== undefined && options.expected_start !== start) fail('workflow_target_changed');
       initializeStorage(storage);
       mkdirSync(directory, { recursive: true });
       let record;

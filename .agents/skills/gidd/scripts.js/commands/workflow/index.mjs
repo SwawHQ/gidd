@@ -157,6 +157,25 @@ export async function workflowCommand(repository, options, { execute, signal, cw
     if ((await git(row.path, ['ls-files', '-v', '-z'])).split('\0').some(line => /^[a-zS] /.test(line))) fail('workflow_target_index_flags');
     if (await git(row.path, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none'])) fail('workflow_target_dirty');
   }
+  async function fastForwardTarget(connection, branch, previous, incoming) {
+    if (await refHead(branch) !== previous) fail('workflow_target_changed');
+    const checkouts = (await rows()).filter(row => row.branch === branch);
+    if (checkouts.length > 1) fail('workflow_target_ambiguous');
+    if (checkouts.length) {
+      const checkout = checkouts[0];
+      await cleanTarget(checkout);
+      const before = (await rows()).find(row => same(row.path, checkout.path));
+      if (before?.branch !== branch || before.head !== previous) fail('workflow_target_changed');
+      await connection.git(checkout.path, ['-c', 'submodule.recurse=false', 'merge', '--ff-only', '--no-squash', '--no-edit',
+        '--no-autostash', '--no-overwrite-ignore', incoming]);
+      const after = (await rows()).find(row => same(row.path, checkout.path));
+      if (after?.branch !== branch || after.head !== incoming) fail('workflow_target_changed');
+    } else {
+      if ((await rows()).some(row => row.branch === branch)) fail('workflow_target_changed');
+      await git(repository, ['update-ref', 'refs/heads/' + branch, incoming, previous]);
+    }
+    if (await refHead(branch) !== incoming) fail('workflow_target_changed');
+  }
     const starting = options.action === 'workspace' && !options.resume;
     const current = starting ? null : await context();
     if (current) matchRemote(current);
@@ -173,31 +192,51 @@ export async function workflowCommand(repository, options, { execute, signal, cw
       if (!base) fail('workflow_target_branch_required');
       if (!validWorkflowContext(workflow)) fail('invalid_arguments');
       await refHead(base);
+      // Reject occupied resources before any preparation-time target update.
+      if (workflow.mode === 'direct-commit') {
+        if (!same(await git(cwd, ['rev-parse', '--show-toplevel']), repository)) fail('workflow_entry_required');
+        if (existsSync(contextPath)) fail('workflow_context_exists');
+      } else {
+        await git(repository, ['check-ref-format', 'refs/heads/' + branch]);
+        const branches = (await git(repository, ['for-each-ref', '--format=%(refname)', 'refs/heads/'])).split('\n');
+        if (branches.some(ref => ref.toLowerCase() === ('refs/heads/' + branch).toLowerCase())) fail('worktree_branch_exists');
+      }
       const issueConnection = await repositoryConnection(repository, { execute, signal, github: true });
       const issue = await readWorkflowIssue(issueConnection, options.issue);
       if (issue.state !== 'open') fail('workflow_issue_closed');
-      if (workflow.mode === 'direct-commit') {
-        if (!same(await git(cwd, ['rev-parse', '--show-toplevel']), repository)) fail('workflow_entry_required');
-        // The entry checkout and target branch persist across tasks. Only the
-        // prior workflow record blocks preparation; its validity is not implied.
-        if (existsSync(contextPath)) fail('workflow_context_exists');
+      if (workflow.mode === 'pr-merge' && await remoteHead(issueConnection, branch)) fail('workflow_remote_branch_exists');
+      const entryHead = async () => {
         const row = (await rows()).find(row => same(row.path, repository));
         if (row?.branch !== base) fail('workflow_target_branch_mismatch');
-        const start = await refHead(row.branch);
-        const record = { schema: 'gidd.workflow.context/v1', issue: options.issue, workflow, target_branch: row.branch, start_commit: start };
+        return refHead(base);
+      };
+      let start;
+      if (await remoteHead(issueConnection, base)) {
+        start = await withRemoteTarget(issueConnection, base, async incoming => {
+          const previous = await entryHead();
+          if (previous === incoming) return incoming;
+          // A leading local branch may also mean the remote was rewound.
+          // Preparation never decides to push, reset or rebase that history.
+          if (await ancestor(incoming, previous)) fail('workflow_target_ahead');
+          if (!await ancestor(previous, incoming)) fail('workflow_target_diverged');
+          await fastForwardTarget(issueConnection, base, previous, incoming);
+          return incoming;
+        });
+      } else {
+        if (workflow.mode === 'pr-merge') fail('workflow_remote_target_missing');
+        start = await entryHead(); // direct delivery may publish a new target
+      }
+      if (await entryHead() !== start) fail('workflow_target_changed');
+      if (workflow.mode === 'direct-commit') {
+        // The entry checkout and target branch persist across tasks. Only the
+        // prior workflow record blocks preparation; its validity is not implied.
+        const record = { schema: 'gidd.workflow.context/v1', issue: options.issue, workflow, target_branch: base, start_commit: start };
         initializeStorage(storage);
         mkdirSync(join(storage.state, 'workflows'), { recursive: true });
         saveContext(contextPath, record);
         return report({ ...record, schema, path: repository, branch: null });
       }
-      await git(repository, ['check-ref-format', 'refs/heads/' + branch]);
-      const branches = (await git(repository, ['for-each-ref', '--format=%(refname)', 'refs/heads/'])).split('\n');
-      if (branches.some(ref => ref.toLowerCase() === ('refs/heads/' + branch).toLowerCase())) fail('worktree_branch_exists');
-      if (workflow.mode === 'pr-merge') {
-        if (!await remoteHead(issueConnection, base)) fail('workflow_remote_target_missing');
-        if (await remoteHead(issueConnection, branch)) fail('workflow_remote_branch_exists');
-      }
-      const created = await worktree({ action: 'acquire', issue: options.issue, branch, base, workflow });
+      const created = await worktree({ action: 'acquire', issue: options.issue, branch, base, workflow, expected_start: start });
       return { ...created, ...report({ workflow }) };
     }
     const summary = { issue: current.issue, path: current.path, branch: current.branch, target_branch: current.target_branch,
@@ -269,21 +308,7 @@ export async function workflowCommand(repository, options, { execute, signal, cw
         const previous = await refHead(current.target_branch);
         if (await ancestor(incoming, previous)) return report({ ...summary, target_head: previous, updated: false, pr: proof.number });
         if (!await ancestor(previous, incoming)) fail('workflow_target_not_fast_forward');
-        const checkouts = (await rows()).filter(row => row.branch === current.target_branch);
-        if (checkouts.length > 1) fail('workflow_target_ambiguous');
-        if (checkouts.length) {
-          const checkout = checkouts[0];
-          await cleanTarget(checkout);
-          const before = (await rows()).find(row => same(row.path, checkout.path));
-          if (before?.branch !== current.target_branch || before.head !== previous) fail('workflow_target_changed');
-          await connection.git(checkout.path, ['-c', 'submodule.recurse=false', 'merge', '--ff-only', '--no-squash', '--no-edit',
-            '--no-autostash', '--no-overwrite-ignore', incoming]);
-          const after = (await rows()).find(row => same(row.path, checkout.path));
-          if (after?.branch !== current.target_branch || after.head !== incoming) fail('workflow_target_changed');
-        } else {
-          if ((await rows()).some(row => row.branch === current.target_branch)) fail('workflow_target_changed');
-          await git(repository, ['update-ref', 'refs/heads/' + current.target_branch, incoming, previous]);
-        }
+        await fastForwardTarget(connection, current.target_branch, previous, incoming);
         return report({ ...summary, target_head: incoming, updated: true, pr: proof.number });
       });
     }

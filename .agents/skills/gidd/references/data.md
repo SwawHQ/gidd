@@ -1,8 +1,8 @@
 # Issue 与本地记录 / Issue and local records
 
-Issue 记录需求、验收及交付关联，不承载机器配置。首次 `workflow.workspace <Issue编号>` 在线核验 Issue；交付模式取入口的 `spec.current`，目标分支取目标仓库当前分支。合并模式创建 `codex/issue-<编号>` 开发分支；直接提交的开发分支为 null。
+Issue 记录需求、验收及交付关联，不承载机器配置。首次 `workflow.workspace <Issue编号>` 在线核验 Issue，并安全快进落后的目标分支；交付模式取入口的 `spec.current`，目标分支取目标仓库当前分支，起始提交点取同步后的目标提交。领先或分叉时停止；远端无目标分支时，仅直接交付模式可继续。合并模式创建 `codex/issue-<编号>` 开发分支；直接提交的开发分支为 null。
 
-Issues contain requirements, acceptance and delivery links, without machine configuration. Initial `workflow.workspace <issue>` checks the Issue online, takes the delivery mode from the entry's `spec.current` and the target branch from the target checkout. Merge modes create `codex/issue-<number>`; direct commit has no development branch.
+Issues contain requirements, acceptance and delivery links, without machine configuration. Initial `workflow.workspace <issue>` checks the Issue online and safely fast-forwards a behind target. It takes the delivery mode from the entry's `spec.current`, the target branch from the target checkout and the starting commit from the synchronized target. An ahead or diverged target stops preparation; only direct delivery can proceed without a remote target. Merge modes create `codex/issue-<number>`; direct commit has no development branch.
 
 workflow 命令按 Issue 编号定位本地记录，后续沿用已保存的模式、分支、起始提交点及远端，不从 Issue 正文或当前规范重建交付上下文。resume 只核对本地记录与 Git 状态，不需要 GitHub 凭据或网络，也不接管会话。同一 Issue 在本机最多关联一个工作区。推送及交付核验按需访问远端；PR 按仓库、来源/目标分支和开发提交匹配，目标不同则报告，保留现场。close-issue 在线核验交付并关闭 Issue，PR 模式先补建 Development 关联；清理仍由 cleanup 处理。
 

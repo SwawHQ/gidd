@@ -24,7 +24,7 @@ GIDD（Windows x64 / PowerShell 5.1）
   gidd.link spec.current         #生成当前规范提示
   gidd.link spec.issue 00/00     #打印指定规范的 Issue 模板
   gidd.link spec.issue.current   #打印当前规范的 Issue 模板
-  gidd.link workflow.workspace <Issue编号>                  #按当前规范和目标仓库当前分支准备工作区
+  gidd.link workflow.workspace <Issue编号>                  #按当前规范核验并快进目标分支，准备工作区
   gidd.link workflow.workspace --resume <Issue编号>         #离线核验本地记录并显示工作区状态
   gidd.link workflow.push <Issue编号>                       #按交付模式推送对应分支
   gidd.link workflow.merge <Issue编号> [--squash|--rebase]  #本地或 PR 合并；默认 merge，可用 --message 指定标题

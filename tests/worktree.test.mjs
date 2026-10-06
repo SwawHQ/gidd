@@ -725,7 +725,9 @@ test('repository entry selects workflows by Issue and inspects worktrees by dire
     ok(adapter(s.root, { action: 'bootstrap', repositoryRoot: s.target, responses: {}, downloads: {}, yes: true }, { env: { PATH: dirname(process.execPath) } }));
     const skill = join(s.root, 'installed skill'); copySkill(skill);
     publishRepositoryEntry(s.target, join(skill, 'scripts.js/gidd.mjs'));
-    bindFixture(s.root, { git: s.git, gh: compile(s.root, 'wrapper-gh.cs') });
+    bindFixture(s.root, { git: compile(s.root, 'transport-git.cs'), gh: compile(s.root, 'wrapper-gh.cs') });
+    const bare = join(s.root, 'remote.git');
+    s.native(['init', '--bare', bare]); s.native(['push', bare, 'main']);
     s.native(['remote', 'add', 'origin', 'https://github.com/test/repo']);
     write(join(s.target, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n[repo]\nremote.name = "origin"\nremote.url = "https://github.com/test/repo"\nremote.account = "tester"\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n');
     const issueFile = join(s.root, 'issue.json');
@@ -737,7 +739,7 @@ test('repository entry selects workflows by Issue and inspects worktrees by dire
         html_url: 'https://github.com/test/repo/issues/' + number, body: 'Requirements and acceptance' }));
     };
     define(7, 'direct-merge');
-    const env = { PATH: '', GIDD_ISSUE_FIXTURE: issueFile };
+    const env = { PATH: '', GIDD_ISSUE_FIXTURE: issueFile, GIDD_TEST_GIT: s.git, GIDD_TEST_REMOTE: bare };
     const cli = (args, cwd = s.target) => runRepositoryCommand(s.target, args, { cwd, env });
     assert.deepEqual(json(ok(cli(['worktree.list']))).worktrees, []);
     assert.equal(json(cli(['worktree.remove', s.target])).reason, 'worktree_target_repository_protected');
@@ -778,7 +780,9 @@ test('repository entry selects workflows by Issue and inspects worktrees by dire
     assert.equal(json(cli(['workflow.workspace', '--resume', '7'])).reason, 'workflow_branch_changed');
     s.native(['checkout', 'codex/issue-7'], acquired.worktree.path);
     assert.equal(json(cli(['worktree.remove', acquired.worktree.path])).reason, 'worktree_not_released');
-    assert.equal((await s.command('cleanup', ['codex/issue-7'])).local_branch_deleted, true);
+    assert.equal((await s.command('cleanup', ['codex/issue-7'], {
+      execute: (exe, args, options) => runCommand(s.git, args, options),
+    })).local_branch_deleted, true);
     const released = json(ok(cli(['worktree.show', acquired.worktree.path])));
     assert.equal(released.worktree.state, 'available'); assert.equal(released.worktree.release_commit, acquired.worktree.start_commit);
     assert.equal(json(cli(['workflow.workspace', '--resume', '7'])).reason, 'workflow_workspace_released');

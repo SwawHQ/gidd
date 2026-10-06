@@ -1,6 +1,6 @@
 import { contextName } from '../.agents/skills/gidd/scripts.js/shared/managed-storage.mjs';
 import { test } from 'node:test';
-import { realpathSync } from 'node:fs';
+import { realpathSync, unlinkSync } from 'node:fs';
 import { parseWorkflowArguments, workflowCommand } from '../.agents/skills/gidd/scripts.js/commands/workflow/index.mjs';
 import { worktreeCommand } from '../.agents/skills/gidd/scripts.js/commands/worktree/index.mjs';
 import { runCommand } from '../.agents/skills/gidd/scripts.js/shared/process.mjs';
@@ -95,6 +95,13 @@ function installation() {
   };
   const show = path => worktreeCommand(target, { action: 'show', path });
   const change = (path, message = 'feature') => { write(join(path, 'tracked.txt'), message + '\n'); native(['commit', '-am', message], path); return native(['rev-parse', 'HEAD'], path); };
+  let remoteUpdates = 0;
+  const advanceRemote = () => {
+    const previous = native(['rev-parse', 'main']);
+    const head = change(target, 'remote update' + (++remoteUpdates === 1 ? '' : ' ' + remoteUpdates));
+    native(['push', bare, 'main']); native(['reset', '--hard', previous]);
+    return head;
+  };
   async function delivery() {
     const workspace = await command('workspace', ['7']);
     control.issues.delete(7); // Later operations must not depend on Issue availability.
@@ -106,7 +113,16 @@ function installation() {
       head: { ref: 'codex/issue-7', sha: head, repo: { full_name: 'test/repo' } }, base: { ref: 'main', repo: { full_name: 'test/repo' } } };
     return { workspace, head, merge };
   }
-  return { ...f, git, target, bare, initial, native, config, configuration, control, select, invoke, binding, command, show, change, delivery };
+  return { ...f, git, target, bare, initial, native, config, configuration, control, select, invoke, binding, command, show, change, advanceRemote, delivery };
+}
+
+async function noPreparedResources(s, head) {
+  assert.equal(s.native(['rev-parse', 'main']), head);
+  assert.equal(s.native(['branch', '--list', 'codex/issue-*']), '');
+  assert.equal((await worktreeCommand(s.target, { action: 'list' })).worktrees.length, 0);
+  assert.equal(existsSync(join(s.target + '.gidd', 'state/workflows', contextName(join(s.target, '.git')))), false);
+  assert.equal(s.native(['for-each-ref', '--format=%(refname)', 'refs/gidd/']), '');
+  assert.equal(existsSync(join(s.target, '.agents/skills/gidd/config.toml.lock')), false);
 }
 
 test('workflow interfaces require an explicit Issue and reject branches, paths and mode overrides', () => {
@@ -502,6 +518,163 @@ test('PR merge requires a unique current head, confirms delivery and can be safe
     assert.equal(s.control.calls.filter(args => args.includes('PUT')).length, mutations);
     await s.command('target-sync', ['7']);
     assert.equal((await s.command('cleanup', ['7'])).local_branch_deleted, true);
+  } finally { s.dispose(); }
+});
+
+for (const [issue, mode] of [[1, 'direct-commit'], [2, 'direct-merge'], [7, 'pr-merge']]) {
+  test(`${mode} preparation fast-forwards only the target and records its updated starting point`, async () => {
+    const s = installation();
+    try {
+      const incoming = s.advanceRemote();
+      s.native(['branch', 'keep-branch']); s.native(['tag', 'keep-tag']);
+      s.native(['tag', 'remote-tag', incoming], s.bare);
+      s.native(['update-ref', 'refs/remotes/origin/main', s.initial]);
+      s.native(['update-ref', 'refs/remotes/origin/stale', s.initial]);
+      s.native(['config', 'fetch.prune', 'true']); s.native(['config', 'fetch.pruneTags', 'true']);
+      s.native(['config', 'branch.main.mergeOptions', '--squash --autostash --overwrite-ignore']);
+      s.control.calls.length = 0;
+      const prepared = await s.command('workspace', [String(issue)]);
+      assert.equal(prepared.worktree.delivery_mode, mode);
+      assert.equal(prepared.worktree.start_commit, incoming);
+      assert.equal(s.native(['rev-parse', 'HEAD'], prepared.worktree.path), incoming);
+      assert.equal(s.native(['rev-parse', 'main']), incoming);
+      assert.equal(readFileSync(join(s.target, 'tracked.txt'), 'utf8'), 'remote update\n');
+      assert.equal(s.native(['rev-parse', 'keep-branch']), s.initial);
+      assert.equal(s.native(['tag', '--list']), 'keep-tag');
+      assert.equal(s.native(['rev-parse', 'refs/remotes/origin/main']), s.initial);
+      assert.equal(s.native(['rev-parse', 'refs/remotes/origin/stale']), s.initial);
+      assert.equal(s.native(['rev-parse', 'main'], s.bare), incoming);
+      assert.equal(s.control.calls.some(args => args.includes('push')), false);
+      assert.equal(s.native(['for-each-ref', '--format=%(refname)', 'refs/gidd/']), '');
+    } finally { s.dispose(); }
+  });
+
+  for (const state of ['ahead', 'diverged']) test(`${mode} preparation stops when the local target is ${state}`, async () => {
+    const s = installation();
+    try {
+      const incoming = state === 'diverged' ? s.advanceRemote() : s.initial;
+      const local = s.change(s.target, 'unpublished work');
+      await assert.rejects(s.command('workspace', [String(issue)]), new RegExp('workflow_target_' + state));
+      await noPreparedResources(s, local);
+      assert.equal(s.native(['rev-parse', 'main'], s.bare), incoming);
+      assert.equal(readFileSync(join(s.target, 'tracked.txt'), 'utf8'), 'unpublished work\n');
+      assert.equal(s.control.calls.some(args => args.includes('push')), false);
+    } finally { s.dispose(); }
+  });
+
+  test(`${mode} preparation handles an absent remote target without publishing it`, async () => {
+    const s = installation();
+    try {
+      s.native(['update-ref', '-d', 'refs/heads/main'], s.bare);
+      if (mode === 'pr-merge') {
+        await assert.rejects(s.command('workspace', [String(issue)]), /workflow_remote_target_missing/);
+        await noPreparedResources(s, s.initial);
+      } else {
+        const prepared = await s.command('workspace', [String(issue)]);
+        assert.equal(prepared.worktree.start_commit, s.initial);
+      }
+      assert.equal(s.native(['for-each-ref', '--format=%(refname)'], s.bare), '');
+      assert.equal(s.control.calls.some(args => args.includes('fetch') || args.includes('push')), false);
+    } finally { s.dispose(); }
+  });
+
+  test(`${mode} resume leaves an outdated target and the original starting point unchanged offline`, async () => {
+    const s = installation();
+    try {
+      const prepared = await s.command('workspace', [String(issue)]);
+      s.advanceRemote();
+      const recordPath = mode === 'direct-commit'
+        ? join(s.target + '.gidd', 'state/workflows', contextName(join(s.target, '.git')))
+        : join(s.target + '.gidd', 'state/worktrees', prepared.id + '.json');
+      const record = readFileSync(recordPath, 'utf8');
+      s.control.intercept = (exe, args) => {
+        assert.notEqual(exe, process.execPath);
+        assert.ok(!args.some(arg => ['ls-remote', 'fetch', 'push'].includes(arg)));
+      };
+      const resumed = await s.command('workspace', ['--resume', String(issue)]);
+      assert.equal(resumed.worktree.start_commit, s.initial);
+      assert.equal(resumed.worktree.head, s.initial);
+      assert.equal(s.native(['rev-parse', 'main']), s.initial);
+      assert.equal(readFileSync(recordPath, 'utf8'), record);
+    } finally { s.dispose(); }
+  });
+}
+
+test('preparation preserves target edits, hidden index changes and unfinished Git operations', async () => {
+  const s = installation();
+  try {
+    s.advanceRemote();
+    write(join(s.target, 'tracked.txt'), 'keep me\n');
+    await assert.rejects(s.command('workspace', ['2']), /workflow_target_dirty/);
+    assert.equal(readFileSync(join(s.target, 'tracked.txt'), 'utf8'), 'keep me\n');
+    for (const flag of ['assume-unchanged', 'skip-worktree']) {
+      s.native(['update-index', '--' + flag, 'tracked.txt']);
+      await assert.rejects(s.command('workspace', ['2']), /workflow_target_index_flags/);
+      s.native(['update-index', '--no-' + flag, 'tracked.txt']);
+    }
+    s.native(['restore', 'tracked.txt']);
+    write(join(s.target, 'keep.tmp'), 'user file');
+    await assert.rejects(s.command('workspace', ['2']), /workflow_target_dirty/);
+    assert.equal(readFileSync(join(s.target, 'keep.tmp'), 'utf8'), 'user file');
+    unlinkSync(join(s.target, 'keep.tmp'));
+    for (const marker of ['MERGE_HEAD', 'index.lock']) {
+      write(join(s.target, '.git', marker), s.initial + '\n');
+      await assert.rejects(s.command('workspace', ['2']), /workflow_target_busy/);
+      assert.equal(readFileSync(join(s.target, '.git', marker), 'utf8'), s.initial + '\n');
+      unlinkSync(join(s.target, '.git', marker));
+    }
+    await noPreparedResources(s, s.initial);
+    assert.equal(s.native(['stash', 'list']), '');
+    // No checkout update is needed when tips match, so existing edits survive.
+    s.native(['update-ref', 'refs/heads/main', s.initial], s.bare);
+    write(join(s.target, 'tracked.txt'), 'keep me\n');
+    await s.command('workspace', ['2']);
+    assert.equal(readFileSync(join(s.target, 'tracked.txt'), 'utf8'), 'keep me\n');
+  } finally { s.dispose(); }
+});
+
+test('preparation rejects fetch failures and concurrent target changes before allocating resources', async () => {
+  for (const state of ['fetch-failure', 'branch-switch', 'allocation-race']) {
+    const s = installation();
+    try {
+      const incoming = s.advanceRemote();
+      let retained = s.initial;
+      if (state === 'fetch-failure') s.control.fetchFailure = true;
+      else s.control.intercept = (exe, args) => {
+        if (state === 'branch-switch' && args.includes('fetch')) {
+          s.control.intercept = null; s.native(['checkout', '-b', 'changed']);
+        } else if (state === 'allocation-race' && args.includes('core.hooksPath=NUL') &&
+            args.includes('rev-parse') && args.at(-1) === 'refs/heads/main^{commit}') {
+          s.control.intercept = null; retained = s.change(s.target, 'concurrent update');
+        }
+      };
+      await assert.rejects(s.command('workspace', ['2']), new RegExp(state === 'fetch-failure'
+        ? 'workflow_remote_failed' : state === 'branch-switch' ? 'workflow_target_branch_mismatch' : 'workflow_target_changed'));
+      await noPreparedResources(s, retained);
+      assert.equal(s.native(['rev-parse', 'main'], s.bare), incoming);
+    } finally { s.dispose(); }
+  }
+});
+
+test('preparation rejects occupied resources and closed Issues before advancing the target', async () => {
+  const s = installation();
+  try {
+    s.advanceRemote();
+    s.native(['branch', 'codex/issue-2']);
+    await assert.rejects(s.command('workspace', ['2']), /worktree_branch_exists/);
+    s.native(['push', s.bare, 'main:refs/heads/codex/issue-7']);
+    await assert.rejects(s.command('workspace', ['7']), /workflow_remote_branch_exists/);
+    s.control.issues.get(1).state = 'closed';
+    await assert.rejects(s.command('workspace', ['1']), /workflow_issue_closed/);
+    assert.equal(s.native(['rev-parse', 'main']), s.initial);
+    s.control.issues.get(1).state = 'open';
+    await s.command('workspace', ['1']);
+    const target = s.native(['rev-parse', 'main']);
+    s.advanceRemote(); s.control.calls.length = 0;
+    await assert.rejects(s.command('workspace', ['1']), /workflow_issue_registered/);
+    await assert.rejects(s.command('workspace', ['10']), /workflow_context_exists/);
+    assert.equal(s.native(['rev-parse', 'main']), target);
+    assert.equal(s.control.calls.some(args => args.includes('fetch') || args.includes('ls-remote')), false);
   } finally { s.dispose(); }
 });
 
