@@ -238,7 +238,7 @@ test('cleanup retries after remote and local ref deletion without guessing a new
     assert.equal(pending.worktree.state, 'needs_check');
     assert.equal(pending.reason, 'worktree_cleanup_pending');
     assert.deepEqual(pending.cleanup, { head: s.head, pr: 42, mode: 'pr-merge', remote: { name: 'origin', url: 'https://github.com/test/repo' } });
-    assert.deepEqual(pending.worktree, { path: s.a.path, state: 'needs_check', development_branch: 'codex/pr', start_commit: s.a.start_commit, head: s.head, checked_out_branch: null, detached: true });
+    assert.deepEqual(pending.worktree, { path: s.a.path, state: 'needs_check', delivery_mode: 'pr-merge', development_branch: 'codex/pr', start_commit: s.a.start_commit, head: s.head, checked_out_branch: null, detached: true });
     assert.equal(Object.hasOwn(pending.worktree, 'release_commit'), false);
     await assert.rejects(s.command('acquire', ['codex/pr']), /worktree_cleanup_pending/);
     s.control.calls.length = 0;
@@ -463,12 +463,15 @@ test('recorded development metadata stays distinct from a manually switched bran
     assert.equal(publicMissing.reason, 'worktree_missing');
     assert.equal(publicMissing.target.branch, 'main');
     assert.equal(publicMissing.worktree.start_commit, a.start_commit);
+    assert.equal(publicMissing.worktree.delivery_mode, 'direct-merge');
+    assert.equal(Object.hasOwn(publicMissing, 'delivery_mode'), false);
     const summary = workspaceReport(await s.command('list')).worktrees[0];
     assert.equal(summary.worktree.state, 'needs_check');
     assert.equal(summary.reason, 'worktree_missing');
     assert.equal(summary.worktree.development_branch, 'codex/recorded');
     assert.equal(Object.hasOwn(summary.worktree, 'checked_out_branch'), false);
-    assert.equal(summary.delivery_mode, 'direct-merge');
+    assert.equal(summary.worktree.delivery_mode, 'direct-merge');
+    assert.equal(Object.hasOwn(summary, 'delivery_mode'), false);
   } finally { s.dispose(); }
 });
 

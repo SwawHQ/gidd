@@ -9,8 +9,7 @@ const contextFields = ({ target_repository, target_branch, target_head, path, br
   ...(issue !== undefined ? { issue: { number: issue, ...(workflow ? { url: `${workflow.identity}/issues/${issue}` } : {}) } } : {}),
   ...group('target', defined({ repository: target_repository, branch: target_branch, head: target_head,
     ...(workflow ? { remote: { name: workflow.remote, url: workflow.identity } } : {}) })),
-  ...defined({ delivery_mode: workflow?.mode }),
-  ...group('worktree', defined({ path, state, development_branch: branch, start_commit,
+  ...group('worktree', defined({ path, state, delivery_mode: workflow?.mode, development_branch: branch, start_commit,
     head, detached, bare, locked, prunable, release_commit })),
 });
 
@@ -18,8 +17,8 @@ const contextFields = ({ target_repository, target_branch, target_head, path, br
 const listFields = row => ({
   ...(row.issue !== undefined ? { issue: { number: row.issue } } : {}),
   ...group('target', present({ branch: row.target_branch })),
-  ...present({ delivery_mode: row.workflow?.mode }),
-  worktree: present({ path: row.path, state: row.state, development_branch: row.recorded_branch, checked_out_branch: row.branch }),
+  worktree: present({ path: row.path, state: row.state, delivery_mode: row.workflow?.mode,
+    development_branch: row.recorded_branch, checked_out_branch: row.branch }),
   ...(row.reason ? { reason: row.reason } : {}),
 });
 

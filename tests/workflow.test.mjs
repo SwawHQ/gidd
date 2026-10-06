@@ -130,14 +130,16 @@ test('current workspace retains its starting point, pushes only the target and c
     assert.equal(prepared.status, 'success');
     assert.deepEqual(prepared.target.remote, { name: 'origin', url: 'https://github.com/test/repo' });
     assert.equal(Object.hasOwn(prepared, 'workflow'), false);
-    assert.equal(prepared.delivery_mode, 'direct-commit');
+    assert.equal(prepared.worktree.delivery_mode, 'direct-commit');
     assert.equal(prepared.target.repository, s.target);
     assert.equal(prepared.worktree.path, s.target);
-    for (const field of ['workspace_path', 'workspace_state', 'worktree_path', 'worktree_state', 'target_repository', 'target_branch', 'start_commit', 'development_branch']) assert.equal(Object.hasOwn(prepared, field), false);
+    for (const field of ['workspace_path', 'workspace_state', 'worktree_path', 'worktree_state', 'target_repository', 'target_branch', 'delivery_mode', 'start_commit', 'development_branch']) assert.equal(Object.hasOwn(prepared, field), false);
     assert.equal(prepared.worktree.development_branch, null);
     assert.equal(prepared.target.branch, 'main'); assert.equal(prepared.worktree.start_commit, s.initial);
     const resumed = await s.command('workspace', ['--resume', '1']);
     assert.equal(resumed.worktree.path, s.target);
+    assert.equal(resumed.worktree.delivery_mode, 'direct-commit');
+    assert.equal(Object.hasOwn(resumed, 'delivery_mode'), false);
     assert.equal(resumed.worktree.state, 'current');
     assert.equal(resumed.worktree.head, s.initial);
     assert.equal(resumed.worktree.checked_out_branch, 'main');
@@ -180,7 +182,7 @@ test('dedicated direct delivery requires merge, selects the target and releases 
   const s = installation();
   try {
     const a = await s.command('workspace', ['2']);
-    assert.equal(a.schema, 'gidd.workflow/v1'); assert.equal(a.delivery_mode, 'direct-merge');
+    assert.equal(a.schema, 'gidd.workflow/v1'); assert.equal(a.worktree.delivery_mode, 'direct-merge');
     assert.equal(realpathSync.native(a.worktree.path), a.worktree.path);
     const head = s.change(a.worktree.path);
     const continued = await s.command('workspace', ['--resume', '2']);
@@ -198,7 +200,7 @@ test('dedicated direct delivery requires merge, selects the target and releases 
     assert.equal((await s.show(a.worktree.path)).worktree.state, 'available');
     await assert.rejects(s.command('workspace', ['--resume', '2']), /workflow_workspace_released/);
     const b = await s.command('workspace', ['3']);
-    assert.equal(b.worktree.path, a.worktree.path); assert.equal(b.delivery_mode, 'pr-merge');
+    assert.equal(b.worktree.path, a.worktree.path); assert.equal(b.worktree.delivery_mode, 'pr-merge');
     assert.equal((await s.show(b.worktree.path)).record.workflow.mode, 'pr-merge');
   } finally { s.dispose(); }
 });
@@ -248,7 +250,7 @@ test('PR target sync verifies squash delivery, fast-forwards the checked out tar
     assert.equal((await s.command('target-sync', ['7'])).updated, false);
     const cleaned = await s.command('cleanup', ['7']);
     assert.deepEqual(cleaned.target, workspace.target);
-    assert.equal(cleaned.delivery_mode, workspace.delivery_mode);
+    assert.equal(cleaned.worktree.delivery_mode, workspace.worktree.delivery_mode);
     assert.equal(cleaned.local_branch_deleted, true); assert.equal(cleaned.remote_branch_deleted, true);
     assert.equal(s.native(['branch', '--list', 'codex/issue-7']), '');
     assert.equal(s.native(['branch', '--list', 'codex/issue-7'], s.bare), '');
@@ -346,7 +348,7 @@ test('resume and direct delivery use only local context after Issue edits or cre
     };
     s.control.calls.length = 0;
     const resumed = await s.command('workspace', ['--resume', '8']);
-    assert.equal(resumed.delivery_mode, 'direct-merge'); assert.equal(resumed.target.branch, 'main');
+    assert.equal(resumed.worktree.delivery_mode, 'direct-merge'); assert.equal(resumed.target.branch, 'main');
     assert.equal(resumed.worktree.development_branch, 'codex/issue-8');
     assert.equal((await s.command('merge', ['8'])).target.head, head);
     assert.ok(s.control.calls.every(args => args[0] !== 'api' && args[0] !== 'auth'));
@@ -511,7 +513,11 @@ test('direct-commit closure requires published target commits and preserves the 
     const original = readFileSync(recordPath, 'utf8');
     await assert.rejects(s.command('close-issue', ['1']), error => {
       assert.equal(error.message, 'workflow_target_not_pushed');
-      assert.equal(error.workspace.retry, 'workflow.close-issue 1'); return true;
+      assert.equal(error.workspace.retry, 'workflow.close-issue 1');
+      const failed = workspaceReport({ schema: 'gidd.workflow/v1', status: 'error', reason: error.message, ...error.workspace });
+      assert.equal(failed.worktree.delivery_mode, 'direct-commit');
+      assert.equal(Object.hasOwn(failed, 'delivery_mode'), false);
+      return true;
     });
     assert.equal(s.control.issues.get(1).state, 'open');
     await s.command('push', ['1']); write(join(s.target, 'keep.tmp'), 'user file');
@@ -519,7 +525,7 @@ test('direct-commit closure requires published target commits and preserves the 
     s.select('pr-merge');
     const result = await s.command('close-issue', ['1']);
     assert.equal(result.status, 'success'); assert.equal(result.issue_closed, true);
-    assert.equal(result.delivery_mode, 'direct-commit'); assert.equal(result.already_closed, false);
+    assert.equal(result.worktree.delivery_mode, 'direct-commit'); assert.equal(result.already_closed, false);
     assert.equal(result.pr, undefined);
     assert.equal((await s.command('close-issue', ['1'])).already_closed, true);
     assert.equal(s.control.calls.filter(args => args.includes('PATCH')).length, 1);
