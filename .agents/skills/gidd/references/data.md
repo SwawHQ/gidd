@@ -4,9 +4,9 @@ Issue 记录需求、验收及交付关联，不承载机器配置。首次 `wor
 
 Issues contain requirements, acceptance and delivery links, without machine configuration. Initial `workflow.workspace <issue>` checks the Issue online, takes the delivery mode from the entry's `spec.current` and the target branch from the target checkout. Merge modes create `codex/issue-<number>`; direct commit has no development branch.
 
-workflow 命令按 Issue 编号定位本地记录，后续沿用已保存的模式、分支、起始提交点及远端，不重新读取 Issue 或当前规范。resume 只核对本地记录与 Git 状态，不需要 GitHub 凭据或网络，也不接管会话。同一 Issue 在本机最多关联一个工作区。推送及交付核验按需访问远端；PR 按仓库、来源/目标分支和开发提交匹配，目标不同则报告，保留现场。
+workflow 命令按 Issue 编号定位本地记录，后续沿用已保存的模式、分支、起始提交点及远端，不从 Issue 正文或当前规范重建交付上下文。resume 只核对本地记录与 Git 状态，不需要 GitHub 凭据或网络，也不接管会话。同一 Issue 在本机最多关联一个工作区。推送及交付核验按需访问远端；PR 按仓库、来源/目标分支和开发提交匹配，目标不同则报告，保留现场。close-issue 在线核验交付并关闭 Issue，PR 模式先补建 Development 关联；清理仍由 cleanup 处理。
 
-Workflow commands locate local records by Issue number and retain the saved mode, branches, starting commit and remote without rereading the Issue or current spec. Resume checks local records and Git state without GitHub credentials or network access, and does not claim a session. Each Issue has at most one local workspace. Push and delivery verification access remotes as needed; PR discovery checks repository, head/base branches and development commit, retaining resources when the target differs.
+Workflow commands locate local records by Issue number and retain the saved mode, branches, starting commit and remote without deriving delivery settings anew from Issue prose or the current spec. Resume checks local records and Git state without GitHub credentials or network access, and does not claim a session. Each Issue has at most one local workspace. Push and delivery verification access remotes as needed; PR discovery checks repository, head/base branches and development commit, retaining resources when the target differs. Close-issue verifies delivery online and closes the Issue, adding its Development association in PR mode; cleanup remains separate.
 
 # GIDD 本地数据目录 / Local data
 

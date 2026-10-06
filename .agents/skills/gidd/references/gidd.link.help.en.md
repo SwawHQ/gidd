@@ -29,6 +29,7 @@ GIDD (Windows x64 / PowerShell 5.1)
   gidd.link workflow.push <issue>                       #Push the branch selected by delivery mode
   gidd.link workflow.merge <issue> [--squash|--rebase]  #Local or PR merge; defaults to merge; --message sets the title
   gidd.link workflow.target-sync <issue>                #Verify PR delivery and fast-forward the target
+  gidd.link workflow.close-issue <issue>                #Verify delivery and close the Issue; link its PR when applicable
   gidd.link workflow.cleanup <issue>                    #Verify delivery and clean local resources
   gidd.link worktree.list                               #Summarize other worktrees, branches and state
   gidd.link worktree.show <path>                        #Show workflow context and actual Git state

@@ -29,6 +29,7 @@ GIDD（Windows x64 / PowerShell 5.1）
   gidd.link workflow.push <Issue编号>                       #按交付模式推送对应分支
   gidd.link workflow.merge <Issue编号> [--squash|--rebase]  #本地或 PR 合并；默认 merge，可用 --message 指定标题
   gidd.link workflow.target-sync <Issue编号>                #核验 PR 并快进同步目标分支
+  gidd.link workflow.close-issue <Issue编号>                #核验交付并关闭 Issue；PR 模式补建关联
   gidd.link workflow.cleanup <Issue编号>                    #核验交付并清理本地资源
   gidd.link worktree.list                                   #列出其他 worktree 的分支及状态
   gidd.link worktree.show <目录>                            #查看流程上下文及实际 Git 状态

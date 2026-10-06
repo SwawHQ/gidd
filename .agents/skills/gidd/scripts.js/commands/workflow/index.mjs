@@ -10,7 +10,7 @@ import { plainPath, toolsRoot } from '../../shared/storage.mjs';
 import { withSignals } from '../../shared/signals.mjs';
 import { parseList, validWorkflowContext, worktreeCommand, readRecords } from '../worktree/index.mjs';
 import { prConnection } from '../../shared/pull-requests.mjs';
-import { issueNumber, readWorkflowIssue } from '../../shared/issue-workflow.mjs';
+import { closeWorkflowIssue, issueNumber, readWorkflowIssue } from '../../shared/issue-workflow.mjs';
 import { readSpec } from '../../shared/specs.mjs';
 import { acquireStorageLock, locateStorage, initializeStorage, contextLocation, registryLocation, readJson } from '../../shared/managed-storage.mjs';
 
@@ -26,7 +26,7 @@ export function parseWorkflowArguments(route, args) {
   const action = route.slice('workflow.'.length);
   if (action === 'workspace' && args.length === 2 && args[0] === '--resume' && issueNumber(args[1]))
     return { action, resume: true, issue: Number(args[1]) };
-  if (!['workspace', 'push', 'merge', 'target-sync', 'cleanup'].includes(action) || !issueNumber(args[0])) fail('invalid_arguments');
+  if (!['workspace', 'push', 'merge', 'target-sync', 'close-issue', 'cleanup'].includes(action) || !issueNumber(args[0])) fail('invalid_arguments');
   const result = { action, issue: Number(args[0]) }, rest = args.slice(1);
   while (rest.length) {
     const flag = rest.shift();
@@ -286,6 +286,39 @@ export async function workflowCommand(repository, options, { execute, signal, cw
         }
         return report({ ...summary, target_head: incoming, updated: true, pr: proof.number });
       });
+    }
+    if (options.action === 'close-issue') {
+      try {
+        if (current.reason) fail(current.reason);
+        const target = await refHead(current.target_branch);
+        const source = current.branch ? await refHead(current.branch) : null;
+        if (!await ancestor(current.start_commit, source ?? target) || !await ancestor(current.start_commit, target))
+          fail('workflow_history_changed');
+        const connection = current.workflow.mode === 'pr-merge'
+          ? await prConnection(repository, execute, signal)
+          : await repositoryConnection(repository, { execute, signal, github: true });
+        const proof = current.workflow.mode === 'pr-merge' ? await connection.proof(current, source) : null;
+        if (source && !proof && !await ancestor(source, target)) fail('worktree_not_delivered');
+        await withRemoteTarget(connection, current.target_branch, async incoming => {
+          if (!proof) {
+            if (!await ancestor(target, incoming)) fail('workflow_target_not_pushed');
+          } else {
+            if (!await ancestor(proof.merge, incoming)) fail('workflow_remote_not_delivered');
+            if (!await ancestor(proof.merge, target) || !await ancestor(incoming, target)) fail('workflow_target_not_synced');
+          }
+        });
+        const beforeWrite = async () => {
+          matchRemote(current);
+          await context();
+          if (await refHead(current.target_branch) !== target || (source && await refHead(current.branch) !== source))
+            fail('workflow_target_changed');
+        };
+        const result = await closeWorkflowIssue(connection, current.issue, { pr: proof, beforeWrite });
+        return report({ ...summary, ...result });
+      } catch (error) {
+        error.workspace = { ...summary, retry: 'workflow.close-issue ' + current.issue, ...error.issueClosure };
+        throw error;
+      }
     }
     if (options.action === 'cleanup') {
       if (current.workflow.mode !== 'pr-merge') {

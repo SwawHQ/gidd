@@ -27,11 +27,11 @@ function installation() {
   const configuration = 'schema_version = 1\n[repo]\nremote.name = "origin"\nremote.url = "https://github.com/test/repo"\nremote.account = "tester"\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n';
   write(config, configuration);
   initializeDataFixture(target);
-  const control = { issues: new Map(), pr: null, calls: [], intercept: null, fetchFailure: false };
+  const control = { issues: new Map(), links: new Map(), pr: null, calls: [], intercept: null, fetchFailure: false };
   const plans = new Map([[1, 'direct-commit'], [10, 'direct-commit'], [2, 'direct-merge'],
     [3, 'pr-merge'], [4, 'pr-merge'], [5, 'pr-merge'], [6, 'pr-merge'], [7, 'pr-merge'], [8, 'direct-merge']]);
   for (const number of plans.keys()) control.issues.set(number, {
-    number, state: 'open', html_url: 'https://github.com/test/repo/issues/' + number, body: 'Requirements and acceptance',
+    number, node_id: 'I_' + number, state: 'open', html_url: 'https://github.com/test/repo/issues/' + number, body: 'Requirements and acceptance',
   });
   const select = mode => {
     const id = { 'direct-commit': '00', 'direct-merge': '01', 'pr-merge': '02' }[mode];
@@ -46,7 +46,26 @@ function installation() {
       assert.equal(options.env.GH_TOKEN, 'fixture-token');
       if (args.includes('user')) return { ok: true, text: 'tester' };
       const endpoint = args.at(-1);
-      if (endpoint.includes('/issues/')) return { ok: true, text: JSON.stringify(control.issues.get(Number(endpoint.split('/').at(-1))) ?? null) };
+      if (endpoint.includes('/issues/')) {
+        const issue = control.issues.get(Number(endpoint.split('/').at(-1)));
+        if (args.includes('PATCH')) {
+          assert.ok(args.includes('state=closed')); assert.ok(args.includes('state_reason=completed'));
+          issue.state = 'closed'; issue.state_reason = 'completed';
+        }
+        return { ok: true, text: JSON.stringify(issue ?? null) };
+      }
+      if (endpoint === 'graphql') {
+        const number = Number(args.find(arg => arg.startsWith('issue=')).slice('issue=I_'.length));
+        const issue = control.issues.get(number);
+        if (args.some(arg => arg.includes('addCloseIssueReferences'))) {
+          assert.ok(args.includes('pr=PR_42'));
+          control.links.set(number, [{ id: 'PR_42', number: 42, url: 'https://github.com/test/repo/pull/42' }]);
+          return { ok: true, text: JSON.stringify({ data: { addCloseIssueReferences: { issue: { id: issue.node_id } } } }) };
+        }
+        assert.ok(args.some(arg => arg.includes('includeClosedPrs:true')));
+        return { ok: true, text: JSON.stringify({ data: { node: { id: issue.node_id, number, url: issue.html_url,
+          closedByPullRequestsReferences: { nodes: control.links.get(number) ?? [], pageInfo: { hasNextPage: false } } } } }) };
+      }
       if (endpoint.endsWith('/pulls/42/merge')) {
         if (control.mergeResponse) return { ok: true, text: JSON.stringify(control.mergeResponse) };
         assert.ok(args.includes('sha=' + control.pr.head.sha));
@@ -83,7 +102,7 @@ function installation() {
     await command('push', ['7'], workspace.worktree.path);
     native(['merge', '--squash', 'codex/issue-7']); native(['commit', '-m', 'squash delivery']);
     const merge = native(['rev-parse', 'HEAD']); native(['push', bare, 'main']); native(['reset', '--hard', initial]);
-    control.pr = { number: 42, state: 'closed', merged: true, merged_at: '2026-10-03T00:00:00Z', merge_commit_sha: merge,
+    control.pr = { number: 42, node_id: 'PR_42', state: 'closed', merged: true, merged_at: '2026-10-03T00:00:00Z', merge_commit_sha: merge,
       head: { ref: 'codex/issue-7', sha: head, repo: { full_name: 'test/repo' } }, base: { ref: 'main', repo: { full_name: 'test/repo' } } };
     return { workspace, head, merge };
   }
@@ -94,7 +113,8 @@ test('workflow interfaces require an explicit Issue and reject branches, paths a
   assert.deepEqual(parseWorkflowArguments('workflow.workspace', ['7']), { action: 'workspace', issue: 7 });
   assert.equal(parseWorkflowArguments('workflow.workspace', ['--resume', '7']).resume, true);
   assert.equal(parseWorkflowArguments('workflow.merge', ['7', '--squash']).method, 'squash');
-  for (const action of ['workspace', 'push', 'merge', 'target-sync', 'cleanup']) {
+  assert.deepEqual(parseWorkflowArguments('workflow.close-issue', ['7']), { action: 'close-issue', issue: 7 });
+  for (const action of ['workspace', 'push', 'merge', 'target-sync', 'close-issue', 'cleanup']) {
     for (const args of [[], ['main'], ['D:/repo'], ['0'], ['-1'], ['01'], ['9007199254740992'], ['7', '--pr'], ['7','8']])
       assert.throws(() => parseWorkflowArguments('workflow.' + action, args), /invalid_arguments/);
   }
@@ -480,5 +500,122 @@ test('PR merge requires a unique current head, confirms delivery and can be safe
     assert.equal(s.control.calls.filter(args => args.includes('PUT')).length, mutations);
     await s.command('target-sync', ['7']);
     assert.equal((await s.command('cleanup', ['7'])).local_branch_deleted, true);
+  } finally { s.dispose(); }
+});
+
+test('direct-commit closure requires published target commits and preserves the context and user files', async () => {
+  const s = installation();
+  try {
+    await s.command('workspace', ['1']); s.change(s.target);
+    const recordPath = join(s.target + '.gidd', 'state/workflows', contextName(join(s.target, '.git')));
+    const original = readFileSync(recordPath, 'utf8');
+    await assert.rejects(s.command('close-issue', ['1']), error => {
+      assert.equal(error.message, 'workflow_target_not_pushed');
+      assert.equal(error.workspace.retry, 'workflow.close-issue 1'); return true;
+    });
+    assert.equal(s.control.issues.get(1).state, 'open');
+    await s.command('push', ['1']); write(join(s.target, 'keep.tmp'), 'user file');
+    // Existing delivery settings remain authoritative after a spec change.
+    s.select('pr-merge');
+    const result = await s.command('close-issue', ['1']);
+    assert.equal(result.status, 'success'); assert.equal(result.issue_closed, true);
+    assert.equal(result.delivery_mode, 'direct-commit'); assert.equal(result.already_closed, false);
+    assert.equal(result.pr, undefined);
+    assert.equal((await s.command('close-issue', ['1'])).already_closed, true);
+    assert.equal(s.control.calls.filter(args => args.includes('PATCH')).length, 1);
+    assert.equal(s.control.calls.some(args => args.at(-1) === 'graphql'), false);
+    assert.equal(readFileSync(recordPath, 'utf8'), original);
+    assert.equal(readFileSync(join(s.target, 'keep.tmp'), 'utf8'), 'user file');
+    assert.equal(s.native(['for-each-ref', '--format=%(refname)', 'refs/gidd/']), '');
+    assert.equal((await s.command('workspace', ['--resume', '1'])).worktree.state, 'current');
+  } finally { s.dispose(); }
+});
+
+test('direct-merge closure requires the development tip to be merged and pushed, without releasing it', async () => {
+  const s = installation();
+  try {
+    const workspace = await s.command('workspace', ['2']);
+    const head = s.change(workspace.worktree.path);
+    await assert.rejects(s.command('close-issue', ['2']), /worktree_not_delivered/);
+    await s.command('merge', ['2']);
+    await assert.rejects(s.command('close-issue', ['2']), /workflow_target_not_pushed/);
+    assert.equal(s.control.calls.some(args => args.includes('PATCH')), false);
+    await s.command('push', ['2']);
+    assert.equal((await s.command('close-issue', ['2'], workspace.worktree.path)).issue_closed, true);
+    assert.equal(s.native(['rev-parse', 'codex/issue-2']), head);
+    assert.equal((await s.show(workspace.worktree.path)).worktree.state, 'unreleased');
+    assert.equal(s.control.issues.get(2).state, 'closed');
+    assert.equal(s.native(['for-each-ref', '--format=%(refname)', 'refs/gidd/']), '');
+  } finally { s.dispose(); }
+});
+
+test('PR closure verifies unique delivery and target synchronization before creating an association', async () => {
+  const s = installation();
+  try {
+    const { workspace, merge } = await s.delivery();
+    s.control.issues.set(7, { number: 7, node_id: 'I_7', state: 'open', html_url: 'https://github.com/test/repo/issues/7' });
+    const pr = s.control.pr;
+    s.control.pr = { ...pr, state: 'open', merged: false };
+    await assert.rejects(s.command('close-issue', ['7']), /worktree_pr_not_found/);
+    s.control.pr = { ...pr, head: { ...pr.head, sha: s.initial } };
+    await assert.rejects(s.command('close-issue', ['7']), /worktree_pr_not_found/);
+    s.control.pr = [pr, { ...pr, number: 43 }];
+    await assert.rejects(s.command('close-issue', ['7']), /worktree_pr_ambiguous/);
+    s.control.pr = pr;
+    s.native(['update-ref', 'refs/heads/main', s.initial, merge], s.bare);
+    await assert.rejects(s.command('close-issue', ['7']), /workflow_remote_not_delivered/);
+    s.native(['update-ref', 'refs/heads/main', merge, s.initial], s.bare);
+    await assert.rejects(s.command('close-issue', ['7']), /workflow_target_not_synced/);
+    assert.equal(s.control.calls.some(args => args.at(-1) === 'graphql' || args.includes('PATCH')), false);
+    await s.command('target-sync', ['7']);
+    const result = await s.command('close-issue', ['7'], workspace.worktree.path);
+    assert.equal(result.pr, 42); assert.equal(result.pr_linked, true); assert.equal(result.issue_closed, true);
+    assert.equal(result.already_linked, false);
+    const repeated = await s.command('close-issue', ['7']);
+    assert.equal(repeated.already_linked, true); assert.equal(repeated.already_closed, true);
+    assert.equal(s.control.calls.filter(args => args.some(arg => arg.includes('addCloseIssueReferences'))).length, 1);
+    assert.equal(s.control.calls.filter(args => args.includes('PATCH')).length, 1);
+    assert.equal((await s.show(workspace.worktree.path)).worktree.state, 'unreleased');
+    assert.equal(s.native(['rev-parse', 'codex/issue-7'], s.bare), pr.head.sha);
+  } finally { s.dispose(); }
+});
+
+test('PR closure retains confirmed association progress when closing fails, then retries safely', async () => {
+  const s = installation();
+  try {
+    const { workspace } = await s.delivery();
+    s.control.issues.set(7, { number: 7, node_id: 'I_7', state: 'open', html_url: 'https://github.com/test/repo/issues/7' });
+    await s.command('target-sync', ['7']);
+    s.control.intercept = async (exe, args) => args.includes('PATCH') ? { ok: false, reason: 'command_failed' } : undefined;
+    await assert.rejects(s.command('close-issue', ['7']), error => {
+      assert.equal(error.workspace.pr_linked, true); assert.equal(error.workspace.pr, 42);
+      assert.equal(error.workspace.issue_closed, undefined);
+      assert.equal(error.workspace.retry, 'workflow.close-issue 7'); return true;
+    });
+    assert.equal(s.control.issues.get(7).state, 'open');
+    assert.equal((await s.show(workspace.worktree.path)).worktree.state, 'unreleased');
+    s.control.intercept = null;
+    assert.equal((await s.command('close-issue', ['7'])).already_linked, true);
+    assert.equal(s.control.calls.filter(args => args.some(arg => arg.includes('addCloseIssueReferences'))).length, 1);
+    assert.equal(existsSync(join(s.target, '.agents/skills/gidd/config.toml.lock')), false);
+    assert.equal(s.native(['for-each-ref', '--format=%(refname)', 'refs/gidd/']), '');
+  } finally { s.dispose(); }
+});
+
+test('closure detects a concurrent development change before making GitHub mutations', async () => {
+  const s = installation();
+  try {
+    const { workspace } = await s.delivery();
+    s.control.issues.set(7, { number: 7, node_id: 'I_7', state: 'open', html_url: 'https://github.com/test/repo/issues/7' });
+    await s.command('target-sync', ['7']);
+    s.control.intercept = async (exe, args) => {
+      if (args.at(-1)?.endsWith('/issues/7')) {
+        s.control.intercept = null; s.change(workspace.worktree.path, 'concurrent development');
+      }
+    };
+    await assert.rejects(s.command('close-issue', ['7']), /workflow_target_changed/);
+    assert.equal(s.control.issues.get(7).state, 'open');
+    assert.equal(s.control.calls.some(args => args.includes('PATCH') || args.some(arg => arg.includes('addCloseIssueReferences'))), false);
+    assert.equal((await s.show(workspace.worktree.path)).worktree.state, 'unreleased');
   } finally { s.dispose(); }
 });

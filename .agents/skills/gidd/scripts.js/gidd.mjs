@@ -106,6 +106,12 @@ export async function main(args, { boundRepository } = {}) {
       workflow_target_checkout_required: 'Check out the recorded target branch in its intended directory, then retry workflow.merge <issue>.',
       workflow_pr_head_changed: 'The PR head differs from the local development commit. Inspect and synchronize the intended changes before retrying.',
       workflow_pr_merge_pending: 'The PR is not confirmed merged. Inspect its checks, branch rules or queue before retrying; retain the workspace.',
+      workflow_target_not_synced: 'Run gidd.link workflow.target-sync <issue> before closing the Issue.',
+      workflow_issue_link_failed: 'GitHub rejected the Development association. Inspect permissions and API availability, then retry workflow.close-issue <issue>.',
+      workflow_issue_link_unconfirmed: 'The Development association is not confirmed. Inspect the Issue and retry workflow.close-issue <issue>; resources are retained.',
+      workflow_issue_links_incomplete: 'The Issue has more PR associations than this command can inspect. Inspect its Development links before retrying.',
+      workflow_issue_not_completed: 'The Issue was closed as not planned. Confirm how it should be resolved before retrying.',
+      workflow_issue_close_unconfirmed: 'Issue closure is not confirmed. Inspect its state and retry workflow.close-issue <issue>; resources are retained.',
       worktree_branch_exists: 'The generated development branch already exists. Inspect it and worktree.list; resume its recorded workflow or resolve the existing branch before preparing this Issue again.',
       workflow_remote_branch_exists: 'The generated development branch already exists on the working remote. Inspect that branch before preparing this Issue again.',
       workflow_workspace_released: 'This dedicated worktree has already been released. Start a new workflow for a new Issue; its directory may be reused.',
@@ -117,7 +123,7 @@ export async function main(args, { boundRepository } = {}) {
         : 'No GIDD workspace record matches this Issue. Use gidd.link worktree.list to inspect registered workspaces.',
       worktree_pr_not_found: 'No merged PR matches the recorded repository, branches and development commit. Resources are retained; inspect delivery before retrying.',
       worktree_pr_ambiguous: 'Multiple merged PRs match this development branch and commit. Resources are retained; inspect the conflicting delivery records.',
-      worktree_pr_discovery_incomplete: 'PR discovery could not inspect the complete matching history. Resources are retained; inspect delivery before cleanup.'
+      worktree_pr_discovery_incomplete: 'PR discovery could not inspect the complete matching history. Resources are retained; inspect delivery before retrying.'
     };
     const errorFields = { schema, status: 'error', reason,
       ...(error.dataReport ? { details: error.dataReport } : {}),

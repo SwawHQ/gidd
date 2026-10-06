@@ -762,7 +762,7 @@ test('repository entry selects workflows by Issue and inspects worktrees by dire
     assert.equal(json(ok(cli(['worktree.show', '.'], acquired.worktree.path))).worktree.path, acquired.worktree.path);
     for (const value of ['codex/issue-7', acquired.id, 'main', '7'])
       for (const command of ['worktree.show', 'worktree.remove']) assert.equal(json(cli([command, value])).reason, 'worktree_unknown_selector');
-    for (const command of ['workflow.workspace', 'workflow.push', 'workflow.merge', 'workflow.target-sync', 'workflow.cleanup'])
+    for (const command of ['workflow.workspace', 'workflow.push', 'workflow.merge', 'workflow.target-sync', 'workflow.close-issue', 'workflow.cleanup'])
       for (const value of ['codex/issue-7', acquired.worktree.path]) assert.equal(json(cli([command, value])).reason, 'invalid_arguments');
     const listing = json(ok(cli(['worktree.list'])));
     assert.equal(listing.worktrees.length, 2);

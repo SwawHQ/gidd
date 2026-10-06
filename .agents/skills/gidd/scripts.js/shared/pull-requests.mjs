@@ -3,8 +3,8 @@ import { repositoryConnection } from './repository-remote.mjs';
 const oid = value => typeof value === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value);
 const fail = reason => { throw new Error(reason); };
 
-// Merge, sync and cleanup share repository/branch/commit matching. No PR number
-// is persisted as task identity; cleanup alone retains its verified evidence.
+// Merge, sync, Issue closure and cleanup share repository/branch/commit matching.
+// No PR number is persisted as task identity; cleanup alone retains its evidence.
 export async function prConnection(repository, execute, signal) {
   const connection = await repositoryConnection(repository, { execute, signal, github: true, prefix: 'worktree' });
   const { target, call, verifyRemote: address } = connection;
@@ -42,7 +42,7 @@ export async function prConnection(repository, execute, signal) {
     }
     const pr = await api(endpoint + '/' + number);
     if (pr?.number !== number || pr.merged !== true || !delivered(pr, record, head)) fail('worktree_pr_not_delivered');
-    return { number, merge: pr.merge_commit_sha };
+    return { number, merge: pr.merge_commit_sha, node_id: pr.node_id };
   }
   async function merge(record, head, { method = 'merge', message } = {}) {
     const candidates = await discover(record, 'open', pr => branchesMatch(pr, record) && pr.state === 'open');

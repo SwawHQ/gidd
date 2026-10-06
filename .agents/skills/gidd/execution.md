@@ -30,6 +30,8 @@ Authorization reads the bound entry directory's `config.toml`, derives the host 
 
 `workflow.target-sync <issue>` verifies PR delivery and fast-forwards the local target in its checkout, or updates an unoccupied ref using an expected old commit. Dirty, interrupted or divergent targets remain intact. An already synchronized target is unchanged.
 
+`workflow.close-issue <issue>` verifies delivered commits and closes the Issue as completed. Direct modes require the local target tip to be pushed; direct merge also requires the development tip to be merged. PR mode requires a unique merged PR matching the recorded branches and development commit, delivery on the remote target and local target synchronization. It adds the Issue's Development association before closing; association failure stops closure. Calls may be repeated, including after a successful link followed by a failed close, or for an already closed Issue. Acceptance and closure authorization remain the caller's responsibility. Local records and resources remain for `workflow.cleanup`.
+
 `workflow.cleanup <issue>` verifies delivery before changing resources. Direct modes verify the remote target contains the local target tip. Direct commit then deletes only its local context, retaining the branch and files. Dedicated workspaces delete the delivered development branch and release their directories; PR mode also verifies local target synchronization and deletes the matching remote development branch with an exact commit lease. Failures retain progress and report a retry command with the Issue number, even after branch deletion. File preservation and process shutdown remain the caller's responsibility.
 
 `worktree.list` summarizes other worktrees, omitting the entry checkout already identified by `target.repository`. Each row contains `issue.number` when recorded, `delivery_mode`, `target.branch`, `worktree.path/state/development_branch/checked_out_branch`, plus diagnostic `reason` when present; null/undefined values and empty groups are omitted. Unregistered worktrees and missing registered directories remain visible. Show and resume include actual `worktree.head/checked_out_branch`; Git flags appear in `worktree` only when true. A missing directory retains recorded context and `reason: "worktree_missing"`, with actual Git fields omitted. Show also reports cleanup evidence (`cleanup`) and `worktree.release_commit` when present, without repeating the raw record or internal workspace ID. Recorded `worktree.development_branch` remains distinct from actual `worktree.checked_out_branch`.
@@ -113,6 +115,8 @@ gidd.link set git.user.mode inherit
 workflow 命令统一显式接受 Issue 编号。首次准备在线核验 Issue，按入口当前规范和目标仓库当前分支确定交付上下文；合并模式创建 `codex/issue-<编号>`。后续沿用本地记录，不读取 Issue 正文。`workflow.workspace --resume <Issue编号>` 离线核对记录与 Git 状态。结构见[Issue 与本地记录](references/data.md)。
 
 push 按模式推送目标分支或开发分支。merge 按模式执行本地合并或查找对应 PR 合并；PR 可选 `--squash`、`--rebase`，合并标题可用 `--message` 指定。本地冲突保留现场；PR 的检查、保护规则或排队未完成时不报告交付成功。target-sync 在核验 PR 交付后快进同步本地目标分支。
+
+`workflow.close-issue <Issue编号>` 核验交付后关闭 Issue；PR 模式还核验本地目标分支同步并补建 Development 关联，关联失败则停止关闭。已关联、已关闭或部分成功时可重复调用；按服务端状态重试，保留本地记录和资源供后续 cleanup。验收是否完成及关闭授权由调用者确认。
 
 cleanup 核验交付后清理开发分支并释放目录；PR 模式还清理远端同名开发分支。直接提交模式只删除本次上下文，保留目标分支和目录。中断重试仍使用 Issue 编号。`worktree.list`、`worktree.show <目录>`、`worktree.remove <目录>` 用于本机资源检查和移除；临时文件与进程由调用者处理。
 
