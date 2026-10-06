@@ -34,7 +34,6 @@ export function specError(repository, selector, reason, lang = 'en') {
     : ['spec_current_missing', 'spec_current_unsupported', 'spec_number_missing', 'spec_mode_missing'].includes(reason) ? specSelectionHint
     : reason === 'spec_number_ambiguous' ? (zh ? '该编号对应多份规范，请使用完整规范名，例如 00/00.auto。' : 'This number matches multiple presets. Use the full preset name, for example 00/00.auto.')
     : reason === 'spec_mode_id_conflict' || reason === 'spec_mode_name_conflict' ? (zh ? '请修正 conflicts 中列出的模式目录，使编号和模式名各自唯一。' : 'Fix the mode directories listed in conflicts so their IDs and mode names are unique.')
-    : reason === 'spec_issue_template_missing' ? (zh ? '当前模式不使用 Issue 模板。' : 'This mode does not use an Issue template.')
     : reason === 'spec_language_unavailable' ? (zh ? '所选语言的模式说明或参考经验尚未完成；请使用可用语言或补齐对应正文。' : 'The requested language is incomplete. Use an available language (for example --lang zh) or complete the mode description and references.')
     : reason.startsWith('spec_') ? specCatalogHint : 'Run gidd.link doctor for diagnostics.';
   return { ...(repository ? { scope: repository } : {}), ...(selector ? { selector } : {}), error: reason, hint };
@@ -59,14 +58,15 @@ export function renderSpec(repository, spec, lang) {
     definition.flow.map(step => `${step} (${Object.hasOwn(authorization, step) ? authorization[step] : 'auto'})`).join(' → '), '',
     zh ? '以下授权是规范约束，后面的环节参考经验不改变这些授权或流程。' : 'These authorizations govern the workflow; the reference guidance below does not change them.', '',
     zh ? 'auto：前置条件满足时自行执行。ask：复用范围内已有的明确授权；尚未授权时，先准备可检查的结果，再询问。not_applicable：本模式不包含该环节。' : 'auto: proceed when prerequisites hold. ask: reuse explicit authorization within its scope; otherwise prepare a reviewable result before asking. not_applicable: the mode excludes this stage.', '',
-    zh ? 'add、commit、push 及错误处理分别遵守授权，不互相包含。task_definition、workspace 和适用时的 pr 由模式固定安排为 auto；development 的 ask 可作为开发前检查点。' : 'add, commit, push and error handling have separate authorization. task_definition, workspace and applicable pr are fixed auto stages; development with ask provides a checkpoint before implementation.', '',
+    zh ? '各环节及其错误处理分别遵守授权，不互相包含。task_definition、workspace 和适用时的 pr_create 由模式固定安排为 auto；development 的 ask 可作为开发前检查点。' : 'Each stage and its error handling have separate authorization. task_definition, workspace and applicable pr_create are fixed auto stages; development with ask provides a checkpoint before implementation.', '',
     '| ' + (zh ? '环节 | 授权' : 'Stage | Authorization') + ' |', '| --- | --- |',
     ...authorizationKeys.map(key => `| ${key} | ${authorization[key]} |`), '',
     zh ? '验收未通过时返回开发和验收。推送受阻时进入 push_error；修复涉及的修改、提交和推送重新经过对应环节及授权。' : 'Failed acceptance returns to development and acceptance. A blocked push enters push_error; changes, commits and pushes required by a repair pass through their respective stages and authorization.', '',
   ];
   if (definition.applicable.has('direct_merge')) lines.push(zh ? '本地合并受阻时进入 direct_merge_error，修复后重新确认验收与本地合并结果。' : 'A blocked local merge enters direct_merge_error. Recheck acceptance and the local merge result after repairs.', '');
   if (definition.pr) lines.push(zh ? 'PR 合并受阻时进入 pr_merge_error，修复后重新确认验收与合并条件；等待或启用自动合并不等于交付完成。' : 'A blocked PR merge enters pr_merge_error. Recheck acceptance and merge requirements after repairs; waiting or enabling auto-merge does not establish delivery.', '');
-  if (definition.issue) lines.push(zh ? 'Issue 模板：' : 'Issue template:', '', inlineCode(`gidd.link spec.issue ${spec.selector} --lang ${zh ? 'zh' : 'en'}`), '');
+  if (definition.applicable.has('target_sync')) lines.push(zh ? 'PR 交付确认后，由 target_sync 同步本地目标分支；同步完成后，关闭 Issue，最后进入 cleanup。同步受阻时进入 target_sync_error，分别报告远端交付与本地同步状态，保留处理所需资源，暂停后续关闭与清理。' : 'After confirming PR delivery, synchronize the local target branch through target_sync, then close the Issue and enter cleanup. A blocked sync enters target_sync_error. Report remote delivery and local synchronization separately, retain resources needed for recovery, and pause subsequent Issue closure and cleanup.', '');
+  lines.push(zh ? 'Issue 模板：' : 'Issue template:', '', inlineCode(`gidd.link spec.issue ${spec.selector} --lang ${zh ? 'zh' : 'en'}`), '');
   lines.push(zh ? '## 公共参考经验' : '## Common reference guidance', '', experience('common').body.trim(), '', zh ? '## 各环节参考经验' : '## Stage reference guidance', '');
   for (const step of definition.flow) {
     const text = experience(step);
@@ -99,7 +99,6 @@ export function specCommand(repository, options, root = specRoot) {
     }
     if (options.action === 'issue') {
       const spec = readSpec(selector, root), forms = loadIssueForms(spec, root);
-      if (!forms) return failure(new Error('spec_issue_template_missing'));
       return { report: { scope: repository, selector, mode: spec.mode, form: forms[options.lang] }, exitCode: 0 };
     }
     return { markdown: renderSpec(repository, loadSpec(selector, root), options.lang), exitCode: 0 };

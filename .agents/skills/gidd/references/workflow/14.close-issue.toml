@@ -1,9 +1,0 @@
-[zh-CN."issue.*"]
-title = "Issue 关闭"
-body = '''
-关联 Issue 的[验收清单]却已完成、目标分支确已收到交付后，便可显式关闭之，否则报告原由。
-'''
-
-[en."issue.*"]
-title = ""
-body = ""

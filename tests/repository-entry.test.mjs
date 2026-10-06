@@ -42,7 +42,7 @@ test('issue guidance uses only the public preparation and repository commands', 
     assert.ok(source, 'The printed spec must identify its source file');
     assert.equal(realpathSync.native(source[1]), realpathSync.native(join(s.skill, 'specs/00.issue.current-worktree.direct-commit/00.auto.toml')));
     const form = json(ok(invoke(['spec.issue.current','--lang','en']))).form;
-    assert.deepEqual(form.body.map(field => field.id), ['requirements', 'acceptance', 'completion']);
+    assert.deepEqual(form.body.map(field => field.id), ['requirements', 'acceptance', 'completion', 'gidd']);
     assert.match(ok(invoke(['spec.current','--lang','zh'])).stdout, /gidd\.link spec\.issue 00\.issue\.current-worktree\.direct-commit\/00\.auto --lang zh/);
     const config = readFileSync(join(target,'.agents/skills/gidd/config.toml'));
     write(s.link(target),'damaged entry');
@@ -53,7 +53,7 @@ test('issue guidance uses only the public preparation and repository commands', 
   } finally { f.dispose(); }
 });
 
-test('repository preparation runs entirely in PowerShell; generated commands run entirely in JS', () => {
+test('native preparation delegates initialization to JS and reports its failure without losing the entry', () => {
   const f=fixture();
   try {
     const s=setup(f), target=s.create('native preparation'), scripts=join(s.skill,'scripts.js'), bin=join(f.root,'bin');
@@ -65,11 +65,16 @@ test('repository preparation runs entirely in PowerShell; generated commands run
     }
     const entry=join(s.skill,'gidd.pre.ensure.cmd'), env={PATH:[bin,dirname(s.git)].join(';')};
     for(const name of ['bun','node']) {
-      const first=json(ok(s.invoke(entry,['--repo',target,'--jsruntime='+name],{env})));
+      const attempt=s.invoke(entry,['--repo',target,'--jsruntime='+name],{env});
+      assert.equal(attempt.status,1);
+      const first=json(attempt);
       assert.equal(first.runtime.id,'tool.'+name);assert.equal(first.entry.status,'ready');
+      assert.equal(first.status,'needs_initialization'); assert.equal(first.initialization.status,'error');
+      assert.match(first.message,/init/);
+      assert.equal(existsSync(join(target,'.agents/skills/gidd/config.toml')),false);
       assert.equal(json(ok(s.invoke(entry,['--repo',target,'--check'],{env}))).status,'ready');
       write(s.link(target),'damaged');
-      assert.equal(json(ok(s.invoke(entry,['--repo',target,'--jsruntime='+name],{env}))).entry.action,'updated');
+      assert.equal(json(s.invoke(entry,['--repo',target,'--jsruntime='+name],{env})).entry.action,'updated');
     }
     for(const [path,bytes] of originals) write(path,bytes);
     // Bind the real test runtime, then remove every native implementation file.
@@ -293,20 +298,27 @@ test('repository ensure rejects unsuitable targets and keeps configuration untou
       assert.equal(json(result).entry.status, 'ready');
       assert.ok(!result.stdout.includes('PRIVATE_TOKEN'));
       assert.equal(existsSync(s.link(target)), true);
-      assert.equal(existsSync(join(target, '.agents/skills/gidd/config.toml')), false);
+      assert.equal(existsSync(join(target, '.agents/skills/gidd/config.toml')), true);
+      assert.equal(json(result).initialization.status, 'ready');
+      assert.equal(existsSync(join(target + '.gidd', 'state/storage.json')), true);
     }
     const target = s.create('configured');
     const config = join(target, '.agents/skills/gidd/config.toml');
     write(config, 'schema_version = 1\n[repo]\nremote.name = "missing"\n');
     const original = readFileSync(config, 'utf8'), result = s.ensure(target);
     ok(result);
-    assert.equal(readFileSync(config, 'utf8'), original); assert.equal(existsSync(s.link(target)), true);
+    assert.ok(readFileSync(config, 'utf8').startsWith(original)); assert.equal(existsSync(s.link(target)), true);
+    const initializedConfig = readFileSync(config, 'utf8');
+    ok(s.ensure(target)); assert.equal(readFileSync(config, 'utf8'), initializedConfig);
     write(config, 'schema_version = 1\n[repo]\n');
     ok(run(s.git, ['-C', target, 'remote', 'set-url', 'origin', 'git@github.example.test:Team/Repo.git']));
     assert.equal(json(ok(s.ensure(target))).repository_check.status, 'ready');
     for (const bytes of ['broken TOML', Buffer.from([255]), '#'.repeat(20000)]) {
       write(config, bytes); const before = readFileSync(config);
-      ok(s.ensure(target)); ok(s.ensure(target, ['--check']));
+      const failed = s.ensure(target); assert.equal(failed.status, 1);
+      assert.equal(json(failed).status, 'needs_initialization');
+      assert.equal(json(failed).initialization.status, 'error');
+      ok(s.ensure(target, ['--check']));
       assert.deepEqual(readFileSync(config), before);
     }
   } finally { f.dispose(); }
@@ -319,7 +331,8 @@ test('repository links repair generated contents and preserve target, arguments 
     const first = json(ok(s.ensure(target)));
     assert.equal(first.entry.location, 'absolute'); assert.equal(first.entry.action, 'created');
     assert.equal(first.repository_check.status, 'ready');
-    assert.equal(existsSync(join(target, '.agents/skills/gidd/config.toml')), false);
+    assert.equal(first.initialization.status, 'ready');
+    assert.equal(existsSync(join(target, '.agents/skills/gidd/config.toml')), true);
     assert.ok([...readFileSync(link)].every(byte => byte < 128));
     const tree = snapshot(f.root), modified = statSync(link).mtimeMs;
     const second = json(ok(s.invoke(join(s.skill, 'gidd.pre.ensure.cmd'), ['--repository', target])));
@@ -335,7 +348,7 @@ test('repository links repair generated contents and preserve target, arguments 
     const other = s.create('other');
     const output = s.invoke(link, ['doctor', '--offline'], { cwd: other, env: { GIT_DIR: join(other, '.git'), GIT_WORK_TREE: other } });
     const report = json(output); assert.equal(report.folder, target);
-    assert.equal(report.checks.find(c => c.id === 'config.toml').reason, 'config_missing');
+    assert.equal(report.checks.find(c => c.id === 'config.toml').status, 'ready');
     assert.equal(realpathSync.native(report.checks.find(c => c.id === 'folder.git.worktree').details.path), realpathSync.native(target));
     const rejected = s.invoke(link, ['set.show', '--repository', other]);
     assert.equal(json(rejected).reason, 'repository_override_forbidden');

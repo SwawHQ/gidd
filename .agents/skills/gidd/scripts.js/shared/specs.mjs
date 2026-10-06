@@ -48,7 +48,7 @@ export function loadMode(selector, root = specRoot, catalog = discoverModes(root
   if (!entry) fail('spec_mode_missing', root, selector);
   const plan = modePlan(entry.name), path = join(root, entry.directory, 'description.toml');
   const data = readSpecToml(path);
-  shape(data, ['authorization_schema', ...specLanguages, ...(plan.issue ? ['issue_template'] : [])], [], 'spec_mode_invalid', path);
+  shape(data, ['authorization_schema', ...specLanguages, 'issue_template'], [], 'spec_mode_invalid', path);
   shape(data.authorization_schema, authorizationKeys, [], 'spec_schema_invalid', path);
   for (const key of authorizationKeys) {
     const values = data.authorization_schema[key], applicable = plan.applicable.has(key);
@@ -57,10 +57,8 @@ export function loadMode(selector, root = specRoot, catalog = discoverModes(root
         values.some(value => !(applicable ? ['auto', 'ask'] : ['not_applicable']).includes(value))) fail('spec_schema_invalid', path, key);
   }
   modeTranslations(data, path);
-  if (plan.issue) {
-    shape(data.issue_template, specLanguages, [], 'spec_issue_template_invalid', path);
-    for (const ref of Object.values(data.issue_template)) specIssueTemplatePath(root, path, ref);
-  }
+  shape(data.issue_template, specLanguages, [], 'spec_issue_template_invalid', path);
+  for (const ref of Object.values(data.issue_template)) specIssueTemplatePath(root, path, ref);
   return { ...plan, ...entry, path, ...data };
 }
 
@@ -95,14 +93,24 @@ export function readSpec(selector, root = specRoot, catalog) {
 }
 
 export function loadIssueForms(spec, root = specRoot) {
-  if (!spec.definition.issue) return undefined;
   const forms = {};
   for (const lang of specLanguages) {
     const path = specIssueTemplatePath(root, spec.definition.path, spec.definition.issue_template[lang]);
     const text = readSpecResource(path);
     try { forms[lang] = JSON.parse(text); } catch { fail('spec_issue_template_invalid', path); }
   }
-  try { return validateIssueForms(forms); } catch { fail('spec_issue_template_invalid', spec.definition.path); }
+  try {
+    validateIssueForms(forms);
+    const mode = spec.mode.split('.').at(-1);
+    for (const form of Object.values(forms)) {
+      const field = form.body.find(field => field.id === 'gidd');
+      if (field?.type !== 'textarea' || field.attributes.render !== 'gidd' || field.validations?.required !== true)
+        throw new Error('spec_issue_gidd_field_required');
+      field.attributes.value = JSON.stringify({ schema: 'gidd.issue/v1', delivery_mode: mode,
+        target_branch: '', development_branch: mode === 'direct-commit' ? null : '' }, null, 2);
+    }
+    return forms;
+  } catch { fail('spec_issue_template_invalid', spec.definition.path); }
 }
 
 export function matchesMode(pattern, mode) {

@@ -24,9 +24,15 @@ GIDD (Windows x64 / PowerShell 5.1)
   gidd.link spec.current --lang zh        #Choose zh|en; all spec commands support --lang
   gidd.link spec.issue 00/00              #Print the selected spec's Issue template
   gidd.link spec.issue.current            #Print the current spec's Issue template
+  gidd.link workflow.workspace <issue>                  #Prepare a workspace from the Issue configuration
+  gidd.link workflow.workspace --resume <issue>         #Verify the recorded workspace and show its state
+  gidd.link workflow.push <issue>                       #Push the branch selected by delivery mode
+  gidd.link workflow.merge <issue> [--squash|--rebase]  #Local or PR merge; defaults to merge; --message sets the title
+  gidd.link workflow.target-sync <issue>                #Verify PR delivery and fast-forward the target
+  gidd.link workflow.cleanup <issue>                    #Verify delivery and clean local resources
+  gidd.link worktree.list                               #Summarize other worktrees, branches and state
+  gidd.link worktree.show <path>                        #Show workflow context and actual Git state
+  gidd.link worktree.remove <path>                      #Remove a released worktree without leftover files
   gidd.link .gh.auth               #Check the configured account's credentials; start interactive login if missing (credentials managed by gh)
-  gidd.link .gh <native gh args>   #Forward with the configured account, repository and Git; disable common interaction
-  gidd.link .git <native git args> #Forward with the configured identity and HTTPS credentials; disable common interaction
-
-Wrappers preserve piped input and fail when an editor or credential prompt is needed. See execution.md for custom programs.
-  $env:GIDD_EXEC_TIMEOUT_MS=600000 #Optional: limit forwarded commands to 10 minutes; default unlimited, timeout exits 124
+  gidd.link .gh <native gh args>   #Forward with entry account, repository and Git; disable common interaction
+  gidd.link .git <native git args> #Forward with entry identity and HTTPS credentials; disable common interaction

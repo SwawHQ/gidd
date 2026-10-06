@@ -72,6 +72,10 @@ executable = "link"
 args = ["set","{config_key}","<value>"]
 required_inputs = ["{config_key}"]
 
+[commands."init"]
+executable = "link"
+args = ["init"]
+
 [commands."set_url"]
 executable = "link"
 args = ["set","repo.remote.url","<value>"]
@@ -173,15 +177,24 @@ hint.en = "Use the error code to repair config.toml at the reported path, then r
 hint.zh-CN = "请根据错误代码修复报告路径下的 config.toml，然后重新运行 doctor。"
 
 [checks."config.toml".reasons."config_missing"]
-hint.en = "Create config.toml with gidd.link set repo.remote.account <login>, then set repo.remote.url and review repo.remote.name."
-hint.zh-CN = "请用 gidd.link set repo.remote.account <login> 创建 config.toml，然后设置 repo.remote.url 并检查 repo.remote.name。"
-commands = ["set_account"]
+hint.en = "Run gidd.link init to create basic local configuration and initialize the data directory, then configure identity, remote and spec settings."
+hint.zh-CN = "请运行 gidd.link init 创建基础本地配置并初始化数据目录，再配置身份、远端和规范。"
+commands = ["init"]
 
 [checks."config.repo.remote.name"]
 enabled = true
 hint.en = "Review the local remote and the expected repository address, then repair the reported config field or the local remote. Do not accept a changed target automatically."
 hint.zh-CN = "请核对本地远端和预期仓库地址，再修复报告的配置字段或本地远端。不要自动接受已变更的目标。"
 commands = ["remotes","set_field"]
+
+[checks."folder.gidd"]
+enabled = true
+hint.en = "Inspect the reported data directory and gidd-wt worktree paths, ownership and Git registrations. Resolve inconsistencies manually before retrying."
+hint.zh-CN = "请检查报告中的数据目录及 gidd-wt 工作树路径、归属和 Git 登记，人工处理不一致项后重试。"
+
+[checks."folder.gidd".reasons."data_missing"]
+hint.en = "The fixed data directory is absent or empty. For first use, run gidd.link init; if the repository or data was moved or deleted, inspect existing resources first."
+hint.zh-CN = "固定数据目录不存在或为空。首次使用请运行 gidd.link init；若曾移动或删除仓库及数据，请先检查现有资源。"
 
 [checks."config.repo.remote.url"]
 enabled = true

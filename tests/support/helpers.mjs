@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after } from 'node:test';
+import { initializeStorage, inspectStorage } from '../../.agents/skills/gidd/scripts.js/shared/managed-storage.mjs';
 
 // An exit code of zero alone does not prove that a test worker reached its end.
 // In particular, Node on this Windows host can terminate during native fixtures.
@@ -51,7 +52,7 @@ export function ps(script, args = [], options = {}) {
   return run(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, ...args], options);
 }
 export function fixture() {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'gidd-js-')));
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'gidd-js-')));
   // Disable Bun's own cache writes when testing read-only GIDD operations.
   const isolated = { USERPROFILE: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' };
   const previous = Object.fromEntries(Object.keys(isolated).map(key => [key, process.env[key]]));
@@ -64,13 +65,21 @@ export function fixture() {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
     }
     const full = resolve(root);
-    assert.ok(full.startsWith(realpathSync(tmpdir()) + sep) && /^gidd-js-/.test(full.slice(full.lastIndexOf(sep) + 1)));
+    assert.ok(full.startsWith(realpathSync.native(tmpdir()) + sep) && /^gidd-js-/.test(full.slice(full.lastIndexOf(sep) + 1)));
     // fs.rm removes junctions/symlinks themselves, without traversing their targets.
     rmSync(full, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    // Doctor's synthetic repository is the fixture root itself. Its default
+    // data directory is a sibling with the same unique, test-owned name.
+    rmSync(full + '.gidd', { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   } };
 }
 export function toolsRoot(home) { return join(home, '.agents/skills.tools/gidd'); }
 export function write(path, text) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, text); }
+export function initializeDataFixture(repository) {
+  const path = repository + '.gidd';
+  initializeStorage(inspectStorage({ main: repository, common: join(repository, '.git'), path,
+    state: join(path, 'state') }));
+}
 export function hash(path) { return createHash('sha256').update(readFileSync(path)).digest('hex'); }
 export function request(root, spec) {
   const path = join(root, `${randomUUID()}.request.json`);

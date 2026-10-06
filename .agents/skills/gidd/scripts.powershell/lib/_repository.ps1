@@ -1,5 +1,5 @@
-# Preparation checks only local worktree ownership and publishes its entry.
-# Remote configuration and GitHub checks belong to JavaScript.
+# Native preparation publishes the entry, then delegates initialization to JS.
+# Configuration, data-directory management and GitHub checks belong to JavaScript.
 function Assert-GiddRepositoryRoot {
     param([string]$Repository)
     if ($Repository -notmatch '^[A-Za-z]:[\\/]') { throw 'repository_absolute_local_path_required' }
@@ -117,6 +117,17 @@ function Get-GiddRepositoryLink {
         return $report
     }
     [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($path))
+    # Global/.claude installations still publish their entry in .agents. Keep
+    # these local files ignored without depending on the publisher's root ignore.
+    $ignore = Join-Path ([IO.Path]::GetDirectoryName($path)) '.gitignore'
+    Assert-GiddPlainPath $ignore
+    $rules = @('/config.toml','/config.toml.*','/gidd.link.cmd','/gidd.link.cmd.*')
+    $text = if ([IO.File]::Exists($ignore)) { [IO.File]::ReadAllText($ignore) } else { '' }
+    $missing = @($rules | Where-Object { $_ -cnotin ($text -split '\r?\n') })
+    if ($missing.Count) {
+        $addition = $(if ($text -and -not $text.EndsWith("`n")) { "`r`n" } else { '' }) + ($missing -join "`r`n") + "`r`n"
+        [IO.File]::AppendAllText($ignore, $addition, (New-Object Text.UTF8Encoding($false)))
+    }
     Assert-GiddPlainPath $path
     $lockPath = $path + '.lock'; $temporary = $path + '.' + [guid]::NewGuid() + '.tmp'; $lock = $null
     try {
@@ -159,6 +170,28 @@ function Complete-GiddRepositoryPreparation {
         $Report.entry = @{status='invalid';reason=$reason}
     }
     if ($Report.repository_check.status -ne 'ready' -or $Report.entry.status -ne 'ready') { $Report.status = 'needs_tools' }
-    if (-not $CheckOnly -and $Report.entry.status -eq 'ready') { $Report.message = "Prepared repository entry $($Report.entry.path)." }
+    if (-not $CheckOnly -and $Report.entry.status -eq 'ready') {
+        $Report.message = "Prepared repository entry $($Report.entry.path)."
+        if ($git) {
+            $tracked = Invoke-GiddProcess $git.details.path @('-C',$Repository,'ls-files','--','.agents/skills/gidd/config.toml','.agents/skills/gidd/gidd.link.cmd')
+            if ($tracked.ok -and $tracked.text) {
+                $Report.entry.tracked_local_files = @($tracked.text -split '\r?\n')
+                $Report.message += ' These local files are already tracked; ignore rules do not untrack them. Review the reported paths before committing.'
+            }
+        }
+        # Use the prepared runtime directly so repository paths remain arguments,
+        # without an extra cmd.exe expansion. This calls gidd.link's init handler.
+        $initialize = 'import(require("node:url").pathToFileURL(process.argv[1]).href).then(m=>m.main(["init"],{boundRepository:process.argv[2]})).then(code=>{process.exitCode=code})'
+        $initialized = Invoke-GiddProcess $Report.runtime.details.path @('-e',$initialize,$Entry,$Repository) -TimeoutSeconds 120
+        try {
+            $result = $initialized.text | ConvertFrom-Json
+            if ($result.schema -ne 'gidd.init/v1') { throw 'initialization_response_invalid' }
+            $Report.initialization = $result
+        } catch { $Report.initialization = @{status='error';reason='initialization_failed'} }
+        if (-not $initialized.ok -or $Report.initialization.status -ne 'ready') {
+            $Report.status = 'needs_initialization'
+            $Report.message += " Initialization failed. Resolve the reported reason, then run `"$($Report.entry.path)`" init."
+        }
+    }
     return $Report
 }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { realpathSync } from 'node:fs';
+import { realpathSync, renameSync, rmSync } from 'node:fs';
 import { configure, readConfiguration } from '../.agents/skills/gidd/scripts.js/shared/config.mjs';
 import { validateGitSettings } from '../.agents/skills/gidd/scripts.js/shared/git-settings.mjs';
 import { gitConfigurationEnvironment, selectGitHubAccount } from '../.agents/skills/gidd/scripts.js/shared/execution-env.mjs';
@@ -9,7 +9,7 @@ import { runPassthrough } from '../.agents/skills/gidd/scripts.js/shared/passthr
 import { executionTimeout, noninteractiveEnvironment, rejectInteractiveArguments } from '../.agents/skills/gidd/scripts.js/shared/noninteractive.mjs';
 import { publishRepositoryEntry, runRepositoryCommand } from './support/repository.mjs';
 import { assert, fixture, findGit, join, mkdirSync, write, run, ok, compile, bindFixture, copySkill, adapter,
-  dirname, readFileSync, repo, until, existsSync } from './support/helpers.mjs';
+  dirname, readFileSync, repo, until, existsSync, initializeDataFixture } from './support/helpers.mjs';
 
 const code = pathToFileURL(join(repo, '.agents/skills/gidd/scripts.js/gidd.mjs')).href;
 const driver = `const {main}=await import(${JSON.stringify(code)});process.exitCode=await main(JSON.parse(process.argv[1]),{boundRepository:process.argv[2]});`;
@@ -21,17 +21,143 @@ function setup(f) {
   mkdirSync(target); mkdirSync(elsewhere);
   ok(run(git, ['init', '--quiet', target]));
   const config = join(target, '.agents/skills/gidd/config.toml');
-  const text = 'schema_version = 1\n[repo]\nremote.url = "https://github.com/owner/repo"\nremote.account = "Octocat"\n' +
+  const text = 'schema_version = 1\n[repo]\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\nremote.account = "Octocat"\n' +
     '[git]\nuser.mode = "managed"\nuser.name = "Configured 姓名"\nuser.email = "configured@example.test"\ncredential.mode = "gh"\n';
   write(config, text);
+  initializeDataFixture(target);
   const env = { GIT_CONFIG_GLOBAL: 'NUL', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: '', GIT_AUTHOR_EMAIL: '',
     GIT_COMMITTER_NAME: '', GIT_COMMITTER_EMAIL: '', GH_CONFIG_DIR: join(f.root, 'credentials') };
   // Empty identity variables have Git meaning too; remove them in the caller.
   for (const key of ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL']) env[key] = undefined;
   const invoke = (args, options = {}) => run(process.execPath, ['--input-type=module', '-e', driver, '--', JSON.stringify(args), target],
-    { cwd: elsewhere, ...options, env: { ...env, ...options.env } });
+    { cwd: target, ...options, env: { ...env, ...options.env } });
   return { git, gh, target, elsewhere, config, text, invoke, env };
 }
+
+function managedWorktree(s) {
+  ok(run(s.git, ['-C', s.target, 'symbolic-ref', 'HEAD', 'refs/heads/main']));
+  ok(s.invoke(['.git', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'fixture']));
+  const setupCode = "const {worktreeCommand}=await import(" + JSON.stringify(new URL('../.agents/skills/gidd/scripts.js/commands/worktree/index.mjs', import.meta.url).href) + ");" +
+    "const result=await worktreeCommand(process.argv[1],{action:'acquire',branch:'development',base:'main',issue:1,workflow:{mode:'direct-merge',remote:'origin',identity:'https://github.com/test/repo'}});console.log(JSON.stringify({id:result.id,worktree:{path:result.path}}));";
+  return JSON.parse(ok(run(process.execPath, ['--input-type=module', '-e', setupCode, '--', s.target], { env: s.env })).stdout);
+}
+
+test('wrappers reject unrelated, nested and unregistered directories before GitHub authentication', () => {
+  const f = fixture();
+  try {
+    const s = setup(f), managed = managedWorktree(s);
+    const other = join(f.root, 'other'), nested = join(s.target, 'nested');
+    const unmanaged = join(f.root, 'manual-worktree'), nestedManaged = join(managed.worktree.path, 'nested');
+    for (const path of [other, nested, nestedManaged]) ok(run(s.git, ['init', '--quiet', path]));
+    ok(run(s.git, ['-C', s.target, 'worktree', 'add', '--detach', unmanaged, 'HEAD']));
+    // Missing credentials must not be queried when the directory is rejected.
+    write(s.config, s.text.replace('Octocat', 'missing'));
+    for (const [cwd, reason] of [[s.elsewhere, 'execution_not_worktree'], [other, 'execution_repository_mismatch'],
+      [nested, 'execution_repository_mismatch'], [nestedManaged, 'execution_repository_mismatch'],
+      [unmanaged, 'execution_worktree_unregistered']]) {
+      for (const tool of ['.git', '.gh']) {
+        const result = s.invoke([tool, '--version'], { cwd, env: { GH_TOKEN: 'PRIVATE_TOKEN' } });
+        assert.equal(result.status, 2); assert.equal(result.stdout, '');
+        const report = JSON.parse(result.stderr);
+        assert.equal(report.reason, reason);
+        assert.equal(realpathSync.native(report.details.cwd), realpathSync.native(cwd));
+        assert.equal(report.details.entry_repository, s.target);
+        assert.equal(report.details.config, s.config);
+        assert.doesNotMatch(result.stderr, /PRIVATE_TOKEN/);
+      }
+    }
+    const escaped = s.invoke(['.git', '-C', s.target, 'status'], { cwd: other });
+    assert.equal(JSON.parse(escaped.stderr).reason, 'execution_repository_mismatch');
+    // Administrative commands retain their entry-bound scope from any cwd.
+    assert.equal(ok(s.invoke(['set.show'], { cwd: other })).stdout, readFileSync(s.config, 'utf8'));
+    const diagnosis = JSON.parse(s.invoke(['doctor', '--offline'], { cwd: other }).stdout);
+    assert.equal(realpathSync.native(diagnosis.checks.find(row => row.id === 'folder.git.worktree').details.path), realpathSync.native(s.target));
+  } finally { f.dispose(); }
+});
+
+test('registered worktrees use entry settings and preserve relative paths for Git and gh', () => {
+  const f = fixture();
+  try {
+    const s = setup(f), managed = managedWorktree(s), sub = join(managed.worktree.path, 'sub directory');
+    mkdirSync(sub);
+    // A worktree-local configuration is not the invoked entry's configuration.
+    write(join(managed.worktree.path, '.agents/skills/gidd/config.toml'), 'invalid TOML');
+    write(join(sub, 'local.txt'), 'development content');
+    ok(s.invoke(['.git', 'add', 'local.txt'], { cwd: sub }));
+    assert.equal(ok(s.invoke(['.git', 'diff', '--cached', '--name-only'], { cwd: sub })).stdout.trim(), 'sub directory/local.txt');
+    assert.equal(ok(s.invoke(['.git', 'diff', '--cached', '--name-only'])).stdout, '');
+    assert.equal(ok(s.invoke(['.git', 'config', '--get', 'user.name'], { cwd: sub })).stdout.trim(), settings.user.name);
+    const gh = s.invoke(['.gh', 'echo'], { cwd: sub });
+    assert.equal(gh.status, 23);
+    const fields = Object.fromEntries(gh.stdout.trim().split(/\r?\n/).map(line => {
+      const split = line.indexOf('='); return [line.slice(0, split), Buffer.from(line.slice(split + 1), 'base64').toString()];
+    }));
+    assert.equal(fields.cwd, realpathSync.native(sub));
+    assert.equal(fields.repo, 'github.com/owner/repo');
+    assert.equal(fields.account, 'Octocat');
+    const record = join(s.target + '.gidd', 'state/worktrees', managed.id + '.json');
+    renameSync(record, record + '.saved');
+    assert.equal(JSON.parse(s.invoke(['.git', 'status'], { cwd: sub }).stderr).reason, 'execution_worktree_unregistered');
+    renameSync(record + '.saved', record);
+    const saved = readFileSync(record, 'utf8');
+    write(record, '{broken');
+    assert.equal(JSON.parse(s.invoke(['.gh', 'echo'], { cwd: sub }).stderr).reason, 'execution_registry_invalid');
+    write(record, saved);
+    // A stale record alone cannot authorize a different repository at the path.
+    rmSync(join(managed.worktree.path, '.git'));
+    ok(run(s.git, ['init', '--quiet', managed.worktree.path]));
+    assert.equal(JSON.parse(s.invoke(['.git', 'status'], { cwd: sub }).stderr).reason, 'execution_repository_mismatch');
+  } finally { f.dispose(); }
+});
+
+test('explicit Git locations use native semantics while retaining entry settings and validating caller cwd', () => {
+  const f = fixture();
+  try {
+    const s = setup(f), managed = managedWorktree(s), sub = join(s.target, 'sub');
+    mkdirSync(sub);
+    const other = join(f.root, 'foreign');
+    ok(run(s.git, ['init', '--quiet', other]));
+    const wtGit = ok(run(s.git, ['-C', managed.worktree.path, 'rev-parse', '--absolute-git-dir'])).stdout.trim();
+    const top = args => ok(s.invoke(['.git', ...args, 'rev-parse', '--show-toplevel'])).stdout.trim();
+    for (const globals of [['-C', managed.worktree.path], ['-C', sub, '-C', '', '-C', '..', '-C', managed.worktree.path],
+      ['--git-dir', wtGit, '--work-tree', managed.worktree.path]]) {
+      assert.equal(realpathSync.native(top(globals)), realpathSync.native(managed.worktree.path));
+    }
+    for (const globals of [['-C', other], ['--git-dir=' + join(other, '.git'), '--work-tree=' + other],
+      ['--git-dir', wtGit, '--work-tree', other]]) {
+      assert.equal(realpathSync.native(top(globals)), realpathSync.native(other));
+    }
+    // Configuration-based locations follow the installed Git's own behavior.
+    for (const globals of [['-c', 'core.worktree=' + other], ['--config-env=core.worktree=GIDD_TEST_WORKTREE']]) {
+      const args = [...globals, 'rev-parse', '--show-toplevel'], env = { GIDD_TEST_WORKTREE: other };
+      const native = run(s.git, args, { cwd: s.target, env: { ...s.env, ...env } });
+      assert.deepEqual(s.invoke(['.git', ...args], { env }), native);
+    }
+    const bare = ['--bare', 'rev-parse', '--is-bare-repository'];
+    assert.deepEqual(s.invoke(['.git', ...bare]), run(s.git, bare, { cwd: s.target, env: s.env }));
+    const unknown = s.invoke(['.git', '--gidd-test-unknown-option']);
+    assert.equal(unknown.status, 129);
+    assert.match(unknown.stderr, /unknown option/);
+    assert.doesNotMatch(unknown.stderr, /gidd.exec/);
+    write(join(other, '.agents/skills/gidd/config.toml'), 'invalid TOML');
+    const before = ok(s.invoke(['.git', 'rev-parse', 'HEAD'])).stdout;
+    ok(s.invoke(['.git', '-C', other, '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'explicit target'], { cwd: managed.worktree.path }));
+    assert.equal(ok(run(s.git, ['-C', other, 'log', '-1', '--format=%cn|%ce'])).stdout.trim(),
+      settings.user.name + '|' + settings.user.email);
+    assert.equal(ok(s.invoke(['.git', 'rev-parse', 'HEAD'])).stdout, before);
+    const sanitized = s.invoke(['.git', 'rev-parse', '--show-toplevel'], { env: {
+      GIT_DIR: join(other, '.git'), GIT_WORK_TREE: other, GIT_COMMON_DIR: join(other, '.git'),
+      GIT_INDEX_FILE: join(other, 'index'), GIT_CEILING_DIRECTORIES: s.target,
+    } });
+    assert.equal(realpathSync.native(ok(sanitized).stdout.trim()), realpathSync.native(s.target));
+    // Submodules use .git files but still belong to another common Git directory.
+    ok(run(s.git, ['-C', other, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test',
+      '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'fixture']));
+    ok(run(s.git, ['-C', s.target, '-c', 'protocol.file.allow=always', 'submodule', 'add', other, 'module']));
+    const denied = s.invoke(['.git', 'status'], { cwd: join(s.target, 'module') });
+    assert.equal(JSON.parse(denied.stderr).reason, 'execution_repository_mismatch');
+  } finally { f.dispose(); }
+});
 
 test('Git settings require an explicit mode and a complete identity; fields remain independently repairable', () => {
   const f = fixture();
@@ -276,6 +402,7 @@ test('SSH batch options preserve transport cwd, native command priority and argu
   const f = fixture();
   try {
     const s = setup(f), marker = join(f.root, 'ssh-arguments.json'), script = join(f.root, 'ssh fixture.cjs');
+    const transport = managedWorktree(s).worktree.path;
     write(script, `require('fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2)}));process.exit(47);`);
     const command = `"${process.execPath.replaceAll('\\', '/')}" "${script.replaceAll('\\', '/')}"`;
     for (const variant of ['ssh', 'plink', 'tortoiseplink']) {
@@ -289,11 +416,11 @@ test('SSH batch options preserve transport cwd, native command priority and argu
       assert.ok(received.args.includes('2222'));
       assert.ok(received.args.includes('git@example.invalid'));
     }
-    const result = s.invoke(['.git', '-C', s.elsewhere, '-c', 'core.sshCommand=must-not-run',
+    const result = s.invoke(['.git', '-C', transport, '-c', 'core.sshCommand=must-not-run',
       'ls-remote', 'git@example.invalid:path with spaces.git'], { env: { GIT_SSH_COMMAND: command, GIT_SSH_VARIANT: 'ssh' } });
     assert.notEqual(result.status, 0);
     const received = JSON.parse(readFileSync(marker, 'utf8'));
-    assert.equal(realpathSync.native(received.cwd), realpathSync.native(s.elsewhere));
+    assert.equal(realpathSync.native(received.cwd), realpathSync.native(transport));
     assert.ok(received.args.some(arg => arg.includes('path with spaces.git')));
     for (const variant of ['simple', 'auto']) {
       const failed = s.invoke(['.git', 'ls-remote', 'git@example.invalid:repo'], { env: { GIT_SSH_COMMAND: command, GIT_SSH_VARIANT: variant } });
@@ -394,30 +521,35 @@ test('streaming execution has no output cap and cancellation returns a nonzero s
   } finally { f.dispose(); }
 });
 
-test('generated CMD forwards .git/.gh with literal arguments and bound working directory', () => {
+test('generated CMD forwards .git/.gh with literal arguments and caller working directory', () => {
   const f = fixture();
   try {
     const s = setup(f), skill = join(s.target, '.agents/skills/gidd');
     copySkill(skill);
     ok(adapter(f.root, { action: 'bootstrap', repositoryRoot: s.target, responses: {}, downloads: {}, yes: true }, { env: { PATH: dirname(process.execPath) } }));
     publishRepositoryEntry(s.target, join(skill, 'scripts.js/gidd.mjs'));
-    const result = runRepositoryCommand(s.target, ['.git', 'config', '--get', 'user.name'], { cwd: s.elsewhere, env: s.env });
+    const result = runRepositoryCommand(s.target, ['.git', 'config', '--get', 'user.name'], { cwd: skill, env: s.env });
     assert.equal(ok(result).stdout.trim(), settings.user.name);
     const args = ['.gh', 'echo', '--repository=other/project', '中文 & spaces', '!literal!', 'two "quotes"'];
-    const gh = runRepositoryCommand(s.target, args, { cwd: s.elsewhere, input: 'stdin', env: s.env });
+    const gh = runRepositoryCommand(s.target, args, { cwd: skill, input: 'stdin', env: s.env });
     assert.equal(gh.status, 23); assert.equal(gh.stderr, 'native stderr\n');
     const values = gh.stdout.split(/\r?\n/).filter(line => line.startsWith('arg=')).map(line => Buffer.from(line.slice(4), 'base64').toString());
     assert.deepEqual(values, args.slice(1));
+    const actualCwd = gh.stdout.split(/\r?\n/).find(line => line.startsWith('cwd='));
+    assert.equal(Buffer.from(actualCwd.slice(4), 'base64').toString(), realpathSync.native(skill));
+    const rejected = runRepositoryCommand(s.target, ['.git', '--version'], { cwd: s.elsewhere, env: s.env });
+    assert.equal(rejected.status, 2);
+    assert.equal(JSON.parse(rejected.stderr).reason, 'execution_not_worktree');
     const credential = ok(runRepositoryCommand(s.target, ['.git', 'credential', 'fill'],
-      { cwd: s.elsewhere, input: 'protocol=https\nhost=github.com\n\n', env: s.env }));
+      { cwd: skill, input: 'protocol=https\nhost=github.com\n\n', env: s.env }));
     assert.match(credential.stdout, /password=fixture-Octocat/);
     const editor = runRepositoryCommand(s.target, ['.git', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty'],
-      { cwd: s.elsewhere, env: s.env });
+      { cwd: skill, env: s.env });
     assert.notEqual(editor.status, 0); assert.match(editor.stderr, /interactive editor disabled/);
     const denied = runRepositoryCommand(s.target, ['.git', '-c', 'credential.helper=', '-c', 'credential.interactive=true', 'credential', 'fill'],
-      { cwd: s.elsewhere, input: 'protocol=https\nhost=example.invalid\n\n', env: s.env });
+      { cwd: skill, input: 'protocol=https\nhost=example.invalid\n\n', env: s.env });
     assert.notEqual(denied.status, 0); assert.match(denied.stderr, /credential prompt disabled/);
-    const invoke = args => runRepositoryCommand(s.target, args, { cwd: s.elsewhere, env: s.env });
+    const invoke = args => runRepositoryCommand(s.target, args, { cwd: skill, env: s.env });
     const original = readFileSync(s.config, 'utf8');
     for (const args of [['clear'], ['clear', 'git.user.name', 'extra'],
       ['clear', 'git.user.name', ''], ['clear', 'git.user'],

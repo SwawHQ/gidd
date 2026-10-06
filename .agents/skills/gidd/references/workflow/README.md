@@ -1,8 +1,8 @@
 # 环节参考经验
 
-本目录的 TOML 保存参考经验，`specs/` 中的规范配置决定流程和授权。同一环节的不同场景集中在一个文件；`01.task-definition.toml` 按模式选择“目标澄清”或“确认 Issue”。
+本目录的 TOML 保存参考经验，`specs/` 中的规范配置决定流程和授权。同一环节的不同场景集中在一个文件；`01.task-definition.toml` 负责澄清目标并确认 Issue。
 
-文件编号为 `00`～`15`，用于按环节位置浏览。本地合并和 PR 合并是不同环节，分别维护参考经验与授权；具体模式只加载适用环节，错误处理紧随对应主环节展示。
+文件编号为 `00`～`17`，用于按环节位置浏览。本地合并、PR 合并、本地目标分支同步和清理分别维护参考经验与授权；同步及其受阻处理仅适用于 PR 模式。具体模式只加载适用环节，错误处理紧随对应主环节展示。
 
 ```text
 00.common
@@ -16,18 +16,20 @@
 08.direct-merge-error
 09.push
 10.push-error
-11.pr
+11.pr-create
 12.pr-merge
 13.pr-merge-error
-14.close-issue
-15.cleanup-sync
+14.target-sync
+15.target-sync-error
+16.close-issue
+17.cleanup
 ```
 
 ```toml
 [zh-CN."issue.*"]
 title = "commit"
 body = '''
-有 Issue 时的提交参考经验。
+提交参考经验。
 '''
 
 [en."issue.*"]

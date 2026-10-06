@@ -34,10 +34,10 @@ function installation(f, config = configText(ask)) {
   return { skill, target, invoke, root: join(skill, 'specs'), diagnose: () => json(invoke(['doctor', '--offline', '--lang', 'en'])) };
 }
 
-test('six modes list their own presets, authorizations and incomplete languages', () => {
+test('three Issue modes list their own presets, authorizations and incomplete languages', () => {
   const modes = listModes();
   assert.deepEqual(modes.map(item => item.name), modeNames.map((name, index) => '0' + index + '.' + name));
-  assert.deepEqual(modes.map(item => item.specs), [16, 1, 1, 1, 1, 0]);
+  assert.deepEqual(modes.map(item => item.specs), [16, 1, 1]);
   for (const item of modes) {
     assert.deepEqual(Object.keys(item), ['name', 'description', 'specs']);
     assert.equal(item.description, loadSpec(item.name + '/00.auto').definition['zh-CN'].description);
@@ -55,11 +55,12 @@ test('six modes list their own presets, authorizations and incomplete languages'
     }
     assert.deepEqual(Object.keys(item), ['name', 'authorization']);
     assert.deepEqual(Object.keys(item.authorization).sort(), [...authorizationKeys].sort());
-    for (const key of ['direct_merge', 'direct_merge_error', 'pr_merge', 'pr_merge_error']) {
+    for (const key of ['direct_merge', 'direct_merge_error', 'pr_merge', 'pr_merge_error', 'target_sync', 'target_sync_error']) {
       assert.equal(item.authorization[key], 'not_applicable');
     }
   }
-  assert.equal(listSpecs(modeNames[5])[0].error, 'spec_language_unavailable');
+  assert.equal(listSpecs(modeNames[2])[0].error, undefined);
+  assert.deepEqual(loadSpec(modeNames[2] + '/00.auto').available_languages, ['zh-CN']);
 });
 
 test('fixed mode IDs resolve the same resources and prompts as full mode names', () => {
@@ -68,9 +69,6 @@ test('fixed mode IDs resolve the same resources and prompts as full mode names',
     ['00', 'issue.current-worktree.direct-commit'],
     ['01', 'issue.dedicated-worktree.direct-merge'],
     ['02', 'issue.dedicated-worktree.pr-merge'],
-    ['03', 'no-issue.current-worktree.direct-commit'],
-    ['04', 'no-issue.dedicated-worktree.direct-merge'],
-    ['05', 'no-issue.dedicated-worktree.pr-merge'],
   ]);
   for (const { id, name, directory } of catalog) {
     assert.deepEqual(listSpecs(id), listSpecs(name));
@@ -152,18 +150,21 @@ test('mode flows distinguish local merge before push from PR merge after push', 
     assert.ok(flow.indexOf('commit') < flow.indexOf('push'));
     assert.equal(flow.includes('close_issue'), name.startsWith('issue.'));
     assert.ok(!flow.some(step => step.endsWith('_error')));
-    assert.equal(flow.at(-1), 'cleanup_sync');
+    assert.equal(flow.at(-1), 'cleanup');
+    assert.equal(flow.includes('target_sync'), name.endsWith('.pr-merge'));
     if (name.endsWith('.direct-commit')) {
-      assert.ok(!flow.includes('direct_merge') && !flow.includes('pr_merge') && !flow.includes('pr'));
+      assert.ok(!flow.includes('direct_merge') && !flow.includes('pr_merge') && !flow.includes('pr_create'));
       assert.deepEqual(spec.definition.errors, ['push_error']);
     } else if (name.endsWith('.pr-merge')) {
-      assert.deepEqual(spec.definition.errors, ['push_error', 'pr_merge_error']);
-      assert.ok(flow.indexOf('push') < flow.indexOf('pr') && flow.indexOf('pr') < flow.indexOf('pr_merge'));
+      assert.deepEqual(spec.definition.errors, ['push_error', 'pr_merge_error', 'target_sync_error']);
+      assert.ok(flow.indexOf('push') < flow.indexOf('pr_create') && flow.indexOf('pr_create') < flow.indexOf('pr_merge'));
+      assert.deepEqual(flow.slice(flow.indexOf('pr_merge')), ['pr_merge', 'target_sync',
+        ...(name.startsWith('issue.') ? ['close_issue'] : []), 'cleanup']);
       assert.ok(!flow.includes('direct_merge'));
     } else {
       assert.deepEqual(spec.definition.errors, ['direct_merge_error', 'push_error']);
       assert.ok(flow.indexOf('commit') < flow.indexOf('direct_merge') && flow.indexOf('direct_merge') < flow.indexOf('push'));
-      assert.ok(!flow.includes('pr') && !flow.includes('pr_merge'));
+      assert.ok(!flow.includes('pr_create') && !flow.includes('pr_merge'));
     }
   }
   const issue = renderSpec('target', loadSpec(ask), 'zh-CN');
@@ -171,9 +172,7 @@ test('mode flows distinguish local merge before push from PR merge after push', 
   assert.match(issue, /\| add \| auto \|/);
   assert.match(issue, /Refs #NNN/);
   assert.ok(issue.includes('gidd.link spec.issue ' + ask + ' --lang zh'));
-  const task = renderSpec('target', loadSpec(modeNames[3] + '/00.auto'), 'zh-CN');
-  assert.ok(!task.includes('Refs #NNN') && !task.includes('gidd.link spec.issue'));
-  assert.ok(!task.includes('### 本地合并') && !task.includes('### PR 合并') && !task.includes('### 关闭 Issue'));
+
 });
 
 test('rendered error guidance follows its triggering stage and cleanup remains last in both languages', () => {
@@ -181,16 +180,17 @@ test('rendered error guidance follows its triggering stage and cleanup remains l
     const spec = loadSpec(mode + '/00.auto');
     for (const error of spec.definition.errors) spec.authorization[error] = 'ask';
     const delivery = mode.endsWith('.direct-commit') ? ['push', 'push_error'] : mode.endsWith('.direct-merge')
-      ? ['direct_merge', 'direct_merge_error', 'push', 'push_error'] : ['push', 'push_error', 'pr', 'pr_merge', 'pr_merge_error'];
+      ? ['direct_merge', 'direct_merge_error', 'push', 'push_error'] : ['push', 'push_error', 'pr_create', 'pr_merge', 'pr_merge_error'];
     const expected = ['task_definition', 'workspace', 'development', 'internal_acceptance', 'add', 'commit',
-      ...delivery, ...(spec.definition.issue ? ['close_issue'] : []), 'cleanup_sync'];
+      ...delivery, ...(mode.endsWith('.pr-merge') ? ['target_sync', 'target_sync_error'] : []),
+      'close_issue', 'cleanup'];
     for (const lang of ['zh-CN', 'en']) {
       // Fill only this in-memory fixture; shipped translations remain unfinished.
       spec.definition[lang].description = 'Example mode';
       for (const item of spec.experiences) item[lang] = { title: item.step, body: item.step + ' reference' };
       const prompt = renderSpec('target', spec, lang);
       assert.deepEqual([...prompt.matchAll(/^#{3,4} (.+)$/gm)].map(match => match[1]), expected);
-      assert.ok(prompt.endsWith('### cleanup_sync\n\ncleanup_sync reference\n'));
+      assert.ok(prompt.endsWith('### cleanup\n\ncleanup reference\n'));
       assert.ok(!/## (受阻时的参考经验|Reference guidance when blocked)/.test(prompt));
       for (const error of spec.definition.errors) {
         const trigger = error.slice(0, -'_error'.length);
@@ -291,10 +291,80 @@ test('merge authorizations enforce the mode and keep each error grant independen
   } finally { f.dispose(); }
 });
 
+test('target synchronization is PR-only and has independent sync, error and cleanup grants', () => {
+  const f = fixture();
+  try {
+    const s = resources(f);
+    for (const { directory, name } of discoverModes(s.root)) {
+      const selector = directory + '/00.auto', spec = s.load(selector), pr = name.endsWith('.pr-merge');
+      const original = readSpecToml(spec.path), schema = readSpecToml(spec.definition.path);
+      assert.equal(original.authorization.cleanup, 'auto');
+      assert.ok(!Object.hasOwn(original.authorization, 'cleanup_sync'));
+      for (const key of ['target_sync', 'target_sync_error']) {
+        assert.equal(original.authorization[key], pr ? 'auto' : 'not_applicable');
+        assert.deepEqual(schema.authorization_schema[key], pr ? ['auto', 'ask'] : ['not_applicable']);
+        const invalid = structuredClone(original);
+        invalid.authorization[key] = pr ? 'not_applicable' : 'ask';
+        write(spec.path, stringify(invalid));
+        assert.throws(() => s.load(selector), error => error.message === 'spec_authorization_invalid' && error.field === key);
+        delete invalid.authorization[key];
+        write(spec.path, stringify(invalid));
+        assert.throws(() => s.load(selector), /spec_authorization_invalid/);
+        write(spec.path, stringify(original));
+        const invalidSchema = structuredClone(schema);
+        invalidSchema.authorization_schema[key] = pr ? ['not_applicable'] : ['auto', 'ask'];
+        write(spec.definition.path, stringify(invalidSchema));
+        assert.throws(() => s.load(selector), error => error.message === 'spec_schema_invalid' && error.field === key);
+        write(spec.definition.path, stringify(schema));
+      }
+      if (pr) for (const sync of ['auto', 'ask']) for (const error of ['auto', 'ask']) for (const cleanup of ['auto', 'ask']) {
+        const data = structuredClone(original);
+        Object.assign(data.authorization, { target_sync: sync, target_sync_error: error, cleanup });
+        write(spec.path, stringify(data));
+        assert.deepEqual(s.load(selector).authorization, data.authorization);
+      }
+      const legacy = structuredClone(original);
+      legacy.authorization.cleanup_sync = legacy.authorization.cleanup;
+      delete legacy.authorization.cleanup;
+      write(spec.path, stringify(legacy));
+      assert.throws(() => s.load(selector), /spec_authorization_invalid/);
+      write(spec.path, stringify(original));
+    }
+    assert.equal(s.load('00/08').authorization.cleanup, 'ask');
+    assert.equal(s.load('00/08').authorization.target_sync, 'not_applicable');
+  } finally { f.dispose(); }
+});
+
+test('rendered PR synchronization constraints remain explicit with concise reference prose', () => {
+  const spec = loadSpec('02/00');
+  for (const step of ['target_sync', 'target_sync_error', 'close_issue', 'cleanup']) {
+    spec.experiences.find(item => item.step === step)['zh-CN'].body = '按实际情况处理。';
+  }
+  const prompt = renderSpec('target', spec, 'zh-CN');
+  assert.match(prompt, /分别报告远端交付与本地同步状态/);
+  assert.match(prompt, /暂停后续关闭与清理/);
+  assert.match(prompt, /#### 同步本地目标分支受阻\n\n仅在 target_sync 受阻时适用，授权为 auto。/);
+});
+
+test('missing synchronization guidance blocks PR specs without affecting local delivery modes', () => {
+  const f = fixture();
+  try {
+    const s = resources(f);
+    for (const name of ['14.target-sync', '15.target-sync-error']) {
+      const path = s.experience(name), saved = readFileSync(path);
+      rmSync(path);
+      for (const mode of ['00', '01']) assert.deepEqual(s.load(mode + '/00').available_languages, ['zh-CN']);
+      for (const mode of ['02']) assert.throws(() => s.load(mode + '/00'),
+        error => error.message === 'spec_resources_missing' && error.path === path);
+      write(path, saved);
+    }
+  } finally { f.dispose(); }
+});
+
 test('authorization and schema table order do not change the flow or rendered prompt', () => {
   const f = fixture();
   try {
-    const s = resources(f), selector = '01/00', spec = s.load(selector);
+    const s = resources(f), selector = '02/00', spec = s.load(selector);
     const before = renderSpec(f.root, spec, 'zh-CN');
     for (const [path, field] of [[spec.path, 'authorization'], [spec.definition.path, 'authorization_schema']]) {
       const data = readSpecToml(path);
@@ -334,8 +404,8 @@ test('pattern matching is anchored, only star is special, and ambiguity is rejec
     const s = resources(f), path = s.experience('06.commit'), original = readSpecToml(path);
     const attempt = (change, reason) => { const data = structuredClone(original); change(data); write(path, stringify(data)); assert.throws(s.load, new RegExp(reason)); };
     attempt(data => { for (const lang of ['en', 'zh-CN']) data[lang]['*'] = data[lang]['issue.*']; }, 'spec_pattern_ambiguous');
-    attempt(data => { for (const lang of ['en', 'zh-CN']) delete data[lang]['issue.*']; }, 'spec_pattern_missing');
-    attempt(data => { delete data.en['no-issue.*']; }, 'spec_pattern_mismatch');
+    attempt(data => { for (const lang of ['en', 'zh-CN']) { data[lang]['*.pr-merge'] = data[lang]['issue.*']; delete data[lang]['issue.*']; } }, 'spec_pattern_missing');
+    attempt(data => { data.en['*'] = data.en['issue.*']; delete data.en['issue.*']; }, 'spec_pattern_mismatch');
     attempt(data => { data.en['never.*'] = data.en['issue.*']; }, 'spec_pattern_invalid');
     attempt(data => { data.en['issue.?'] = data.en['issue.*']; }, 'spec_pattern_invalid');
     write(path, stringify(original)); assert.deepEqual(s.load().available_languages, ['zh-CN']);
@@ -349,7 +419,8 @@ test('unrelated drafts and inapplicable modules cannot block a selected spec', (
     write(join(s.root, directory, '99.draft.toml'), '');
     write(join(s.root, directory, '_notes.toml'), 'not toml');
     write(join(s.root, '02.' + modeNames[2], 'description.toml'), 'not toml');
-    for (const name of ['07.direct-merge', '08.direct-merge-error', '12.pr-merge', '13.pr-merge-error']) rmSync(s.experience(name));
+    for (const name of ['07.direct-merge', '08.direct-merge-error', '12.pr-merge', '13.pr-merge-error',
+      '14.target-sync', '15.target-sync-error']) rmSync(s.experience(name));
     assert.deepEqual(s.load().available_languages, ['zh-CN']);
     const list = listSpecs(mode, s.root);
     assert.equal(list.length, listSpecs(mode).length + 1); assert.equal(list.find(item => item.name === '99.draft').error, 'spec_resources_invalid');
@@ -357,7 +428,6 @@ test('unrelated drafts and inapplicable modules cannot block a selected spec', (
     assert.equal(listModes('zh-CN', s.root)[2].error, 'spec_toml_invalid');
     assert.deepEqual(Object.keys(listModes('zh-CN', s.root)[2]), ['name', 'specs', 'error']);
     assert.equal(listModes('zh-CN', s.root)[2].name, '02.' + modeNames[2]);
-    assert.equal(listModes('zh-CN', s.root)[3].name, '03.' + modeNames[3]);
     rmSync(s.experience('06.commit')); assert.throws(s.load, /spec_resources_missing/);
   } finally { f.dispose(); }
 });
@@ -385,10 +455,14 @@ test('language completeness is checked before any prompt is emitted; Issue templ
     assert.match(prompt, /English reference/);
     assert.ok(prompt.includes('# ' + auto + '\n\nMode text\n\n## Flow and authorization'));
     for (const lang of ['zh', 'en']) assert.equal(specCommand(f.root, options('spec.issue', [auto], lang), s.root).exitCode, 0);
-    const noIssue = specCommand(f.root, options('spec.issue', [modeNames[3] + '/00.auto']), s.root);
-    assert.equal(noIssue.report.error, 'spec_issue_template_missing');
-    const unfinished = specCommand(f.root, options('spec', [modeNames[5] + '/00.auto']), s.root);
-    assert.equal(unfinished.report.path, s.experience('12.pr-merge'));
+    // Model an unfinished reference in the fixture, independent of shipped prose.
+    const mergePath = s.experience('12.pr-merge'), merge = readSpecToml(mergePath);
+    for (const reference of Object.values(merge['zh-CN'])) reference.body = '';
+    write(mergePath, stringify(merge));
+    const unfinished = specCommand(f.root, options('spec', [modeNames[2] + '/00.auto']), s.root);
+    assert.equal(unfinished.report.error, 'spec_language_unavailable');
+    assert.equal(unfinished.markdown, undefined);
+    assert.equal(unfinished.report.path, mergePath);
   } finally { f.dispose(); }
 });
 
@@ -422,8 +496,12 @@ test('selection preserves config comments and newline style, and rejects invalid
       assert.equal(readFileSync(path, 'utf8'), original.replace(auto, ask));
       assert.equal(parseConfiguration(readFileSync(path, 'utf8')).spec.current, ask);
     }
+    for (const selector of [modeNames[2] + '/00.auto', '02/00.auto', '02/00']) {
+      configure(f.root, 'set', 'spec.current', selector);
+      assert.equal(parseConfiguration(readFileSync(path, 'utf8')).spec.current, selector);
+    }
     const before = snapshot(f.root);
-    for (const selector of ['02.issue', '00.all.auto', '07/00.auto', '1/00.auto', mode + '/description', mode + '/missing', modeNames[5] + '/00.auto', '05/00.auto', '05/00', '00/99']) {
+    for (const selector of ['02.issue', '00.all.auto', '07/00.auto', '1/00.auto', mode + '/description', mode + '/missing', '00/99']) {
       assert.throws(() => configure(f.root, 'set', 'spec.current', selector), /spec_/);
       assert.deepEqual(snapshot(f.root), before);
     }
@@ -456,7 +534,7 @@ test('repository commands support discovery, selection, current prompts and temp
     assert.equal(json(s.invoke(['spec.current', '--lang', 'en'])).error, 'spec_language_unavailable');
     assert.equal(json(s.invoke(['spec.list'])).error, 'invalid_arguments');
     assert.equal(json(s.invoke(['spec.current.issue'])).error, 'invalid_spec_route');
-    assert.equal(json(s.invoke(['spec.issue', modeNames[3] + '/00.auto'])).error, 'spec_issue_template_missing');
+    assert.equal(json(s.invoke(['spec.issue', '03/00.auto'])).error, 'spec_mode_missing');
     assert.deepEqual(snapshot(f.root), selected);
   } finally { f.dispose(); }
 });
@@ -475,7 +553,8 @@ test('doctor validates only the selected dependencies, supports partial translat
     const invalid = check(s.diagnose());
     assert.equal(invalid.reason, 'spec_authorization_invalid'); assert.equal(invalid.details.field, 'commit');
     write(path, saved);
-    for (const [selector, key] of [['01/00', 'direct_merge_error'], ['02/00', 'pr_merge_error']]) {
+    for (const [selector, key] of [['01/00', 'direct_merge_error'], ['02/00', 'pr_merge_error'],
+      ['02/00', 'target_sync'], ['02/00', 'target_sync_error'], ['00/00', 'cleanup']]) {
       write(configPath(s.target), configText(selector));
       const ready = check(s.diagnose());
       assert.equal(ready.status, 'ready');
@@ -494,8 +573,15 @@ test('doctor validates only the selected dependencies, supports partial translat
     assert.deepEqual(snapshot(f.root), before);
     write(configPath(s.target), 'schema_version = 1\n');
     assert.equal(check(s.diagnose()).reason, 'spec_current_missing');
-    write(configPath(s.target), configText(modeNames[5] + '/00.auto'));
+    write(configPath(s.target), configText(modeNames[2] + '/00.auto'));
+    assert.equal(check(s.diagnose()).status, 'ready');
+    const unfinishedPath = loadSpec('02/00', s.root).definition.path, unfinished = readSpecToml(unfinishedPath);
+    for (const lang of ['zh-CN', 'en']) unfinished[lang].description = '';
+    write(unfinishedPath, stringify(unfinished));
     assert.equal(check(s.diagnose()).reason, 'spec_language_unavailable');
+    const unfinishedSnapshot = snapshot(f.root);
+    assert.equal(json(s.invoke(['set', 'spec.current', '02/00'])).reason, 'spec_language_unavailable');
+    assert.deepEqual(snapshot(f.root), unfinishedSnapshot);
     mkdirSync(join(s.root, '00.' + modeNames[1]));
     const collisionSnapshot = snapshot(f.root), collision = check(s.diagnose());
     assert.equal(collision.reason, 'spec_mode_id_conflict');
@@ -527,6 +613,28 @@ test('forms reject invalid native fields, translation drift and misplaced GIDD c
     const forms = structuredClone(spec.issueForms); change(forms);
     assert.throws(() => validateIssueForms(forms), /spec_resources_invalid/);
   }
+});
+
+test('selected Issue templates require the GIDD configuration field and use the selected delivery mode', () => {
+  const f = fixture();
+  try {
+    const s = resources(f), paths = ['en', 'zh-CN'].map(lang => join(s.root, '../references/issue.' + lang + '.json'));
+    const originals = paths.map(path => JSON.parse(readFileSync(path, 'utf8')));
+    for (const [id, mode] of [['00', 'direct-commit'], ['01', 'direct-merge'], ['02', 'pr-merge']]) {
+      const form = s.load(id + '/00').issueForms.en;
+      const metadata = JSON.parse(form.body.find(field => field.id === 'gidd').attributes.value);
+      assert.equal(metadata.delivery_mode, mode);
+      assert.equal(metadata.development_branch, mode === 'direct-commit' ? null : '');
+    }
+    for (const change of [
+      form => { form.body = form.body.filter(field => field.id !== 'gidd'); },
+      form => { form.body.find(field => field.id === 'gidd').attributes.render = 'json'; },
+      form => { form.body.find(field => field.id === 'gidd').validations.required = false; },
+    ]) {
+      paths.forEach((path, index) => { const form = structuredClone(originals[index]); change(form); write(path, JSON.stringify(form)); });
+      assert.throws(s.load, /spec_issue_template_invalid/);
+    }
+  } finally { f.dispose(); }
 });
 
 test('native form validation preserves metadata, input and display-only markdown', () => {

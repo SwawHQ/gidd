@@ -35,6 +35,19 @@
       "validations": {
         "required": false
       }
+    },
+    {
+      "type": "textarea",
+      "id": "gidd",
+      "attributes": {
+        "label": "GIDD 配置",
+        "description": "填写交付模式和目标分支；合并模式另填新的开发分支，直接提交使用 null。保留 gidd 代码块。",
+        "render": "gidd",
+        "value": "{\n  \"schema\": \"gidd.issue/v1\",\n  \"delivery_mode\": \"direct-commit\",\n  \"target_branch\": \"\",\n  \"development_branch\": null\n}"
+      },
+      "validations": {
+        "required": true
+      }
     }
   ]
 }

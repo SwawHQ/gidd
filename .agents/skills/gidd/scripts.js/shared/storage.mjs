@@ -37,7 +37,7 @@ export function readConfigurationText(path) {
   catch { throw new Error('config_invalid_utf8'); }
 }
 
-// Only repository business settings live in config.toml. Preparation never reads it.
+// Only repository business settings live in config.toml.
 export function parseConfiguration(text) {
   if (Buffer.byteLength(text) > 16384) throw new Error('config_too_large');
   const result = { repo: { remote: {} }, git: { user: {}, credential: {} }, spec: {} }, tables = new Set(), seen = new Set();
@@ -62,7 +62,10 @@ export function parseConfiguration(text) {
     const key = section + '.' + field[1];
     if (seen.has(key)) throw new Error('config_duplicate_key:' + key);
     seen.add(key);
-    if (section === 'repo') result.repo.remote[field[1].slice(7)] = decodeString(field[2]);
+    if (section === 'repo') {
+      const [group, name] = field[1].split('.');
+      (result.repo[group] ??= {})[name] = decodeString(field[2]);
+    }
     else if (section === 'git') {
       const [group, name] = field[1].split('.');
       result.git[group][name] = decodeString(field[2]);

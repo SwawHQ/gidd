@@ -1,0 +1,31 @@
+[zh-CN."*.current-worktree.*"]
+title = "清理"
+body = '''
+执行 `gidd.link workflow.cleanup <Issue编号>` 核验目标分支已推送并删除本次流程记录，保留目标分支和目录。留意用户及并行任务的修改，清理不再需要的临时文件。
+'''
+
+[zh-CN."*.dedicated-worktree.direct-merge"]
+title = "清理"
+body = '''
+成功推送目标分支后，检查专用 worktree、开发分支和临时文件；仍需保留时，报告原因并等待授意，否则使用 `gidd.link workflow.cleanup <Issue编号>` 删除开发分支并释放工作区。
+要删除专用 worktree 目录，使用 `worktree.remove <worktree 路径>`，但一般不用刻意删除（后续可复用）。
+'''
+
+[zh-CN."*.dedicated-worktree.pr-merge"]
+title = "清理"
+body = '''
+确认 PR 已合并且本地目标分支已完成同步后，检查专用 worktree、本地开发分支、工作远端的同名开发分支和临时文件；仍需保留时，报告原因并等待授意，否则使用 `gidd.link workflow.cleanup <Issue编号>` 删除本地及远端开发分支并释放工作区。
+要删除专用 worktree 目录，使用 `worktree.remove <worktree 路径>`，但一般不用刻意删除（后续可复用）。
+'''
+
+[en."*.current-worktree.*"]
+title = ""
+body = ""
+
+[en."*.dedicated-worktree.direct-merge"]
+title = ""
+body = ""
+
+[en."*.dedicated-worktree.pr-merge"]
+title = ""
+body = ""

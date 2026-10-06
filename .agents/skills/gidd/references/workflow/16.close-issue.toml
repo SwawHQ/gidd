@@ -1,0 +1,29 @@
+[zh-CN."issue.*direct-commit"]
+title = "Issue 关闭"
+body = '''
+目标分支成功 push 后，关联 Issue 的[验收清单]确已完成的便可显式关闭，否则报告原由。
+'''
+
+[zh-CN."issue.*direct-merge"]
+title = "Issue 关闭"
+body = '''
+目标分支成功 push 后，关联 Issue 的[验收清单]确已完成的便可显式关闭，否则报告原由。
+'''
+
+[zh-CN."issue.*pr-merge"]
+title = "Issue 关闭"
+body = '''
+PR 已成功合并到目标分支，且本地目标分支已完成同步，关联 Issue 的[验收清单]也已完成的便可显式关闭，否则报告原由。
+'''
+
+[en."issue.*direct-commit"]
+title = ""
+body = ""
+
+[en."issue.*direct-merge"]
+title = ""
+body = ""
+
+[en."issue.*pr-merge"]
+title = ""
+body = ""

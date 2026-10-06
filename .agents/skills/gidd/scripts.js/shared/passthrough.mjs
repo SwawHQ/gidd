@@ -7,6 +7,7 @@ import { boundTools } from './bindings.mjs';
 import { toolsRoot } from './storage.mjs';
 import { gitEnvironment, githubEnvironment, selectGitHubAccount, withoutEnvironment } from './execution-env.mjs';
 import { noninteractiveEnvironment, rejectInteractiveArguments, executionTimeout } from './noninteractive.mjs';
+import { executionScope } from './execution-scope.mjs';
 
 // Inherited stdio keeps bytes, terminal semantics, EOF and large output intact.
 // Business commands have no output cap; a caller may opt into a deadline.
@@ -56,15 +57,17 @@ export async function passthrough(repository, tool, args, { signal } = {}) {
     validateRemoteSettings(settings.repo.remote, ['url', 'account']);
     target = githubTarget(settings.repo.remote);
   }
-  // The entry chooses the initial worktree. Explicit Git location arguments
-  // still work normally, as do all gh target arguments and native overrides.
-  let env = withoutEnvironment(process.env, ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE']);
+  // Configuration stays bound to the entry; relative file paths follow cwd.
+  let env = withoutEnvironment(process.env, ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_CEILING_DIRECTORIES']);
+  let cwd;
+  try { cwd = await executionScope(repository, { bindings, env, signal }); }
+  catch (error) { if (signal?.aborted) return 130; throw error; }
   if (needsGh) env = githubEnvironment(target, env);
   env = gitEnvironment(settings.git, bindings, target, env);
   env = noninteractiveEnvironment(bindings.git.path, env, tool === 'git' ? args : []);
   if (tool === 'gh') {
-    try { env = (await selectGitHubAccount({ gh: bindings.gh.path, ...target }, { env, cwd: repository, signal })).env; }
+    try { env = (await selectGitHubAccount({ gh: bindings.gh.path, ...target }, { env, cwd, signal })).env; }
     catch (error) { if (signal?.aborted) return 130; throw error; }
   }
-  return runPassthrough(bindings[tool].path, args, { cwd: repository, env, signal, timeoutMs });
+  return runPassthrough(bindings[tool].path, args, { cwd, env, signal, timeoutMs });
 }

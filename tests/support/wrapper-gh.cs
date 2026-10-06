@@ -43,6 +43,9 @@ public static class WrapperGh {
                 "\",\"GIT_EDITOR\":\"" + Env("GIT_EDITOR").Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}");
             return 0;
         }
+        if (args.Length > 0 && args[0] == "api" && args[args.Length - 1].Contains("/issues/") && Env("GIDD_ISSUE_FIXTURE") != "") {
+            Console.Write(File.ReadAllText(Env("GIDD_ISSUE_FIXTURE"))); return 0;
+        }
         foreach (string arg in args) Emit("arg", arg);
         Emit("cwd", Environment.CurrentDirectory);
         Emit("host", Env("GH_HOST")); Emit("repo", Env("GH_REPO"));

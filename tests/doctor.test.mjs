@@ -4,12 +4,13 @@ import { pathToFileURL } from 'node:url';
 import { doctor as diagnose } from '../.agents/skills/gidd/scripts.js/commands/doctor/index.mjs';
 import { parseCatalog } from '../.agents/skills/gidd/scripts.js/commands/doctor/catalog.mjs';
 import { configure } from '../.agents/skills/gidd/scripts.js/shared/config.mjs';
-import { bindFixture, copySkill, diagnosis, toolsRoot, assert, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, readFileSync, repo, rmSync, run, snapshot, stub, write } from './support/helpers.mjs';
+import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/shared/storage.mjs';
+import { bindFixture, copySkill, diagnosis, toolsRoot, assert, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, readFileSync, repo, rmSync, run, snapshot, stub, write, initializeDataFixture } from './support/helpers.mjs';
 
 const configText = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[spec]\ncurrent = "issue.current-worktree.direct-commit/00.auto"\n[repo]\nremote.account = "Octocat"\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\n';
 const checkOrder = [
   'tool.platform', 'tool.js_runtime', 'tool.git', 'tool.gh',
-  'folder.git.worktree', 'folder.git.identity',
+  'folder.git.worktree', 'folder.git.identity', 'folder.gidd',
   'config.toml', 'config.repo.remote.name', 'config.repo.remote.url', 'config.repo.remote.account',
   'config.git.user.mode', 'config.git.user.name', 'config.git.user.email', 'config.git.credential.mode', 'config.spec.current',
   'config.repo.remote.account..online', 'config.repo.remote.url..online',
@@ -28,6 +29,14 @@ const byId = (report, id) => {
 const doctor = (target, options = {}) => diagnose(target, { lang: 'en', ...options });
 const success = text => ({ ok: true, reason: 'process_exit', text });
 const catalogText = readFileSync(join(repo, '.agents/skills/gidd/references/doctor.toml'), 'utf8').replaceAll('\r\n', '\n');
+
+// These tests exercise other diagnostic domains with initialized local data.
+// Deliberately damaged TOML must remain damaged for the configuration checks.
+function writeConfiguration(path, text) {
+  write(path, text);
+  try { parseConfiguration(text); } catch { return; }
+  initializeDataFixture(dirname(dirname(dirname(dirname(path)))));
+}
 
 test('doctor catalog rejects malformed declarations before executing any checks', async () => {
   const f = fixture();
@@ -164,7 +173,7 @@ test('doctor CLI resolves language precedence and validates flags in installed c
 test('doctor combines independent checks once; offline never invokes network or authentication', async () => {
   const f = fixture();
   try {
-    write(join(f.root,'.agents/skills/gidd/config.toml'),configText);
+    writeConfiguration(join(f.root,'.agents/skills/gidd/config.toml'),configText);
     mkdirSync(join(f.root,'.git'));
     const git = join(f.root,'bound/git.exe'), gh = join(f.root,'bound/gh.exe');
     write(join(toolsRoot(f.root),'tool-bindings.json'),JSON.stringify({
@@ -174,7 +183,7 @@ test('doctor combines independent checks once; offline never invokes network or 
     const scenario = (overrides = {}) => {
       const calls = [];
       return { calls, execute: async (exe, args, options) => {
-        const key = args[0] === '--version' ? exe === git ? 'git' : 'gh' :
+        const key = args.includes('--git-common-dir') ? 'common' : args.includes('worktree') && args.includes('list') ? 'worktrees' : args[0] === '--version' ? exe === git ? 'git' : 'gh' :
           args[0] === 'auth' ? 'token' : args[0] === 'api' ? 'api' : args[0] === 'repo' ? 'gh_repo' : args.includes('--is-inside-work-tree') ? 'inside' :
           args.includes('--show-toplevel') ? 'root' : args.includes('--verify') ? 'head' :
           args.includes('symbolic-ref') ? 'symbolic' : args.includes('GIT_AUTHOR_IDENT') ? 'author' :
@@ -183,7 +192,7 @@ test('doctor combines independent checks once; offline never invokes network or 
         calls.push({key,exe,args,options});
         assert.ok([git,gh].includes(exe),'Only bound executables');
         assert.ok(!args.some(x=>['login','switch','setup-git','push','fetch'].includes(x)));
-        return overrides[key] || success({git:'git version 2.55.0.windows.5',gh:'gh version 2.98.0',api:'Octocat',token:'fixture-token',
+        return overrides[key] || success({common:join(f.root,'.git'),worktrees:`worktree ${f.root}\0HEAD ${'a'.repeat(40)}\0branch refs/heads/main\0\0`,git:'git version 2.55.0.windows.5',gh:'gh version 2.98.0',api:'Octocat',token:'fixture-token',
           inside:'true',root:f.root,head:'a'.repeat(40),symbolic:'refs/heads/main',
           author:'Local Author <author@example.test> 1234567890 +0800',
           committer:'Local Committer <committer@example.test> 1234567890 +0800',remotes:'origin',
@@ -192,7 +201,7 @@ test('doctor combines independent checks once; offline never invokes network or 
     };
     const accountId='config.repo.remote.account..online', urlId='config.repo.remote.url..online';
     const before=snapshot(f.root), online=scenario(), report=await doctor(f.root,online);
-    assert.equal(report.status,'checks_passed');assert.equal(report.checks.length,16);
+    assert.equal(report.status,'checks_passed');assert.equal(report.checks.length,17);
     const localizedCatalogPath = join(f.root, 'bilingual-doctor.toml');
     // Compare actual diagnoses and executed probes, including failures and skips.
     // Only human-facing hints and notes may differ between languages.
@@ -211,7 +220,7 @@ test('doctor combines independent checks once; offline never invokes network or 
       { config: configText.replace('remote.url = "https://github.com/owner/repo"', 'remote.url = "bad url"') },
     ]) {
       write(localizedCatalogPath, options.catalog || catalogText);
-      write(join(f.root, '.agents/skills/gidd/config.toml'), options.config || configText);
+      writeConfiguration(join(f.root, '.agents/skills/gidd/config.toml'), options.config || configText);
       const enRun = scenario(options.overrides), zhRun = scenario(options.overrides);
       const en = await doctor(f.root, { ...enRun, offline: options.offline, catalogPath: localizedCatalogPath, lang: 'en' });
       const zh = await doctor(f.root, { ...zhRun, offline: options.offline, catalogPath: localizedCatalogPath, lang: 'zh' });
@@ -224,9 +233,9 @@ test('doctor combines independent checks once; offline never invokes network or 
       assert.ok(messages(zh).every(text => !/[{}]/.test(text)));
     }
     rmSync(localizedCatalogPath);
-    write(join(f.root, '.agents/skills/gidd/config.toml'), configText);
+    writeConfiguration(join(f.root, '.agents/skills/gidd/config.toml'), configText);
     assert.deepEqual(online.calls.map(call => call.key).sort(),
-      ['git', 'gh', 'inside', 'root', 'head', 'author', 'committer', 'remotes', 'url', 'token', 'api', 'gh_repo', 'read'].sort(),
+      ['git', 'gh', 'inside', 'root', 'head', 'author', 'committer', 'remotes', 'url', 'token', 'api', 'gh_repo', 'read', 'common', 'worktrees'].sort(),
       'Shared observations execute once even when multiple check entries depend on them');
     const firstRun = scenario({ token: success('first-fixture-token') });
     const secondRun = scenario({ token: success('second-fixture-token'), api: success('Other') });
@@ -384,39 +393,39 @@ test('doctor combines independent checks once; offline never invokes network or 
     }
     const config=join(f.root,'.agents/skills/gidd/config.toml');
     for(const key of ['name','url','account']) {
-      write(config,configText.replace(new RegExp('^remote\\.'+key+' = .*\\n','m'),''));
+      writeConfiguration(config,configText.replace(new RegExp('^remote\\.'+key+' = .*\\n','m'),''));
       const r=await doctor(f.root,scenario());
       assert.equal(byId(r,'config.repo.remote.'+key).reason,'config_missing_repo_remote_'+key);
       assert.deepEqual(byId(r,'config.repo.remote.'+key).commands.at(-1).args, ['set', 'repo.remote.' + key, '<value>']);
-      write(config,configText.replace(new RegExp('^remote\\.'+key+' = .*','m'),'remote.'+key+' = "PRIVATE_TOKEN:invalid"'));
+      writeConfiguration(config,configText.replace(new RegExp('^remote\\.'+key+' = .*','m'),'remote.'+key+' = "PRIVATE_TOKEN:invalid"'));
       const invalid=await doctor(f.root,scenario());
       assert.equal(byId(invalid,'config.repo.remote.'+key).reason,'config_invalid_repo_remote_'+key);
       assert.ok(!JSON.stringify(invalid).includes('PRIVATE_TOKEN'));
     }
-    write(config,configText.replace('remote.url = "https://github.com/owner/repo"','remote.url = "bad url"'));
+    writeConfiguration(config,configText.replace('remote.url = "https://github.com/owner/repo"','remote.url = "bad url"'));
     const independent=await doctor(f.root,scenario({remotes:success('other')}));
     assert.equal(byId(independent,'config.repo.remote.name').reason,'configured_remote_missing');
     assert.equal(byId(independent,'config.repo.remote.url').reason,'config_invalid_repo_remote_url');
-    write(config,configText);
+    writeConfiguration(config,configText);
     const blocked=await doctor(f.root,scenario({remotes:success('other')}));
     assert.equal(byId(blocked,'config.repo.remote.url').blocked_by,'config.repo.remote.name');
     const broken=await doctor(f.root,scenario({inside:{ok:false,reason:'command_failed',text:''}}));
     assert.equal(byId(broken,'config.repo.remote.name').blocked_by,'folder.git.worktree');
     assert.equal(byId(broken,accountId).status,'ready');
-    write(config,configText.replaceAll('github.com','github.example.test'));
+    writeConfiguration(config,configText.replaceAll('github.com','github.example.test'));
     const enterprise=scenario({url:success('git@github.example.test:owner/repo.git'),gh_repo:success('{"url":"https://github.example.test/owner/repo"}')});
     assert.equal(byId(await doctor(f.root,enterprise),accountId).details.hostname,'github.example.test');
     assert.equal(enterprise.calls.find(c=>c.key==='api').args[2],'github.example.test');
     for (const [text, line] of [['invalid TOML', 1], ['schema_version = 1\n[github]\n', 2],
       ['schema_version = 1\n[tools]\n', 2], ['schema_version = 1\n[bootstrap]\n', 2], ['schema_version = 1\n[custom]\n', 2]]) {
-      write(config,text);const sc=scenario(), r=await doctor(f.root,sc);
+      writeConfiguration(config,text);const sc=scenario(), r=await doctor(f.root,sc);
       assert.equal(byId(r,'config.toml').status,'invalid');
       assert.equal(byId(r,'config.toml').reason, 'config_unsupported_syntax_or_field:' + line);
       assert.equal(byId(r,'config.repo.remote.account').blocked_by,'config.toml');
       for (const field of ['mode', 'name', 'email']) assert.equal(byId(r, 'config.git.user.' + field).blocked_by, 'config.toml');
       assert.ok(!sc.calls.some(c=>['api','read','gh_repo'].includes(c.key)));
     }
-    write(config, configText.replace('credential.mode = "inherit"\n', ''));
+    writeConfiguration(config, configText.replace('credential.mode = "inherit"\n', ''));
     assert.equal(byId(await doctor(f.root, scenario()), 'config.git.credential.mode').reason, 'config_missing_git_credential_mode');
     for (const [user, errors, blocker] of [
       ['', { mode: 'config_missing_git_user_mode' }, 'mode'],
@@ -431,7 +440,7 @@ test('doctor combines independent checks once; offline never invokes network or 
       ['user.mode = "inherit"\nuser.name = "Configured"\nuser.email = "configured@example.test"\n',
         { name: 'config_git_user_inherit_conflict', email: 'config_git_user_inherit_conflict' }, 'name'],
     ]) {
-      write(config, configText.replace('user.mode = "inherit"\n', user));
+      writeConfiguration(config, configText.replace('user.mode = "inherit"\n', user));
       const sc = scenario(), r = await doctor(f.root, { ...sc, offline: true });
       assert.equal(r.status, 'needs_attention');
       for (const field of ['mode', 'name', 'email']) {
@@ -452,7 +461,7 @@ test('doctor combines independent checks once; offline never invokes network or 
       assert.equal(byId(r, 'folder.git.identity').blocked_by, 'config.git.user.' + blocker);
       assert.ok(!sc.calls.some(c => c.key === 'author'));
     }
-    write(config, configText.replace('credential.mode = "inherit"', 'credential.mode = "gh"'));
+    writeConfiguration(config, configText.replace('credential.mode = "inherit"', 'credential.mode = "gh"'));
     const noToken = scenario({ token: { ok: false, reason: 'command_failed', text: 'PRIVATE_TOKEN' } });
     const failedGh = await doctor(f.root, noToken);
     assert.equal(byId(failedGh, accountId).reason, 'account_token_unavailable');
@@ -461,7 +470,7 @@ test('doctor combines independent checks once; offline never invokes network or 
     assert.ok(!JSON.stringify(failedGh).includes('PRIVATE_TOKEN'));
     rmSync(config); const missing=await doctor(f.root,scenario());
     assert.equal(byId(missing,'config.toml').reason,'config_missing');
-    assert.deepEqual(byId(missing,'config.toml').commands[0].args, ['set', 'repo.remote.account', '<value>']);
+    assert.deepEqual(byId(missing,'config.toml').commands[0].args, ['init']);
     await assert.rejects(doctor('.'),/repository_must_be_absolute/);
   } finally {f.dispose();}
 });
@@ -471,7 +480,7 @@ test('doctor probes only published tools and reports minimal repair hints withou
   try {
     const exe=compile(f.root), git=findGit(), gh=join(f.root,'bound/gh.exe'), decoy=join(f.root,'path/gh.exe');
     stub(exe,gh); stub(exe,decoy,'fail');
-    write(join(f.root,'.agents/skills/gidd/config.toml'),configText);
+    writeConfiguration(join(f.root,'.agents/skills/gidd/config.toml'),configText);
     const invoke=()=>json(diagnosis(f.root,{env:{PATH:dirname(decoy)}}));
     assert.equal(byId(invoke(),'tool.gh').reason,'tool_bindings_missing');
     bindFixture(f.root,{git,gh});
@@ -499,7 +508,7 @@ test('doctor probes only published tools and reports minimal repair hints withou
     assert.equal(byId(invoke(),'tool.gh').reason,'tool_bindings_invalid');
     bindFixture(f.root,{git});
     assert.equal(byId(invoke(),'tool.git').status,'ready'); assert.equal(byId(invoke(),'tool.gh').reason,'tool_binding_missing');
-    write(join(f.root,'.agents/skills/gidd/config.toml'),'invalid TOML');
+    writeConfiguration(join(f.root,'.agents/skills/gidd/config.toml'),'invalid TOML');
     assert.equal(byId(invoke(),'tool.git').status,'ready','Broken repo config does not hide bound tools');
     const managedGh=join(toolsRoot(f.root),'gh/gh.exe'); stub(exe,managedGh);
     bindFixture(f.root,{git,gh:managedGh});
@@ -531,13 +540,13 @@ test('doctor distinguishes managed runtimes from external runtimes reached throu
 });
 
 test('doctor offline validates real worktrees, config, authors and selected remotes without writes', {timeout:120000}, async () => {
-  const worktreeConfig = configText.replace('owner/repo', 'swawhq/gidd');
+  let worktreeConfig = configText.replace('owner/repo', 'swawhq/gidd');
   const f=fixture();
   try {
     const git=findGit(), gh=join(f.root,'bound/gh.exe'); stub(compile(f.root),gh); bindFixture(f.root,{git,gh});
     const repository=join(f.root,'repo 中文 & spaces'); mkdirSync(repository);
     const config=join(repository,'.agents/skills/gidd/config.toml');
-    write(config,worktreeConfig);
+    writeConfiguration(config,worktreeConfig);
     const invoke=(args,target=repository)=>ok(run(git,['-C',target,...args]));
     const diagnose=(target=repository)=>{
       const before=snapshot(f.root), output=diagnosis(target,{env:{PATH:''}}), report=json(output);
@@ -567,14 +576,14 @@ test('doctor offline validates real worktrees, config, authors and selected remo
     assert.equal(byId(diagnose(),'config.repo.remote.url').status,'ready','Use the configured remote, not hardcoded origin');
     invoke(['remote','rename','upstream','origin']);
     for (const key of ['account','name','url']) {
-      write(config,worktreeConfig.replace(new RegExp('^remote\\.'+key+' = .*\\n','m'),''));
+      writeConfiguration(config,worktreeConfig.replace(new RegExp('^remote\\.'+key+' = .*\\n','m'),''));
       assert.equal(byId(diagnose(),`config.repo.remote.${key}`).reason,`config_missing_repo_remote_${key}`);
-      write(config,worktreeConfig.replace(new RegExp('^remote\\.'+key+' = .*','m'),'remote.'+key+' = "PRIVATE_TOKEN:invalid"'));
+      writeConfiguration(config,worktreeConfig.replace(new RegExp('^remote\\.'+key+' = .*','m'),'remote.'+key+' = "PRIVATE_TOKEN:invalid"'));
       const r=diagnose(); assert.equal(byId(r,`config.repo.remote.${key}`).reason,`config_invalid_repo_remote_${key}`);
       assert.equal(byId(r,'config.toml').status,'ready');
       assert.ok(!JSON.stringify(r).includes('PRIVATE_TOKEN'));
     }
-    write(config,worktreeConfig);
+    writeConfiguration(config,worktreeConfig);
     for (const [url,reason] of [['https://GitHub.com/SwawHQ/gidd.git/',undefined],
       ['git@github.com:SwawHQ/gidd.git',undefined],['ssh://git@github.com:22/SwawHQ/gidd',undefined],
       ['https://elsewhere.test/SwawHQ/gidd','repository_address_mismatch'],
@@ -597,7 +606,7 @@ test('doctor offline validates real worktrees, config, authors and selected remo
     assert.equal(byId(fixed,'config.toml').details.path,join(nested,'.agents/skills/gidd/config.toml'));
     assert.equal(byId(fixed,'config.toml').reason,'config_missing','A bound target must not inherit parent config');
     assert.equal(byId(fixed,'folder.git.worktree').reason,'not_git_repository');
-    write(config,worktreeConfig.replace('github.com','github.example.invalid'));
+    writeConfiguration(config,worktreeConfig.replace('github.com','github.example.invalid'));
     invoke(['remote','set-url','origin','ssh://git@github.example.invalid/Team/Repo.git']);
     const movedIdentity=byId(diagnose(),'config.repo.remote.url');
     assert.equal(movedIdentity.reason,'repository_address_mismatch');

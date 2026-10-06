@@ -411,7 +411,7 @@ test('shell doctor and .gh.auth preserve JavaScript results, events and exit cod
   try {
     const s = installation(f), git = findGit();
     const config = join(s.target,'.agents/skills/gidd/config.toml');
-    const configured = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[spec]\ncurrent = "issue.current-worktree.direct-commit/00.auto"\n[repo]\nremote.account = "Octocat"\nremote.name = "fixture"\nremote.url = "https://github.com/owner/repo"\n';
+    const configured = 'schema_version = 1\n[repo]\nremote.name = "fixture"\nremote.url = "https://github.com/owner/repo"\nremote.account = "Octocat"\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[spec]\ncurrent = "issue.current-worktree.direct-commit/00.auto"\n';
     write(config,configured);
     for (const args of [['init'], ['config','user.name','Fixture Author'], ['config','user.email','author@example.test'],
       ['remote','add','fixture','git@github.com:owner/repo.git']]) ok(run(git, ['-C',s.target,...args]));
@@ -518,7 +518,7 @@ test('top-level configuration commands create and edit defaults; .gh.auth reject
     const missing = s.invoke(['.gh.auth'],env);
     assert.equal(json(missing).reason,'config_missing_repo_remote_url');
     for (const args of [['.gh.auth','--account','Octocat'],['.gh.auth','--hostname','github.com'],['.gh.auth','--remote','origin'],['.gh.auth','Octocat']]) {
-      assert.equal(json(s.invoke([...args],env)).reason,'github_parameters_moved_to_config');
+      assert.equal(json(s.invoke([...args],env)).reason,'invalid_arguments');
     }
     for (const [key,value] of [['account','Octocat'],['name','upstream'],['url','https://github.com/owner/repo']]) {
       const result = json(ok(s.invoke(['set',`repo.remote.${key}`,value],env)));

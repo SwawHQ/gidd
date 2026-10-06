@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { parseConfiguration, stringPattern } from './storage.mjs';
 import { validateSpecName, specSelectionHint, specCatalogHint } from './specs.mjs';
 import { validateGitField } from './git-settings.mjs';
+import { ensureLocalIgnore } from './managed-storage.mjs';
 
 const initialConfiguration = 'schema_version = 1\n\n[repo]\nremote.name = "origin"\n';
 const editableKey = /^(?:repo\.remote\.(?:name|url|account)|git\.(?:user\.(?:mode|name|email)|credential\.mode)|spec\.current)$/;
@@ -175,14 +176,15 @@ export function configure(repository, action, key, value) {
   const lockPath = path + '.lock', temporary = path + '.' + randomUUID() + '.tmp';
   let lock;
   try {
-    try { lock = openSync(lockPath, 'wx'); }
+    try { lock = openSync(lockPath, 'wx'); writeFileSync(lock, JSON.stringify({ pid: process.pid }) + '\n'); }
     catch (error) { if (error.code === 'EEXIST') throw new Error('config_locked'); throw error; }
     const original = existsSync(path) ? readText(path) : null;
     if (clear && original === null) return { ...report, changed: false };
     const text = original ?? initialConfiguration;
-    const result = editConfiguration(text, key, value, { clear });
+    let result = editConfiguration(text, key, value, { clear });
     if (clear && result === original) return { ...report, changed: false };
     parseConfiguration(result);
+    if (original === null) ensureLocalIgnore(repository);
     const fd = openSync(temporary, 'wx');
     try { writeFileSync(fd, result, 'utf8'); fsyncSync(fd); } finally { closeSync(fd); }
     plainPath(path);

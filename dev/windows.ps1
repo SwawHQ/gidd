@@ -63,7 +63,7 @@ try {
     if ($Command -notin @('.info','.setup','.test','.test-bun','.test-node','.test-live','bun','node')) { throw 'Unknown command. Use dev.cmd .help.' }
     if ($Command -eq '.info' -and $Argument) { throw '.info takes no arguments.' }
     if ($Command -eq '.test-live' -and $Argument) { throw '.test-live takes no arguments.' }
-    if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev','config','github','entry','spec')) { throw 'Unknown test suite.' }
+    if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev','config','github','entry','spec','worktree','workflow','data','init')) { throw 'Unknown test suite.' }
     foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','doctor/platform.ps1')) { . (Join-Path $codeRoot $file) }
     if ((Get-DoctorPlatformCheck).status -ne 'ready') { throw 'unsupported_platform' }
     $storage = Resolve-GiddToolStorage

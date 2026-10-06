@@ -7,7 +7,7 @@ import { join } from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const [command, argument = '', ...extra] = process.argv.slice(2);
-const suites = ['doctor', 'setup', 'process', 'dev', 'config', 'github', 'entry', 'spec'];
+const suites = ['doctor', 'setup', 'process', 'dev', 'config', 'github', 'entry', 'spec', 'worktree', 'workflow', 'data', 'init'];
 if (process.platform !== 'win32') {
   console.error('Development tests currently require Windows. Other platforms are not yet verified.');
   process.exit(1);
@@ -15,11 +15,12 @@ if (process.platform !== 'win32') {
 if (extra.length || !['.test', '.test-live'].includes(command) ||
     (command === '.test-live' && argument) ||
     (command === '.test' && argument && argument !== 'all' && !suites.includes(argument))) {
-  console.error('Use dev.cmd .test [all|doctor|setup|process|dev|config|github|entry|spec] or .test-live.');
+  console.error('Use dev.cmd .test [all|doctor|setup|process|dev|config|github|entry|spec|worktree|workflow|data|init] or .test-live.');
   process.exit(1);
 }
 const files = command === '.test-live' ? ['tests/live.test.mjs'] :
-  (argument && argument !== 'all' ? [argument] : suites).flatMap(suite => suite === 'entry'
+  (argument && argument !== 'all' ? [argument] : suites).flatMap(suite => suite === 'workflow'
+    ? ['tests/issue-workflow.test.mjs', 'tests/workflow.test.mjs'] : suite === 'entry'
     ? ['tests/entry.test.mjs', 'tests/repository-entry.test.mjs'] : suite === 'github'
       ? ['tests/github.test.mjs', 'tests/execution.test.mjs'] : [`tests/${suite}.test.mjs`]);
 console.log(`Runtime: ${process.versions.bun ? 'Bun ' + process.versions.bun : 'Node ' + process.versions.node}`);
@@ -61,7 +62,7 @@ console.log(`\nSuite summary: ${results.length - failures.length} passed, ${fail
 const quote = value => `'${value.replaceAll("'", "''")}'`;
 for (const { file, seconds } of failures) {
   const rerun = command === '.test-live' ? '.test-live' :
-    `.test-${process.versions.bun ? 'bun' : 'node'} ${file.includes('repository-entry') ? 'entry' : file.includes('execution.test') ? 'github' : file.split('/').at(-1).replace('.test.mjs', '')}`;
+    `.test-${process.versions.bun ? 'bun' : 'node'} ${file.includes('issue-workflow') ? 'workflow' : file.includes('repository-entry') ? 'entry' : file.includes('execution.test') ? 'github' : file.split('/').at(-1).replace('.test.mjs', '')}`;
   console.log(`FAIL ${file} (${seconds}s)\nRerun (PowerShell): & ${quote(fileURLToPath(new URL('../dev.cmd', import.meta.url)))} ${rerun}`);
 }
 process.exit(failures.length ? 1 : 0);

@@ -5,6 +5,7 @@ import * as gh from './checks/tool.gh.mjs';
 import * as worktree from './checks/folder.git.worktree.mjs';
 import * as identity from './checks/folder.git.identity.mjs';
 import * as configuration from './checks/config.toml.mjs';
+import * as storage from './checks/folder.gidd.mjs';
 import * as remoteName from './checks/config.repo.remote.name.mjs';
 import * as remoteUrl from './checks/config.repo.remote.url.mjs';
 import * as remoteAccount from './checks/config.repo.remote.account.mjs';
@@ -24,7 +25,7 @@ import * as onlineRemote from './checks/config.repo.remote.url..online.mjs';
 // Shared observations stay in the invocation context, never on a module singleton.
 export const registry = Object.freeze([
   platform, runtime, git, gh,
-  worktree, identity,
+  worktree, identity, storage,
   configuration, remoteName, remoteUrl, remoteAccount,
   userMode, userName, userEmail, credentialMode, spec,
   onlineAccount, onlineRemote,

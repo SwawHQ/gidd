@@ -1,10 +1,32 @@
-[zh-CN."*"]
+[zh-CN."*.direct-commit"]
 title = "push"
 body = '''
-将本模式确定的待推送分支，推送到配置的工作远端同名分支，确认远端确已收到本批提交。
-留意实际推送地址及待发布范围，避免连带推送其他任务的未发布提交、其他分支或标签。
+执行 `gidd.link workflow.push <Issue编号>`，将本地目标分支推送到工作远端的同名分支，包含全部已提交内容，不推送其他分支或标签。
+受阻时进入 push_error 环节处理。
 '''
 
-[en."*"]
+[zh-CN."*.direct-merge"]
+title = "push"
+body = '''
+确认开发成果已合入本地目标分支后，执行 `gidd.link workflow.push <Issue编号>`；命令按记录将目标分支推送到工作远端的同名分支，包含全部已提交内容，不推送其他分支或标签。
+受阻时进入 push_error 环节处理。
+'''
+
+[zh-CN."*.pr-merge"]
+title = "push"
+body = '''
+执行 `gidd.link workflow.push <Issue编号>`，将开发分支推送到工作远端的同名分支，包含全部已提交内容，不推送其他分支或标签。
+受阻时进入 push_error 环节处理。
+'''
+
+[en."*.direct-commit"]
+title = ""
+body = ""
+
+[en."*.direct-merge"]
+title = ""
+body = ""
+
+[en."*.pr-merge"]
 title = ""
 body = ""

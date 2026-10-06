@@ -9,8 +9,10 @@ push                = ["auto", "ask"]
 push_error          = ["auto", "ask"]
 pr_merge            = ["auto", "ask"]
 pr_merge_error      = ["auto", "ask"]
+target_sync         = ["auto", "ask"]
+target_sync_error   = ["auto", "ask"]
 close_issue         = ["auto", "ask"]
-cleanup_sync        = ["auto", "ask"]
+cleanup             = ["auto", "ask"]
 
 [issue_template]
 zh-CN = "../../references/issue.zh-CN.json"

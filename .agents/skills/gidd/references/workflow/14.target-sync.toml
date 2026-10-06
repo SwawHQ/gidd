@@ -1,0 +1,10 @@
+[zh-CN."*.pr-merge"]
+title = "同步本地目标分支"
+body = '''
+PR 合并后，执行 `gidd.link workflow.target-sync <Issue编号>`，核验交付并快进更新本地目标分支；目标分支已在别处检出时，命令在对应目录处理。注意保留用户及并行任务的改动。
+受阻时进入 target-sync-error 环节处理。
+'''
+
+[en."*.pr-merge"]
+title = ""
+body = ""

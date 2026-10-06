@@ -2,10 +2,10 @@ GIDD prerequisites preparation (Windows x64 / PowerShell 5.1)
 
   gidd.pre.ensure help en          #Show English help
   gidd.pre.ensure help zh          #Show Chinese help
-  gidd.pre.ensure --repo <path>    #Ensure JS runtime, Git and gh are available; create the repository's gidd.link.cmd
+  gidd.pre.ensure --repo <path>    #Prepare tools and entry, then initialize via gidd.link init
   gidd.pre.ensure --repo <path> --jsruntime=node #As above, selecting Node (otherwise, GIDD auto-selects Bun or Node)
   gidd.pre.ensure --repo <path> --force #Download and set up portable copies of the JS runtime, Git and gh again
-  gidd.pre.ensure --repo <path> --check #Check availability (read-only)
+  gidd.pre.ensure --repo <path> --check #Check tools and the repository entry (read-only)
   gidd.pre.ensure --tools-only=git #Prepare only git; --tools-only cannot be combined with --repo; likewise below
   gidd.pre.ensure --tools-only=gh
   gidd.pre.ensure --tools-only=bun
