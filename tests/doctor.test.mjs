@@ -7,7 +7,7 @@ import { configure } from '../.agents/skills/gidd/scripts.js/shared/config.mjs';
 import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/shared/storage.mjs';
 import { bindFixture, copySkill, diagnosis, toolsRoot, assert, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, readFileSync, repo, rmSync, run, snapshot, stub, write, initializeDataFixture } from './support/helpers.mjs';
 
-const configText = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[spec]\ncurrent = "issue.current-worktree.direct-commit/00.auto"\n[repo]\nremote.account = "Octocat"\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\n';
+const configText = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[spec]\ncurrent = "direct-commit/00.auto"\n[repo]\nremote.account = "Octocat"\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\n';
 const checkOrder = [
   'tool.platform', 'tool.js_runtime', 'tool.git', 'tool.gh',
   'folder.git.worktree', 'folder.git.identity', 'folder.gidd',

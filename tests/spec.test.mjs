@@ -12,7 +12,7 @@ import { publishRepositoryEntry, runRepositoryCommand } from './support/reposito
 import { adapter, assert, copySkill, dirname, fixture, join, json, mkdirSync, ok,
   readFileSync, rmSync, snapshot, write } from './support/helpers.mjs';
 
-const mode = 'issue.current-worktree.direct-commit', directory = '00.' + mode, auto = directory + '/00.auto', ask = directory + '/04.ask-commit';
+const mode = 'direct-commit', directory = '00.' + mode, auto = directory + '/00.auto', ask = directory + '/04.ask-commit';
 const configText = selector => 'schema_version = 1\n[spec]\ncurrent = "' + selector + '"\n';
 const configPath = root => join(root, '.agents/skills/gidd/config.toml');
 const check = report => report.checks.find(item => item.id === 'config.spec.current');
@@ -66,9 +66,9 @@ test('three Issue modes list their own presets, authorizations and incomplete la
 test('fixed mode IDs resolve the same resources and prompts as full mode names', () => {
   const catalog = discoverModes();
   assert.deepEqual(catalog.map(({ id, name }) => [id, name]), [
-    ['00', 'issue.current-worktree.direct-commit'],
-    ['01', 'issue.dedicated-worktree.direct-merge'],
-    ['02', 'issue.dedicated-worktree.pr-merge'],
+    ['00', 'direct-commit'],
+    ['01', 'direct-merge'],
+    ['02', 'pr-merge'],
   ]);
   for (const { id, name, directory } of catalog) {
     assert.deepEqual(listSpecs(id), listSpecs(name));
@@ -148,18 +148,17 @@ test('mode flows distinguish local merge before push from PR merge after push', 
     const spec = loadSpec(name + '/00.auto'), flow = spec.definition.flow;
     assert.ok(flow.indexOf('internal_acceptance') < flow.indexOf('add'));
     assert.ok(flow.indexOf('commit') < flow.indexOf('push'));
-    assert.equal(flow.includes('close_issue'), name.startsWith('issue.'));
+    assert.ok(flow.includes('close_issue'));
     assert.ok(!flow.some(step => step.endsWith('_error')));
     assert.equal(flow.at(-1), 'cleanup');
-    assert.equal(flow.includes('target_sync'), name.endsWith('.pr-merge'));
-    if (name.endsWith('.direct-commit')) {
+    assert.equal(flow.includes('target_sync'), name === 'pr-merge');
+    if (name === 'direct-commit') {
       assert.ok(!flow.includes('direct_merge') && !flow.includes('pr_merge') && !flow.includes('pr_create'));
       assert.deepEqual(spec.definition.errors, ['push_error']);
-    } else if (name.endsWith('.pr-merge')) {
+    } else if (name === 'pr-merge') {
       assert.deepEqual(spec.definition.errors, ['push_error', 'pr_merge_error', 'target_sync_error']);
       assert.ok(flow.indexOf('push') < flow.indexOf('pr_create') && flow.indexOf('pr_create') < flow.indexOf('pr_merge'));
-      assert.deepEqual(flow.slice(flow.indexOf('pr_merge')), ['pr_merge', 'target_sync',
-        ...(name.startsWith('issue.') ? ['close_issue'] : []), 'cleanup']);
+      assert.deepEqual(flow.slice(flow.indexOf('pr_merge')), ['pr_merge', 'target_sync', 'close_issue', 'cleanup']);
       assert.ok(!flow.includes('direct_merge'));
     } else {
       assert.deepEqual(spec.definition.errors, ['direct_merge_error', 'push_error']);
@@ -179,10 +178,10 @@ test('rendered error guidance follows its triggering stage and cleanup remains l
   for (const mode of modeNames) {
     const spec = loadSpec(mode + '/00.auto');
     for (const error of spec.definition.errors) spec.authorization[error] = 'ask';
-    const delivery = mode.endsWith('.direct-commit') ? ['push', 'push_error'] : mode.endsWith('.direct-merge')
+    const delivery = mode === 'direct-commit' ? ['push', 'push_error'] : mode === 'direct-merge'
       ? ['direct_merge', 'direct_merge_error', 'push', 'push_error'] : ['push', 'push_error', 'pr_create', 'pr_merge', 'pr_merge_error'];
     const expected = ['task_definition', 'workspace', 'development', 'internal_acceptance', 'add', 'commit',
-      ...delivery, ...(mode.endsWith('.pr-merge') ? ['target_sync', 'target_sync_error'] : []),
+      ...delivery, ...(mode === 'pr-merge' ? ['target_sync', 'target_sync_error'] : []),
       'close_issue', 'cleanup'];
     for (const lang of ['zh-CN', 'en']) {
       // Fill only this in-memory fixture; shipped translations remain unfinished.
@@ -259,7 +258,7 @@ test('merge authorizations enforce the mode and keep each error grant independen
       const selector = directory + '/00.auto', spec = s.load(selector);
       const original = readSpecToml(spec.path), description = spec.definition.path;
       const schema = readSpecToml(description);
-      const active = name.endsWith('.direct-merge') ? 'direct_merge' : name.endsWith('.pr-merge') ? 'pr_merge' : undefined;
+      const active = name === 'direct-merge' ? 'direct_merge' : name === 'pr-merge' ? 'pr_merge' : undefined;
       for (const key of ['direct_merge', 'direct_merge_error', 'pr_merge', 'pr_merge_error']) {
         const applies = key === active || key === active + '_error';
         assert.equal(original.authorization[key], applies ? 'auto' : 'not_applicable');
@@ -296,7 +295,7 @@ test('target synchronization is PR-only and has independent sync, error and clea
   try {
     const s = resources(f);
     for (const { directory, name } of discoverModes(s.root)) {
-      const selector = directory + '/00.auto', spec = s.load(selector), pr = name.endsWith('.pr-merge');
+      const selector = directory + '/00.auto', spec = s.load(selector), pr = name === 'pr-merge';
       const original = readSpecToml(spec.path), schema = readSpecToml(spec.definition.path);
       assert.equal(original.authorization.cleanup, 'auto');
       assert.ok(!Object.hasOwn(original.authorization, 'cleanup_sync'));
@@ -382,7 +381,7 @@ test('TOML supports quoted patterns and multiline prose without include or comma
   const f = fixture();
   try {
     const s = resources(f), path = s.experience('06.commit');
-    write(path, '[zh-CN."issue.*"]\ntitle = "commit"\nbody = \'\'\'\n第一行\n@include ../../outside@\n@gidd.link spec.issue.current@\n\'\'\'\n[en."issue.*"]\ntitle = ""\nbody = ""\n');
+    write(path, '[zh-CN."*"]\ntitle = "commit"\nbody = \'\'\'\n第一行\n@include ../../outside@\n@gidd.link spec.issue.current@\n\'\'\'\n[en."*"]\ntitle = ""\nbody = ""\n');
     const before = snapshot(f.root), text = renderSpec(f.root, s.load(), 'zh-CN');
     assert.match(text, /第一行\n@include ..\/..\/outside@\n@gidd.link spec.issue.current@/);
     assert.deepEqual(snapshot(f.root), before);
@@ -397,17 +396,18 @@ test('TOML supports quoted patterns and multiline prose without include or comma
 });
 
 test('pattern matching is anchored, only star is special, and ambiguity is rejected', () => {
-  assert.ok(matchesMode('issue.*', mode)); assert.ok(!matchesMode('issue.*', 'no-' + mode));
-  assert.ok(matchesMode('*.pr-merge', modeNames[2])); assert.ok(!matchesMode('issue.*', 'issueXcurrent'));
+  assert.ok(matchesMode('direct-*', mode)); assert.ok(!matchesMode('direct-*', 'no-' + mode));
+  assert.ok(matchesMode('*-merge', modeNames[2])); assert.ok(!matchesMode('direct.*', 'directXcommit'));
+  assert.ok(matchesMode('direct-*', 'direct-a.b')); assert.ok(!matchesMode('direct-?', mode));
   const f = fixture();
   try {
     const s = resources(f), path = s.experience('06.commit'), original = readSpecToml(path);
     const attempt = (change, reason) => { const data = structuredClone(original); change(data); write(path, stringify(data)); assert.throws(s.load, new RegExp(reason)); };
-    attempt(data => { for (const lang of ['en', 'zh-CN']) data[lang]['*'] = data[lang]['issue.*']; }, 'spec_pattern_ambiguous');
-    attempt(data => { for (const lang of ['en', 'zh-CN']) { data[lang]['*.pr-merge'] = data[lang]['issue.*']; delete data[lang]['issue.*']; } }, 'spec_pattern_missing');
-    attempt(data => { data.en['*'] = data.en['issue.*']; delete data.en['issue.*']; }, 'spec_pattern_mismatch');
-    attempt(data => { data.en['never.*'] = data.en['issue.*']; }, 'spec_pattern_invalid');
-    attempt(data => { data.en['issue.?'] = data.en['issue.*']; }, 'spec_pattern_invalid');
+    attempt(data => { for (const lang of ['en', 'zh-CN']) data[lang]['direct-*'] = data[lang]['*']; }, 'spec_pattern_ambiguous');
+    attempt(data => { for (const lang of ['en', 'zh-CN']) { data[lang]['pr-merge'] = data[lang]['*']; delete data[lang]['*']; } }, 'spec_pattern_missing');
+    attempt(data => { data.en['direct-*'] = data.en['*']; delete data.en['*']; }, 'spec_pattern_mismatch');
+    attempt(data => { data.en['never.*'] = data.en['*']; }, 'spec_pattern_invalid');
+    attempt(data => { data.en['direct-?'] = data.en['*']; }, 'spec_pattern_invalid');
     write(path, stringify(original)); assert.deepEqual(s.load().available_languages, ['zh-CN']);
   } finally { f.dispose(); }
 });
@@ -501,7 +501,8 @@ test('selection preserves config comments and newline style, and rejects invalid
       assert.equal(parseConfiguration(readFileSync(path, 'utf8')).spec.current, selector);
     }
     const before = snapshot(f.root);
-    for (const selector of ['02.issue', '00.all.auto', '07/00.auto', '1/00.auto', mode + '/description', mode + '/missing', '00/99']) {
+    for (const selector of ['02.unknown', '00.all.auto', '07/00.auto', '1/00.auto', mode + '/description', mode + '/missing', '00/99',
+      'issue.' + mode + '/00.auto', '00.issue.' + mode + '/00.auto']) {
       assert.throws(() => configure(f.root, 'set', 'spec.current', selector), /spec_/);
       assert.deepEqual(snapshot(f.root), before);
     }
@@ -539,7 +540,7 @@ test('repository commands support discovery, selection, current prompts and temp
   } finally { f.dispose(); }
 });
 
-test('doctor validates only the selected dependencies, supports partial translations, and guides old selections', () => {
+test('doctor validates only the selected dependencies, supports partial translations, and guides unsupported selections', () => {
   const f = fixture();
   try {
     const s = installation(f, configText('00/04'));
@@ -566,10 +567,10 @@ test('doctor validates only the selected dependencies, supports partial translat
       assert.equal(blocked.details.field, key);
       write(mergePath, original);
     }
-    write(configPath(s.target), configText('02.issue'));
-    const before = snapshot(f.root), old = check(s.diagnose());
-    assert.equal(old.reason, 'spec_current_unsupported');
-    assert.deepEqual(old.commands.map(command => command.args), [['spec.modes'], ['spec.list', '<mode-id>'], ['spec', '<mode-id>/<name>'], ['set', 'spec.current', '<mode-id>/<name>']]);
+    write(configPath(s.target), configText('02.unknown'));
+    const before = snapshot(f.root), unsupported = check(s.diagnose());
+    assert.equal(unsupported.reason, 'spec_current_unsupported');
+    assert.deepEqual(unsupported.commands.map(command => command.args), [['spec.modes'], ['spec.list', '<mode-id>'], ['spec', '<mode-id>/<name>'], ['set', 'spec.current', '<mode-id>/<name>']]);
     assert.deepEqual(snapshot(f.root), before);
     write(configPath(s.target), 'schema_version = 1\n');
     assert.equal(check(s.diagnose()).reason, 'spec_current_missing');

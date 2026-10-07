@@ -30,7 +30,7 @@ test('issue guidance uses only the public preparation and repository commands', 
     const s = setup(f), target = s.create('issue lifecycle');
     ok(s.ensure(target));
     const invoke = args => s.invoke(s.link(target), args, { env: { PATH: '' } });
-    for (const [key,value] of [['spec.current','issue.current-worktree.direct-commit/00.auto'],['git.user.mode','inherit'],['git.credential.mode','inherit'],
+    for (const [key,value] of [['spec.current','direct-commit/00.auto'],['git.user.mode','inherit'],['git.credential.mode','inherit'],
       ['repo.remote.account','Octocat'],['repo.remote.name','origin'],['repo.remote.url','https://github.com/Team/Repo']]) {
       ok(invoke(['set',key,value]));
     }
@@ -40,10 +40,10 @@ test('issue guidance uses only the public preparation and repository commands', 
     assert.equal(json(ok(invoke(['doctor','--offline']))).status,'local_ready');
     const source = ok(invoke(['spec.current','--lang','zh'])).stdout.match(/^提示来源: `([^`\r\n]+)`/m);
     assert.ok(source, 'The printed spec must identify its source file');
-    assert.equal(realpathSync.native(source[1]), realpathSync.native(join(s.skill, 'specs/00.issue.current-worktree.direct-commit/00.auto.toml')));
+    assert.equal(realpathSync.native(source[1]), realpathSync.native(join(s.skill, 'specs/00.direct-commit/00.auto.toml')));
     const form = json(ok(invoke(['spec.issue.current','--lang','en']))).form;
     assert.deepEqual(form.body.map(field => field.id), ['requirements', 'acceptance', 'completion']);
-    assert.match(ok(invoke(['spec.current','--lang','zh'])).stdout, /gidd\.link spec\.issue 00\.issue\.current-worktree\.direct-commit\/00\.auto --lang zh/);
+    assert.match(ok(invoke(['spec.current','--lang','zh'])).stdout, /gidd\.link spec\.issue 00\.direct-commit\/00\.auto --lang zh/);
     const config = readFileSync(join(target,'.agents/skills/gidd/config.toml'));
     write(s.link(target),'damaged entry');
     assert.notEqual(s.ensure(target,['--check']).status,0);

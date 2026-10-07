@@ -1,4 +1,4 @@
-[zh-CN."*.pr-merge"]
+[zh-CN."pr-merge"]
 title = "PR 合并"
 body = '''
 执行 `gidd.link workflow.merge <Issue编号>`，按记录的仓库、开发分支和目标分支查找对应 PR 并合并；按仓库约定可指定 `--squash` 或 `--rebase`。确认目标分支已收到本批交付；排队或等待时仍需最终确认。
@@ -7,6 +7,6 @@ body = '''
 
 
 
-[en."*.pr-merge"]
+[en."pr-merge"]
 title = ""
 body = ""

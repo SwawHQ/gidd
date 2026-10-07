@@ -1,8 +1,8 @@
 import { specFailure } from './spec-resources.mjs';
 
 // Workflow identities have no numbering; public IDs come from directory prefixes.
-export const modeNames = Object.freeze(['current-worktree.direct-commit', 'dedicated-worktree.direct-merge', 'dedicated-worktree.pr-merge'].map(rest => 'issue.' + rest));
-const modePattern = 'issue\\.(?:current-worktree\\.direct-commit|dedicated-worktree\\.(?:direct-merge|pr-merge))';
+export const modeNames = Object.freeze(['direct-commit', 'direct-merge', 'pr-merge']);
+const modePattern = '(?:' + modeNames.join('|') + ')';
 export const modeDirectoryPattern = new RegExp('^([0-9]{2})\\.(' + modePattern + ')$');
 const modeSelectorPattern = '(?:[0-9]{2}|(?:[0-9]{2}\\.)?' + modePattern + ')';
 const modeSelector = new RegExp('^' + modeSelectorPattern + '$');
@@ -29,7 +29,7 @@ export function parseSpecName(selector) {
 // from the normal path and never inherit another stage's grant.
 export function modePlan(name) {
   if (!modeNames.includes(name)) throw specFailure('spec_mode_unsupported');
-  const pr = name.endsWith('.pr-merge'), directMerge = name.endsWith('.direct-merge');
+  const pr = name === 'pr-merge', directMerge = name === 'direct-merge';
   const flow = ['task_definition', 'workspace', 'development', 'internal_acceptance', 'add', 'commit'];
   flow.push(...(pr ? ['push', 'pr_create', 'pr_merge'] : directMerge ? ['direct_merge', 'push'] : ['push']));
   // PR delivery updates the remote target. Synchronize the local target before

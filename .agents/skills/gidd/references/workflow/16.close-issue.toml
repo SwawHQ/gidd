@@ -1,29 +1,29 @@
-[zh-CN."issue.*direct-commit"]
+[zh-CN."direct-commit"]
 title = "Issue 关闭"
 body = '''
 确认 Issue 的[验收清单]已完成，并按本环节授权执行 `gidd.link workflow.close-issue <Issue编号>`；命令核验目标分支已推送后关闭 Issue。失败则报告原因，保留工作区供重试。
 '''
 
-[zh-CN."issue.*direct-merge"]
+[zh-CN."direct-merge"]
 title = "Issue 关闭"
 body = '''
 确认 Issue 的[验收清单]已完成，并按本环节授权执行 `gidd.link workflow.close-issue <Issue编号>`；命令核验开发分支已合并且目标分支已推送后关闭 Issue。失败则报告原因，保留工作区供重试。
 '''
 
-[zh-CN."issue.*pr-merge"]
+[zh-CN."pr-merge"]
 title = "Issue 关闭"
 body = '''
 确认 Issue 的[验收清单]已完成，并按本环节授权执行 `gidd.link workflow.close-issue <Issue编号>`；命令核验匹配的 PR 已合并、本地目标分支已同步，补建 Issue 的 Development 关联后关闭 Issue。失败则报告原因，保留工作区供重试。
 '''
 
-[en."issue.*direct-commit"]
+[en."direct-commit"]
 title = ""
 body = ""
 
-[en."issue.*direct-merge"]
+[en."direct-merge"]
 title = ""
 body = ""
 
-[en."issue.*pr-merge"]
+[en."pr-merge"]
 title = ""
 body = ""

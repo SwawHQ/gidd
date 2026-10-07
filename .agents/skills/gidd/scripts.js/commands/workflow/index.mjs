@@ -185,7 +185,7 @@ export async function workflowCommand(repository, options, { execute, signal, cw
       // Resolve the plan once. Issue prose never controls local delivery settings.
       const selector = readConfiguration(repository).spec.current;
       if (!selector) fail('spec_current_missing');
-      const mode = readSpec(selector).mode.split('.').at(-1);
+      const mode = readSpec(selector).mode;
       const workflow = snapshot(mode);
       const entry = (await rows()).find(row => same(row.path, repository));
       const base = entry?.branch, branch = mode === 'direct-commit' ? null : `codex/issue-${options.issue}`;

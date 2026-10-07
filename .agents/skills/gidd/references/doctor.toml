@@ -256,8 +256,8 @@ hint.en = "A workflow mode must have exactly one directory. Resolve the duplicat
 hint.zh-CN = "同一种模式只能对应一个目录。请处理 details.conflicts 列出的重复模式目录，然后重新运行 doctor。"
 
 [checks."config.spec.current".reasons."spec_mode_directory_invalid"]
-hint.en = "Use a two-digit prefix and supported mode name for each mode directory, such as 00.issue.current-worktree.direct-commit."
-hint.zh-CN = "模式目录使用两位数字前缀及受支持的模式名，例如 00.issue.current-worktree.direct-commit。"
+hint.en = "Use a two-digit prefix and supported mode name for each mode directory, such as 00.direct-commit."
+hint.zh-CN = "模式目录使用两位数字前缀及受支持的模式名，例如 00.direct-commit。"
 
 [checks."config.spec.current".reasons."spec_mode_missing"]
 hint.en = "Run gidd.link spec.modes to find the current directory IDs, then select an existing mode and spec."

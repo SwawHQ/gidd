@@ -1,4 +1,4 @@
-[zh-CN."issue.*pr-merge"]
+[zh-CN."pr-merge"]
 title = "创建或更新 PR"
 body = '''
 在工作远端查找以当前开发分支为来源、目标分支为目标的未关闭 PR；有则更新并复用，无则创建：`gidd.link .gh pr create --head <开发分支> --base <目标分支> ...`
@@ -6,6 +6,6 @@ PR 标题沿用提交消息格式，概括改动；正文说明整体改动和�
 使用 Refs #NNN 引用 Issue；Development 关联由 Issue 关闭环节建立。
 '''
 
-[en."issue.*pr-merge"]
+[en."pr-merge"]
 title = ""
 body = ""

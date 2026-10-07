@@ -26,18 +26,18 @@
 ```
 
 ```toml
-[zh-CN."issue.*"]
+[zh-CN."*"]
 title = "commit"
 body = '''
 提交参考经验。
 '''
 
-[en."issue.*"]
+[en."*"]
 title = ""
 body = ""
 ```
 
-表名由语言和完整的模式表达式组成。表达式匹配去掉目录编号后的整个模式名，例如 `00.issue.current-worktree.direct-commit` 使用 `issue.current-worktree.direct-commit` 匹配；`*` 匹配任意字符（包括点号），只支持这一种通配符，普通字符按原样匹配。
+表名由语言和完整的模式表达式组成。表达式匹配去掉目录编号后的整个模式名，例如 `00.direct-commit` 使用 `direct-commit` 匹配；`*` 匹配任意字符（包括点号），只支持这一种通配符，普通字符按原样匹配。
 
 同一文件、同一语言下，一个模式至多匹配一段，不叠加或按优先级覆盖。适用环节需要匹配的经验；`not_applicable` 环节不加载。经验匹配不决定执行顺序，也不增加模式原本没有的环节。
 

@@ -1,4 +1,4 @@
-[zh-CN."*.direct-merge"]
+[zh-CN."direct-merge"]
 title = "本地合并"
 body = '''
 执行 `gidd.link workflow.merge <Issue编号>`，将开发分支合入本地目标分支；需要合并提交时可用 `--message <标题>` 指定提交标题。确认本地目标分支已包含开发成果。
@@ -7,6 +7,6 @@ body = '''
 
 
 
-[en."*.direct-merge"]
+[en."direct-merge"]
 title = ""
 body = ""
