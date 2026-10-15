@@ -1,6 +1,7 @@
 {
   "name": "开发任务（中文）",
   "description": "记录开发任务的需求、验收清单（含验证方法与结果）及完成状态。",
+  "title": "[gidd] ",
   "body": [
     {
       "type": "textarea",
@@ -30,7 +31,7 @@
       "id": "completion",
       "attributes": {
         "label": "完成确认",
-        "value": "- [ ] 本任务的全部需求已通过验收，并按所选模式完成交付。"
+        "value": "- [ ] 本任务的全部需求已通过验收，并按所选工作流程完成交付。"
       },
       "validations": {
         "required": false

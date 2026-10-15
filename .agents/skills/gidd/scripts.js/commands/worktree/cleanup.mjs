@@ -1,30 +1,44 @@
 import { remoteAddress } from '../../shared/config.mjs';
 import { prConnection } from '../../shared/pull-requests.mjs';
+import { branchDetails } from '../../shared/workspace-branch.mjs';
+import { localDeliveryCommit } from '../../shared/local-delivery.mjs';
 
 const oid = value => typeof value === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value);
 const fail = reason => { throw new Error(reason); };
 export function validCleanupRecord(value) {
   return value && oid(value.head) && ['direct-merge', 'pr-merge'].includes(value.mode) &&
-    Object.keys(value).every(name => ['head', 'mode', 'pr', 'remote', 'identity'].includes(name)) &&
+    Object.keys(value).every(name => ['head', 'mode', 'pr', 'identity'].includes(name)) &&
     (value.mode === 'direct-merge' ? Object.keys(value).length === 2 :
-      Number.isSafeInteger(value.pr) && value.pr > 0 && typeof value.remote === 'string' &&
+      Number.isSafeInteger(value.pr) && value.pr > 0 &&
       typeof value.identity === 'string' && remoteAddress(value.identity)?.identity === value.identity);
 }
 
-export async function cleanupWorktree({ repository, record, git, rows, inspect, key, report, save, execute, signal }) {
-  const mode = record.workflow.mode;
+export async function cleanupWorktree({ repository, record, git, rows, inspect, key, report, save, execute, signal, account }) {
+  const mode = record.delivery.mode;
   if (!record.branch || !record.target_branch || !record.start_commit || record.branch === record.target_branch) fail('worktree_delivery_metadata_missing');
   if (record.cleanup && record.cleanup.mode !== mode) fail('worktree_cleanup_mode_mismatch');
   const branchRef = 'refs/heads/' + record.branch, targetRef = 'refs/heads/' + record.target_branch;
   for (const ref of [branchRef, targetRef]) await git(repository, ['check-ref-format', ref]);
   const localHead = async () => {
     // for-each-ref also matches descendants, so filter the complete ref name.
-    const refs = await git(repository, ['for-each-ref', '--format=%(refname) %(objectname)', branchRef]);
-    return refs.split('\n').find(line => line.startsWith(branchRef + ' '))?.slice(branchRef.length + 1) ?? null;
+    const refs = await git(repository, ['for-each-ref', '--format=%(refname) %(objectname) %(symref)', branchRef]);
+    const line = refs.split('\n').find(value => value.startsWith(branchRef + ' '));
+    if (!line) return null;
+    const [head, symbolic] = line.slice(branchRef.length + 1).split(' ');
+    if (symbolic) fail('worktree_branch_changed');
+    return head;
   };
   const original = (await rows()).find(item => key(item.path) === key(record.path));
   const reason = await inspect(original);
   if (reason) fail(reason);
+  if (record.ready_head && original.branch)
+    throw Object.assign(new Error('worktree_state_changed'), {
+      details: { path: record.path, ...branchDetails(null, original.branch) },
+    });
+  if (original.branch !== record.branch && !(record.cleanup && original.detached && original.head === record.cleanup.head))
+    throw Object.assign(new Error('worktree_branch_mismatch'), {
+      details: { path: record.path, ...branchDetails(record.branch, original.branch) },
+    });
   const head = record.cleanup?.head ?? original.head;
   if (!oid(head) || original.head !== head || (original.branch !== record.branch &&
       !(record.cleanup && original.detached))) fail('worktree_branch_mismatch');
@@ -38,10 +52,12 @@ export async function cleanupWorktree({ repository, record, git, rows, inspect, 
   await ancestor(record.start_commit, head);
   const target = await git(repository, ['rev-parse', '--verify', targetRef + '^{commit}']);
   let connection, proof;
-  if (mode === 'direct-merge') await ancestor(head, target);
-  else {
-    connection = await prConnection(repository, execute, signal);
-    if (record.cleanup && (record.cleanup.identity !== connection.target.repository || record.cleanup.remote !== connection.target.remote)) fail('worktree_cleanup_remote_changed');
+  if (mode === 'direct-merge') {
+    const commit = await localDeliveryCommit(record, head, target, args => git(repository, args));
+    if (record.local_merge && !record.local_merge.commit) record.local_merge = { head, commit };
+  } else {
+    connection = await prConnection(repository, execute, signal, { ...record, github_account: account });
+    if (record.cleanup && record.cleanup.identity !== connection.target.repository) fail('worktree_cleanup_remote_changed');
     proof = await connection.proof(record, head, record.cleanup?.pr);
     await ancestor(proof.merge, target); // includes squash/rebase result in local target
     const remote = await connection.remoteHead(record.branch);
@@ -50,7 +66,7 @@ export async function cleanupWorktree({ repository, record, git, rows, inspect, 
   // Persist only resource cleanup evidence. On interruption retain the source
   // commit, chosen PR and mode; the same command can resume after ref deletion.
   record.cleanup = { head, mode, ...(proof ? { pr: proof.number,
-    remote: connection.target.remote, identity: connection.target.repository } : {}) };
+    identity: connection.target.repository } : {}) };
   delete record.ready_head;
   save();
   const progress = { detached: !!original.detached, local_branch_deleted: branchHead === null, remote_branch_deleted: null };
@@ -71,7 +87,7 @@ export async function cleanupWorktree({ repository, record, git, rows, inspect, 
       if (tip !== head) fail('worktree_branch_changed');
       // branch -d checks upstream/HEAD instead of the recorded target, and -D
       // lacks an expected-old-OID argument. Delete only our verified ref value.
-      await git(repository, ['update-ref', '-d', branchRef, head]);
+      await git(repository, ['update-ref', '--no-deref', '-d', branchRef, head]);
     }
     progress.local_branch_deleted = true;
     const config = await git(repository, ['config', '--local', '--list', '--name-only']);
@@ -84,6 +100,6 @@ export async function cleanupWorktree({ repository, record, git, rows, inspect, 
   } catch (error) {
     return { ...report({ id: record.id, path: record.path, branch: record.branch, state: 'needs_check', ...progress }),
       status: 'error', reason: /^[a-z][a-z0-9_]*$/.test(error.message) ? error.message : 'operation_failed',
-      retry: `workflow.cleanup ${record.issue}` };
+      retry: `${record.issue}.cleanup` };
   }
 }

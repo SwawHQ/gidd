@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { boundExecutor } from './bindings.mjs';
-import { configurationPath, plainPath, repositoryRoot } from './storage.mjs';
+import { plainPath, repositoryRoot } from './storage.mjs';
 import { parseList, readRecords } from '../commands/worktree/index.mjs';
 import { locateStorage, registryLocation } from './managed-storage.mjs';
 
@@ -11,7 +11,7 @@ const key = path => canonical(path).toLowerCase();
 const same = (a, b) => key(a) === key(b);
 
 export async function executionScope(repository, { bindings, env, signal, cwd = process.cwd() }) {
-  const details = { cwd, entry_repository: repository, config: configurationPath(repository),
+  const details = { cwd, entry_repository: repository,
     execution_directory: cwd, detected_repository: null };
   const fail = reason => { throw Object.assign(new Error(reason), { executionScope: { ...details } }); };
   const invoke = boundExecutor(bindings);
@@ -33,7 +33,7 @@ export async function executionScope(repository, { bindings, env, signal, cwd = 
     if (!result.ok) fail('execution_registry_unavailable');
     return result.text;
   };
-  const storage = await locateStorage(repository, storageGit);
+  const storage = await locateStorage(repository, storageGit, { required: false });
   async function allowed(directory) {
     details.execution_directory = directory;
     details.detected_repository = null;
@@ -51,8 +51,8 @@ export async function executionScope(repository, { bindings, env, signal, cwd = 
       try { records = readRecords(registryLocation(storage), storage.path); }
       catch { fail('execution_registry_invalid'); }
     }
-    if (!rows.some(row => !row.bare && !row.prunable && same(row.path, actual.root)) ||
-        !records.some(record => same(record.path, actual.root))) fail('execution_worktree_unregistered');
+    const row = rows.find(row => !row.bare && !row.prunable && same(row.path, actual.root));
+    if (!row || !records.some(record => same(record.path, actual.root))) fail('execution_worktree_unregistered');
     return actual;
   }
   // Only validate where the entry is invoked. Explicit native target arguments

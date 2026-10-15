@@ -1,7 +1,8 @@
 import { test } from 'node:test';
-import { publishRepositoryEntry, runRepositoryCommand } from './support/repository.mjs';
+import { pathToFileURL } from 'node:url';
+
 import { statSync, readFileSync, readdirSync, lstatSync, symlinkSync } from 'node:fs';
-import { bindFixture, adapter, code, hash, makeZip, rmSync, toolsRoot, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, run, snapshot, stub, write } from './support/helpers.mjs';
+import { bindFixture, bindNodeFixture, adapter, code, hash, makeZip, rmSync, toolsRoot, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, ps, run, snapshot, stub, write, executionFailure } from './support/helpers.mjs';
 
 // Encode for the native Windows argv boundary, including terminal backslashes.
 const runtimeLink = (process.versions.bun ? 'bun' : 'node') + '.link.cmd';
@@ -15,19 +16,19 @@ function installation(f, prepare = true) {
   const git = findGit();
   ok(run(git, ['-C',target,'init','--quiet']));
   ok(run(git, ['-C',target,'remote','add','origin','https://github.com/Team/Repo.git']));
-  write(join(target, '.agents/skills/gidd/config.toml'), 'schema_version = 1\n');
+
   const entryBin=join(f.root,'entry-tools'), entryExe=compile(f.root);
   stub(entryExe,join(entryBin,'gh.exe'));
   const cmd = join(process.env.SystemRoot || process.env.SYSTEMROOT, 'System32/cmd.exe');
   const invoke = (args, env = {}, options = {}, entry) => {
-    const executable = entry ? join(skill, entry) : join(target,'.agents/skills/gidd/gidd.link.cmd');
+    const executable = entry ? join(skill, entry) : join(skill,'gidd.cmd');
     const forwarded = args;
     return run(cmd, ['/d','/s','/c', `""${executable}" ${forwarded.map(quote).join(' ')}"`], {
-      cwd: skill, windowsVerbatimArguments: true, ...options,
-      env: { PATH: [dirname(process.execPath),dirname(git),entryBin].join(';'), GIDD_LANG: '', LC_ALL: 'en_US.UTF-8', ...env },
+      cwd: target, windowsVerbatimArguments: true, ...options,
+      env: { PATH: [dirname(process.execPath),dirname(git),entryBin].join(';'), LC_ALL: 'en_US.UTF-8', ...env },
     });
   };
-  const ensure = (args = [], env = {}) => invoke(['--repo',target,...args],env,{},'gidd.pre.ensure.cmd');
+  const ensure = (args = [], env = {}) => invoke(args,env,{},'tools.ensure.cmd');
   if (prepare) ok(ensure());
   return { skill, target, invoke, ensure };
 }
@@ -37,16 +38,23 @@ function sameDirectory(actual, expected) {
   assert.equal(a.dev, b.dev); assert.equal(a.ino, b.ino);
 }
 
-test('tools-only prepares exactly one native tool without repository configuration or a JS dependency', () => {
+test('single-tool preparation needs neither repository configuration nor JavaScript', () => {
   const f=fixture();
   try {
     const s=installation(f,false), bin=join(f.root,'only-tools'), exe=join(f.root,'tool.exe');
     write(join(s.skill,'config.toml'),'invalid repository configuration');
-    const invoke=(args)=>s.invoke(args,{PATH:bin},{},'gidd.pre.ensure.cmd');
+    const bootstrap=join(s.skill,'scripts.powershell/bootstrap.ps1');
+    // Exercise different UI and regional cultures regardless of the test host.
+    write(bootstrap,'[Globalization.CultureInfo]::CurrentUICulture = [Globalization.CultureInfo]::GetCultureInfo("en-US")\n[Globalization.CultureInfo]::CurrentCulture = [Globalization.CultureInfo]::GetCultureInfo("zh-CN")\n'+readFileSync(bootstrap,'utf8'));
+    const invoke=(args)=>s.invoke(args,{PATH:bin},{},'tools.ensure.cmd');
     const root=toolsRoot(f.root), initial=snapshot(f.root);
+    const systemHelp=ok(invoke(['help','zh'])).stdout;
+    for (const locale of ['en_US.UTF-8','zh_CN.UTF-8','C.UTF-8']) {
+      assert.equal(ok(s.ensure(['help'],{PATH:'',LC_ALL:locale,LC_MESSAGES:locale,LANG:locale})).stdout,systemHelp);
+    }
     for(const name of ['git','gh','bun','node']) {
-      const report=json(invoke(['--tools-only='+name,'--check']));
-      assert.equal(report.status,'needs_tools');assert.equal(report.tool,name);
+      const report=json(invoke([name,'--check']));
+      assert.equal(report.status,'needs_tools');assert.equal(report.tools[0].name,name);
     }
     assert.deepEqual(snapshot(f.root),initial);
     for(const args of [['--tools-only'],['--tools-only=bad'],['--tools-only=git','--tools-only=gh'],
@@ -56,14 +64,20 @@ test('tools-only prepares exactly one native tool without repository configurati
     const published=new Map();
     for(const name of ['git','gh','bun','node']) {
       stub(exe,join(bin,name+'.exe'));
-      const report=json(ok(invoke(['--tools-only='+name])));
-      assert.equal(report.tool,name);assert.equal(report.status,'ready');
-      assert.equal(json(ok(invoke(['--tools-only='+name.toUpperCase(),'--check']))).tool,name);
+      const report=json(ok(invoke([name])));
+      assert.equal(report.tools[0].name,name);assert.equal(report.status,'ready');
+      assert.deepEqual(Object.keys(report).sort(),['schema','status','tools']);
+      assert.deepEqual(Object.keys(report.tools[0]).sort(),['action','launcher','name','path','status','version']);
+      assert.equal(report.tools[0].action,'reused');
+      assert.equal(report.tools[0].launcher,join(root,name+'.link.cmd'));
+      assert.equal(json(ok(invoke([name.toUpperCase(),'--check']))).tools[0].name,name);
       assert.equal(existsSync(join(root,name)),false,'External tools are reused');
       for(const [other,digest] of published) assert.equal(hash(join(root,other+'.link.cmd')),digest);
       published.set(name,hash(join(root,name+'.link.cmd')));
       const before=snapshot(f.root);
-      assert.equal(json(ok(invoke(['--tools-only='+name,'--check']))).status,'ready');
+      const checked=json(ok(invoke([name,'--check'])));
+      assert.equal(checked.status,'ready');
+      assert.deepEqual(Object.keys(checked.tools[0]).sort(),['launcher','name','path','status','version']);
       assert.deepEqual(snapshot(f.root),before);
       const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
       assert.match(ok(run(cmd,['/d','/s','/c',`""${join(root,name+'.link.cmd')}" --version"`],{windowsVerbatimArguments:true,env:{PATH:''}})).stdout,/\d+\.\d+\.\d+/);
@@ -73,17 +87,41 @@ test('tools-only prepares exactly one native tool without repository configurati
   } finally {f.dispose();}
 });
 
-test('preparing another runtime preserves the repository runtime selection',()=>{
+test('ensure reports rejected versions, missing bindings and partial preparation without internal probes', () => {
   const f=fixture();
   try {
-    const s=installation(f), root=toolsRoot(f.root), name=process.versions.bun?'node':'bun';
-    const link=join(s.target,'.agents/skills/gidd/gidd.link.cmd'), before=hash(link), launcher=hash(join(root,runtimeLink));
-    const bin=join(f.root,'other-runtime');stub(join(f.root,'tool.exe'),join(bin,name+'.exe'));
-    ok(s.invoke(['--tools-only='+name],{PATH:bin},{},'gidd.pre.ensure.cmd'));
-    assert.equal(hash(link),before);assert.equal(hash(join(root,runtimeLink)),launcher);
-    assert.equal(json(ok(s.ensure())).runtime.id,'tool.'+(process.versions.bun?'bun':'node'));
-    assert.equal(hash(link),before);
-    assert.equal(json(ok(s.ensure(['--check']))).status,'ready');
+    const s=installation(f,false),bin=join(f.root,'candidates'),root=toolsRoot(f.root);
+    for(const name of ['bun','git']) {
+      const path=join(bin,name+'.exe');stub(join(f.root,'tool.exe'),path,name==='git'?'git version 1.0.0':'1.0.0');
+      const before=snapshot(f.root),result=s.ensure([name,'--check'],{PATH:bin});
+      assert.equal(result.status,1);
+      const report=json(result),tool=report.tools[0];
+      assert.equal(report.status,'needs_tools');assert.equal(tool.status,'invalid');
+      assert.equal(tool.details.code,'no_usable_candidate');
+      assert.ok(tool.details.minimum);
+      assert.equal(tool.details.candidates[0].path,path);
+      assert.equal(tool.details.candidates[0].version,'1.0.0');
+      assert.ok(tool.details.candidates[0].code);
+      assert.deepEqual(snapshot(f.root),before);
+    }
+    const runtime=process.versions.bun?'bun':'node';
+    const unbound=json(s.ensure([runtime,'--check'],{PATH:dirname(process.execPath)}));
+    assert.equal(unbound.tools[0].details.code,'bootstrap_required');
+    assert.equal(unbound.tools[0].path,process.execPath);
+    write(join(root,'gh/user.txt'),'keep');
+    const partial=s.ensure([],{PATH:[dirname(process.execPath),dirname(findGit())].join(';')});
+    assert.equal(partial.status,1);
+    const report=json(partial);
+    assert.deepEqual(report.tools.map(t=>[t.name,t.status]),[[runtime,'ready'],['git','ready'],['gh','invalid']]);
+    assert.equal(report.tools[2].details.code,'unknown_tool_ownership:gh');
+    assert.equal(readFileSync(join(root,'gh/user.txt'),'utf8'),'keep');
+    const recovery=json(adapter(f.root,{action:'prepare',root,names:['git'],responses:{},downloads:{},failRecovery:true,publicReport:true}));
+    assert.equal(recovery.status,'needs_tools');
+    assert.equal(recovery.tools[0].details.code,'fixture_recovery_failed');
+    assert.equal(recovery.tools[0].details.recovery.code,'tool_recovery_failed');
+    const invalid=json(s.ensure(['--check']));
+    assert.equal(invalid.status,'error');assert.equal(invalid.details.code,'invalid_arguments');
+    assert.equal(invalid.reason,undefined);
   } finally {f.dispose();}
 });
 
@@ -107,25 +145,30 @@ test('preparation owns tool checks and gidd no longer routes tool commands', () 
     const s=installation(f,false),before=snapshot(f.root);
     assert.equal(existsSync(join(s.skill,'gidd.tools.ensure.cmd')),false);
     for (const name of ['entry','doctor','config','authorize']) assert.equal(existsSync(join(s.skill,`scripts.powershell/${name}.ps1`)),false);
-    const missing=json(s.ensure(['--check'],{PATH:''}));
-    assert.equal(missing.status,'needs_tools'); assert.equal(missing.runtime,null);
-    assert.equal(missing.read_only,true); assert.deepEqual(snapshot(f.root),before);
-    const checked=json(s.ensure(['--check']));
+    const missing=json(s.ensure(['bun','--check'],{PATH:''}));
+    assert.equal(missing.status,'needs_tools'); assert.equal(missing.tools[0].status,'missing');
+    assert.equal(missing.tools[0].action,undefined); assert.deepEqual(snapshot(f.root),before);
+    const checked=json(s.ensure([process.versions.bun?'bun':'node','--check']));
     assert.equal(checked.status,'needs_tools'); assert.deepEqual(snapshot(f.root),before);
-    for(const args of [['--yes'],['--check','--check'],['--check','--ensure'],['--check','--force'],['--check','--jsruntime=node'],['--jsruntime=bad'],['--jsruntime=bun','--jsruntime=node'],['--node'],['--reinstall'],['--unknown'],['--repository']])
+    for(const args of [['--check'],['--force'],['git','--check','--force'],['git','gh'],['--yes'],['--check','--check'],['--check','--ensure'],['--check','--force'],['--check','--jsruntime=node'],['--jsruntime=bad'],['--jsruntime=bun','--jsruntime=node'],['--node'],['--reinstall'],['--unknown'],['--repository']])
       assert.equal(s.ensure(args).status,2);
     const prepared=json(ok(s.ensure()));
-    assert.equal(prepared.launcher_action,'published'); assert.equal(prepared.tools.length,2);
-    assert.equal(json(ok(s.ensure(['--jsruntime='+(process.versions.bun?'bun':'node')]))).runtime.id,process.versions.bun?'tool.bun':'tool.node');
+    assert.deepEqual(prepared.tools.map(t=>t.name),[process.versions.bun?'bun':'node','git','gh']);
+    assert.equal(prepared.repository, undefined);
+    assert.equal(prepared.entry, undefined);
+    assert.equal(existsSync(join(s.target, '.agents')), false);
+    assert.equal(existsSync(s.target + '.gidd'), false);
+    assert.equal(existsSync(join(toolsRoot(f.root), 'config.toml')), false);
+    assert.equal(json(ok(s.ensure([process.versions.bun?'bun':'node']))).tools[0].name,process.versions.bun?'bun':'node');
     const installed=snapshot(toolsRoot(f.root));
-    const ready=json(ok(s.ensure(['--check'])));assert.equal(ready.status,'ready');
+    const ready=json(ok(s.ensure([process.versions.bun?'bun':'node','--check'])));assert.equal(ready.status,'ready');
     for (const args of [['tools'],['tools','--check'],['tools','--ensure'],['bootstrap'],['setup']]) {
-      assert.equal(json(s.invoke(args)).reason,'unknown_command');
+      assert.equal(json(s.invoke(args)).details.code,'unknown_command');
     }
     assert.doesNotMatch(ok(s.invoke(['help','en'])).stdout,/External tools|gidd\.pre\.ensure|gidd tools/);
     assert.doesNotMatch(ok(s.invoke(['help','zh'])).stdout,/外部工具|gidd\.pre\.ensure|gidd tools/);
     assert.deepEqual(snapshot(toolsRoot(f.root)),installed);
-    assert.equal(json(ok(s.ensure())).launcher_action,'reused');
+    assert.equal(json(ok(s.ensure())).tools[0].action,'reused');
     assert.deepEqual(snapshot(toolsRoot(f.root)),installed);
   } finally {f.dispose();}
 });
@@ -151,7 +194,131 @@ test('shared launcher forwards raw argv, stdin, cwd, stderr and exit without Pow
   } finally {f.dispose();}
 });
 
-test('bootstrap alone selects managed Bun, managed Node, PATH Bun, PATH Node and validates before execution', () => {
+test('native tool routes keep argv, streams, cwd and exit status outside a repository', () => {
+  const f=fixture();
+  try {
+    const s=installation(f), root=toolsRoot(f.root), caller=join(f.root,'caller & spaces'), node=bindNodeFixture(f.root); mkdirSync(caller);
+    const echo=compile(f.root,'wrapper-gh.cs'), script=join(f.root,'echo args.mjs');
+    write(script, "import {readFileSync} from 'node:fs';console.log(JSON.stringify({args:process.argv.slice(2),cwd:process.cwd(),input:readFileSync(0,'utf8')}));process.stderr.write('native stderr\\n');process.exitCode=23;");
+    for (const name of ['git','gh','bun','node']) {
+      const relative=name==='git'?'git/cmd/git.exe':name+'/'+name+'.exe';
+      stub(name==='node'?node:name==='bun'?process.execPath:echo,join(root,relative));
+      write(join(root,name+'.link.cmd'),'@echo off\r\nsetlocal DisableDelayedExpansion\r\nset "GIDD_JS_EXEC=%~dp0'+relative.replaceAll('/','\\')+'"\r\n"%GIDD_JS_EXEC%" %*\r\nexit /b %ERRORLEVEL%\r\n');
+    }
+    // Native tools must not load the GIDD language setting or register tasks.
+    write(join(root,'config.toml'),'invalid configuration');
+    const before=snapshot(root), args=['two words','','--help','tail\\','a & b','a^b','!literal!','two "quotes"','中文 😀','--','a|b','<in>','a(b)','last'];
+    for (const name of ['git','gh','bun','node']) {
+      const runtime=['bun','node'].includes(name), forwarded=runtime?[script,...args]:['--test-profile',...args];
+      const result=s.invoke([name,...forwarded],{GH_PROMPT_DISABLED:'caller',GH_EDITOR:'caller editor'},{cwd:caller,input:'native stdin 中文'});
+      assert.equal(result.status,23,JSON.stringify(result)); assert.equal(result.stderr,'native stderr\n');
+      if (runtime) {
+        const report=json(result); assert.deepEqual(report.args,args);
+        assert.equal(report.input,'native stdin 中文'); sameDirectory(report.cwd,caller);
+      } else {
+        const rows=result.stdout.trim().split(/\r?\n/).map(row=>{const i=row.indexOf('=');return [row.slice(0,i),Buffer.from(row.slice(i+1),'base64').toString('utf8')];});
+        const values=Object.fromEntries(rows);
+        assert.deepEqual(rows.filter(([key])=>key==='arg').map(([,value])=>value),forwarded);
+        assert.equal(values.input,'native stdin 中文'); sameDirectory(values.cwd,caller);
+        assert.equal(values.GH_PROMPT_DISABLED,'caller'); assert.equal(values.GH_EDITOR,'caller editor');
+      }
+    }
+    assert.equal(s.invoke(['node','-e','process.exit(300)'],{},{cwd:caller}).status,300);
+    assert.deepEqual(snapshot(root),before); assert.equal(existsSync(caller+'.gidd'),false);
+  } finally {f.dispose();}
+});
+
+test('native launcher failures keep stdout empty and do not repair or fall back', () => {
+  const f=fixture();
+  try {
+    const s=installation(f), root=toolsRoot(f.root), launcher=join(root,'git.link.cmd'); bindNodeFixture(f.root);
+    rmSync(launcher);
+    let before=snapshot(root);
+    const missing=s.invoke(['git','--version']);
+    assert.equal(executionFailure(missing).code,'tool_launcher_missing:git');
+    assert.match(missing.stderr,/tools\.ensure\.cmd git/);
+    assert.deepEqual(snapshot(root),before);
+    for (const text of ['unknown launcher','set "GIDD_JS_EXEC=%~dp0../git.exe"','set "GIDD_JS_EXEC='+join(f.root,'missing/git.exe')+'"']) {
+      write(launcher,text); before=snapshot(root);
+      const failure=executionFailure(s.invoke(['git','--version']));
+      assert.equal(failure.code,text.startsWith('set "GIDD_JS_EXEC='+f.root)?'process_start_failed':'tool_launcher_invalid:git');
+      assert.deepEqual(snapshot(root),before);
+    }
+    rmSync(join(root,'node.link.cmd')); before=snapshot(root);
+    for (const name of ['git','gh','bun','node']) {
+      const result=s.invoke([name,'--version']);
+      assert.equal(executionFailure(result).code,'runtime_unavailable');
+      assert.match(result.stderr,/tools\.ensure\.cmd node/);
+    }
+    assert.deepEqual(snapshot(root),before);
+  } finally {f.dispose();}
+});
+
+test('runtime failures report repair commands and only an available counterpart without replacing tools', () => {
+  const f=fixture();
+  try {
+    const skill=join(f.root,'installed skill & spaces'), root=toolsRoot(f.root), fake=compile(f.root);
+    copySkill(skill);
+    const invoke=name=>{
+      const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
+      return run(cmd,['/d','/s','/c',`""${join(skill,'gidd.cmd')}" ${name} --version"`],{windowsVerbatimArguments:true});
+    };
+    const launcher=name=>'@echo off\r\nsetlocal DisableDelayedExpansion\r\nset "GIDD_JS_EXEC=%~dp0'+name+'\\'+name+'.exe"\r\n"%GIDD_JS_EXEC%" %*\r\nexit /b %ERRORLEVEL%\r\n';
+    const bun=join(root,'bun/bun.exe'), nodeLink=join(root,'node.link.cmd'), node=join(root,'node/node.exe');
+    stub(fake,bun); write(join(root,'bun.link.cmd'),launcher('bun'));
+    for (const state of ['missing launcher','malformed launcher','missing executable','failed executable']) {
+      if (state==='malformed launcher') write(nodeLink,'unknown launcher');
+      if (['missing executable','failed executable'].includes(state)) write(nodeLink,launcher('node'));
+      if (state==='failed executable') stub(fake,node,'fail');
+      const before=snapshot(root), result=invoke('git');
+      assert.equal(executionFailure(result).code,'runtime_unavailable');
+      assert.match(result.stderr,/tools\.ensure\.cmd node/);
+      assert.match(result.stderr,/bun: available\. Use bun\.link\.cmd directly/);
+      assert.doesNotMatch(result.stderr,/private-test-secret/);
+      assert.deepEqual(snapshot(root),before);
+    }
+    rmSync(bun);
+    let before=snapshot(root), result;
+    for (const name of ['node','bun']) {
+      result=invoke(name);
+      assert.equal(executionFailure(result).code,'runtime_unavailable');
+      assert.match(result.stderr,/tools\.ensure\.cmd node/);
+      assert.doesNotMatch(result.stderr,/bun:|tools\.ensure\.cmd bun/);
+    }
+    result=ps(join(skill,'scripts.powershell/tool-runtime.ps1'),['-Unavailable','bun']);
+    assert.equal(result.status,2);
+    assert.equal(result.stdout,'');
+    assert.equal(result.stderr,'');
+    assert.deepEqual(snapshot(root),before);
+    bindNodeFixture(f.root);
+    for (const state of ['missing launcher','missing executable','malformed launcher']) {
+      if (state==='missing launcher') rmSync(join(root,'bun.link.cmd'));
+      if (state==='missing executable') write(join(root,'bun.link.cmd'),launcher('bun'));
+      if (state==='malformed launcher') write(join(root,'bun.link.cmd'),'unknown launcher');
+      before=snapshot(root); result=invoke('bun');
+      assert.equal(executionFailure(result).code,state==='missing launcher'?'tool_launcher_missing:bun':state==='missing executable'?'process_start_failed':'tool_launcher_invalid:bun');
+      assert.match(result.stderr,/tools\.ensure\.cmd bun/);
+      assert.match(result.stderr,/node: available\. Use gidd node/);
+      assert.deepEqual(snapshot(root),before);
+    }
+  } finally {f.dispose();}
+});
+
+test('native route cancellation stops the tool and its child processes', () => {
+  const f=fixture();
+  try {
+    const s=installation(f), root=toolsRoot(f.root), git=join(root,'git/cmd/git.exe'), marker=join(f.root,'native-running'), node=bindNodeFixture(f.root);
+    stub(compile(f.root,'fixture-worker.cs'),git);
+    write(join(root,'git.link.cmd'),'set "GIDD_JS_EXEC=%~dp0git\\cmd\\git.exe"');
+    const entry=pathToFileURL(join(s.skill,'scripts.js/gidd.mjs')).href;
+    const result=run(node,['--input-type=module','-e',`import {existsSync} from 'node:fs';const {main}=await import(${JSON.stringify(entry)});const pending=main(['git','parent',${JSON.stringify(marker)}]);const deadline=Date.now()+10000;while(!existsSync(${JSON.stringify(marker+'.locked')})){if(Date.now()>deadline)throw new Error('tool_did_not_start');await new Promise(r=>setTimeout(r,25));}process.emit('SIGINT');process.exitCode=await pending;`]);
+    assert.equal(result.status,130,result.stderr); assert.equal(result.stdout,'');
+    // A stopped descendant releases its exclusive file handle.
+    rmSync(marker);
+  } finally {f.dispose();}
+});
+
+test('bootstrap prefers PATH runtimes over unbound portable copies and validates candidates', () => {
   const f=fixture();
   try {
     const exe=compile(f.root), root=toolsRoot(f.root), bin=join(f.root,'bin'), log=join(f.root,'probes.log');
@@ -161,12 +328,12 @@ test('bootstrap alone selects managed Bun, managed Node, PATH Bun, PATH Node and
       assert.equal(r.id,`tool.${name}`); assert.equal(r.details.source,source); return readFileSync(log,'utf8');
     };
     stub(exe,join(root,'node/node.exe'),undefined,true); stub(exe,join(bin,'bun.exe'));
-    assert.ok(!expect('node','managed').includes(join(bin,'bun.exe')));
+    expect('bun','path');
     stub(exe,join(root,'bun/bun.exe'),undefined,true);
-    assert.ok(!expect('bun','managed').includes('node.exe'));
+    expect('bun','path');
     assert.ok(!expect('node','managed',{node:true}).includes('bun.exe'));
     write(join(root,'bun/install.json'),'corrupt');
-    assert.ok(!expect('node','managed').includes('bun.exe'));
+    expect('bun','path');
     rmSync(root,{recursive:true}); stub(exe,join(bin,'node.exe'));
     expect('bun','path'); expect('node','path',{node:true});
     write(join(bin,'bun.exe.mode'),'1.0.0'); expect('node','path');
@@ -176,7 +343,7 @@ test('bootstrap alone selects managed Bun, managed Node, PATH Bun, PATH Node and
   } finally {f.dispose();}
 });
 
-test('runtime selection retains a valid binding and switches only when requested',()=>{
+test('runtime selection prioritizes usable bindings and removes a stale preferred launcher',()=>{
   const f=fixture();
   try {
     const exe=compile(f.root),root=toolsRoot(f.root),bin=join(f.root,'external');
@@ -188,6 +355,9 @@ test('runtime selection retains a valid binding and switches only when requested
     assert.equal(json(ok(invoke({yes:false}))).runtime.id,'tool.node');
     assert.deepEqual(snapshot(join(root,'bun')),unselected);
     assert.equal(json(ok(invoke({runtime:'bun'}))).runtime.id,'tool.bun');
+    write(join(root,'bun/bun.exe.mode'),'1.0.0');
+    assert.equal(json(ok(invoke())).runtime.id,'tool.node','An unusable bound Bun does not hide a usable bound Node');
+    assert.equal(existsSync(join(root,'bun.link.cmd')),false,'The entry must reach the selected Node');
     rmSync(root,{recursive:true});stub(exe,join(bin,'node.exe'));
     assert.equal(json(ok(invoke({runtime:'node'},bin))).runtime.details.source,'path');
     assert.equal(json(ok(invoke())).runtime.details.source,'path','Bound external runtime survives PATH removal');
@@ -219,19 +389,24 @@ test('bootstrap installs, repairs and rolls back managed runtimes before publish
         {'https://nodejs.org/dist/index.json':JSON.stringify([{version:`v${version}`,lts:'Fixture',files:['win-x64-zip']}])};
       const responses={...metadata,[checksum]:`${hash(archive)}  ${archiveName}\n`,[licenseUrl]:readFileSync(license,'utf8')}, downloads={[url]:archive,[licenseUrl]:license};
       write(config,'schema_version = 1\n');
-      const spec={action:'bootstrap',repositoryRoot:f.root,responses,downloads,yes:true,node:name==='node'}, env={PATH:'',USERPROFILE:home};
-      const invoke=(extra={})=>adapter(f.root,{...spec,...extra},{env});
-      const before=hash(config), result=json(ok(invoke())), root=toolsRoot(home), target=join(root,name), launcher=join(root,name+'.link.cmd');
+      const requestData={action:'bootstrap',repositoryRoot:f.root,responses,downloads,yes:true,node:name==='node'}, env={PATH:'',USERPROFILE:home};
+      const invoke=(extra={})=>adapter(f.root,{...requestData,...extra},{env});
+      const first = ok(invoke(name === 'node' ? {node:false} : {}));
+      if (name === 'node') assert.match(first.stderr, /trying Node/);
+      const before=hash(config), result=json(first), root=toolsRoot(home), target=join(root,name), launcher=join(root,name+'.link.cmd');
       assert.equal(result.runtime.id,`tool.${name}`); assert.equal(hash(config),before); assert.equal(existsSync(join(root,name==='bun'?'node':'bun')),false);
       const healthy=snapshot(home); assert.equal(json(ok(invoke({responses:{},downloads:{}}))).runtime_action,'reused');
       assert.deepEqual(snapshot(home),healthy);
       const launcherHash=hash(launcher), executable=join(target,`${name}.exe`);
       write(executable,'damaged GIDD executable');
-      assert.equal(json(ok(invoke())).runtime_action,'installed'); assert.equal(hash(executable),hash(exe));
+      assert.equal(json(ok(invoke())).runtime_action,'repaired'); assert.equal(hash(executable),hash(exe));
       assert.equal(hash(launcher),launcherHash); assert.equal(existsSync(join(root,`.cache/previous-${name}`)),false);
       write(executable,'damaged before committed cleanup failure');
-      const committed=json(ok(invoke({failCleanup:true})));
-      assert.equal(committed.cleanup_pending,true); assert.equal(hash(executable),hash(exe),'Post-publication cleanup must not restore the damaged executable');
+      const committed=json(ok(invoke({failCleanup:true,publicReport:true})));
+      assert.equal(committed.tools[0].status,'ready');
+      assert.equal(committed.tools[0].details.code,'installation_cleanup_pending');
+      assert.equal(committed.tools[0].details.path,join(root,'.cache'));
+      assert.equal(hash(executable),hash(exe),'Post-publication cleanup must not restore the damaged executable');
       const committedTree=snapshot(root);
       assert.equal(json(ok(invoke({yes:false,responses:{},downloads:{}}))).status,'ready');
       assert.deepEqual(snapshot(root),committedTree,'Read-only checks must leave committed cleanup pending');
@@ -246,7 +421,10 @@ test('bootstrap installs, repairs and rolls back managed runtimes before publish
       assert.deepEqual(snapshot(target),old); assert.equal(hash(launcher),launcherHash);
       assert.match(invoke({reinstall:true,responses:{...responses,[checksum]:`${'0'.repeat(64)}  ${archiveName}\n`}}).stderr,/download_hash_mismatch/);
       assert.deepEqual(snapshot(target),old); assert.equal(hash(launcher),launcherHash);
-      assert.equal(json(ok(invoke({reinstall:true,node:false}))).runtime.id,`tool.${name}`,'Force retains the bound runtime kind without a selector');
+      const forced=json(ok(invoke({reinstall:true,node:false,publicReport:true})));
+      assert.equal(forced.tools[0].name,name,'Force retains the bound runtime kind without a selector');
+      assert.equal(forced.tools[0].action,'reinstalled');
+      assert.equal(forced.tools[0].path,executable);
       const beforeInterruption=snapshot(target);
       const definition=json(ok(adapter(f.root,{action:'release',name,version,source:name==='bun'?'https://github.com/oven-sh/bun/releases':'https://nodejs.org/dist',pinnedPath:'',responses})));
       const definitionPath=join(f.root,`${name}-definition.json`); write(definitionPath,JSON.stringify(definition));
@@ -276,24 +454,24 @@ test('generated launcher pins an external Unicode/percent path and does not sear
     for(const tool of ['gh'])stub(join(f.root,'tool.exe'),join(bin,tool+'.exe'));
     const env={USERPROFILE:home,PATH:[bin,dirname(findGit())].join(';'),GIDD_PATH_SENTINEL:'unexpected-expansion'};
     const report=json(ok(s.ensure([],env)));
-    assert.equal(report.runtime.details.source,'path');
+    assert.equal(report.tools[0].path,join(bin,`${name}.exe`));
     const launcher=join(toolsRoot(home),runtimeLink), previous=hash(launcher);
     assert.doesNotMatch(readFileSync(launcher,'utf8'), /chcp|[^\x00-\x7f]/i);
     const root=toolsRoot(home), binding=join(root,readdirSync(root).find(n=>n.startsWith('.runtime-path-')));
     assert.equal(lstatSync(binding).isSymbolicLink(),true); sameDirectory(binding,bin);
-    assert.equal(json(ok(s.ensure(['--check'],env))).launcher_matches,true);
+    assert.equal(json(ok(s.ensure([process.versions.bun?'bun':'node','--check'],env))).tools[0].status,'ready');
     rmSync(binding); // Remove the junction itself, never its external contents.
     assert.equal(existsSync(join(bin,`${name}.exe`)),true);
-    assert.equal(json(s.ensure(['--check'],env)).launcher_matches,false);
+    assert.equal(json(s.ensure([process.versions.bun?'bun':'node','--check'],env)).tools[0].details.code,'bootstrap_required');
     assert.equal(existsSync(binding),false,'Read-only checks must not repair a missing link');
     write(binding,'unknown file');
-    assert.equal(json(s.ensure([],env)).reason,'occupied_runtime_binding');
+    assert.equal(json(s.ensure([],env)).details.code,'occupied_runtime_binding');
     assert.equal(readFileSync(binding,'utf8'),'unknown file'); assert.equal(hash(launcher),previous);
     rmSync(binding);
     const wrong=join(f.root,'wrong target'); mkdirSync(wrong); symlinkSync(wrong,binding,'junction');
-    assert.equal(json(s.ensure([],env)).reason,'occupied_runtime_binding');
+    assert.equal(json(s.ensure([],env)).details.code,'occupied_runtime_binding');
     sameDirectory(binding,wrong); assert.equal(hash(launcher),previous); rmSync(binding);
-    assert.equal(json(ok(s.ensure([],env))).launcher_action,'reused');
+    assert.equal(json(ok(s.ensure([],env))).tools[0].action,'reused');
     sameDirectory(binding,bin);
     write(join(bin,'SKILL.md'),'external content, not GIDD storage');
     assert.equal(json(s.invoke(['doctor'],{...env,PATH:''})).schema,'gidd.doctor/v1');
@@ -312,7 +490,7 @@ test('generated launcher pins an external Unicode/percent path and does not sear
     assert.equal(existsSync(log),false,'A missing bound runtime must not fall back to managed Bun');
     rmSync(join(root,'bun'),{recursive:true});
     stub(process.execPath,join(root,name,`${name}.exe`),undefined,true);
-    assert.equal(json(ok(s.ensure([],{...env,PATH:''}))).runtime.details.source,'managed');
+    assert.equal(json(ok(s.ensure([],{...env,PATH:''}))).tools[0].path,join(root,name,`${name}.exe`));
     assert.doesNotMatch(readFileSync(launcher,'utf8'),/chcp|[^\x00-\x7f]/i);
     assert.match(ok(s.invoke(['--help','en'],{...env,PATH:''})).stdout,/GIDD \(Windows x64/);
 
@@ -322,31 +500,34 @@ test('generated launcher pins an external Unicode/percent path and does not sear
 test('installed shell entry provides help and doctor reuse a PATH runtime without writes', { timeout: 30000 }, () => {
   const f = fixture();
   try {
-    const s = installation(f), before = snapshot(f.root);
-    assert.match(ok(s.invoke(['help','zh'])).stdout, /显示中文帮助/);
+    const s = installation(f);
+    const systemLanguage = /^zh(?:$|[-_])/.test(Intl.DateTimeFormat().resolvedOptions().locale) ? 'zh' : 'en';
+    assert.equal(ok(s.invoke([])).stdout, ok(s.invoke(['help',systemLanguage])).stdout);
+    write(join(toolsRoot(f.root), 'config.toml'), 'schema_version = 1\n[ui]\nlanguage = "zh"\n');
+    const before = snapshot(f.root);
+    assert.match(ok(s.invoke(['help','zh'])).stdout, /^GIDD（Windows x64/);
     for (const alias of ['--help','-h']) {
       assert.equal(ok(s.invoke([alias,'zh'])).stdout, ok(s.invoke(['help','zh'])).stdout);
     }
-    assert.match(ok(s.invoke([])).stdout, /GIDD \(Windows x64/);
-    assert.match(ok(s.invoke([], { GIDD_LANG: 'zh' })).stdout, /显示中文帮助/);
-    assert.match(ok(s.invoke(['help','en'], { GIDD_LANG: 'zh' })).stdout, /GIDD \(Windows x64/);
+    assert.match(ok(s.invoke([])).stdout, /^GIDD（Windows x64/);
+    assert.match(ok(s.invoke(['help','en'])).stdout, /GIDD \(Windows x64/);
     for (const language of ['en', 'zh']) {
       const help = ok(s.invoke(['help', language])).stdout;
-      assert.equal(help.trim(), readFileSync(join(s.skill, `references/gidd.link.help.${language === 'zh' ? 'zh-CN' : 'en'}.md`), 'utf8').trim());
-      assert.match(help, /gidd\.link \.gh\.auth/);
-      assert.doesNotMatch(help, /gidd\.link auth\b/);
+      assert.equal(help.trim(), readFileSync(join(s.skill, `references/gidd.help.${language === 'zh' ? 'zh-CN' : 'en'}.md`), 'utf8').trim());
+      assert.match(help, /gidd gh\.auth/);
+      assert.doesNotMatch(help, /gidd auth\b/);
     }
     for (const args of [['auth'], ['auth', '--account', 'Octocat']]) {
       const removed = s.invoke(args);
       assert.equal(removed.status, 2);
-      assert.equal(json(removed).reason, 'unknown_command');
+      assert.equal(json(removed).details.code, 'unknown_command');
     }
     for (const args of [['unknown'], ['identity'], ['doctor','--offline','--offline'], ['doctor','--offline=true'], ['.gh.auth','--offline'], ['help','fr'], ['help','en','extra'], ['doctor','--repository','.'],
       ['doctor','--repository',s.target], ['doctor','--account','x'], ['setup','python'],
       ['setup','bun','--offline','x'], ['.gh.auth','Octocat']]) {
       const result = s.invoke(args);
       assert.equal(result.status, 2, args.join(' '));
-      assert.ok(['gidd.cli/v1','gidd.repository-entry/v1'].includes(json(result).schema));
+      assert.equal(json(result).schema, 'gidd.cli/v1');
     }
     const result = s.invoke(['doctor']);
     assert.equal(result.status, 1);
@@ -357,7 +538,7 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
     for (const command of [['.gh.auth']]) {
       const missing = s.invoke([...command]);
       assert.equal(missing.status, 2);
-      assert.equal(json(missing).reason, 'config_missing_repo_remote_url');
+      assert.equal(json(missing).details.code, 'unknown_command');
     }
     assert.deepEqual(snapshot(f.root), before, 'Help, invalid commands and missing dependencies must not write or install');
   } finally { f.dispose(); }
@@ -367,191 +548,62 @@ test('removed runtime setup commands fail without changing configuration or tool
   const f = fixture();
   try {
     const s = installation(f);
-    write(join(s.target,'.agents/skills/gidd/config.toml'),'invalid configuration');
+    write(join(toolsRoot(f.root), 'config.toml'),'invalid configuration');
     const before = snapshot(f.root);
     for (const name of ['bun','node','git','gh']) {
       const result = s.invoke(['setup',name],{PATH:''});
       assert.equal(result.status,2);
-      assert.equal(json(result).reason,'unknown_command');
+      assert.equal(json(result).details.code,'unknown_command');
       assert.equal(existsSync(join(s.skill,'scripts.powershell/setup-tools.ps1')),false);
     }
     assert.deepEqual(snapshot(f.root),before,'Rejected commands must not read invalid config, install, or switch the launcher');
   } finally { f.dispose(); }
 });
 
-test('repository installation locates its own Git worktree independently of cwd', { timeout: 30000 }, () => {
-  const f = fixture();
-  try {
-    const target = join(f.root, 'installed repo'), git = findGit();
-    mkdirSync(target);
-    ok(run(git, ['init',target]));
-    const worktree = join(f.root, 'linked worktree');
-    ok(run(git, ['-C',target,'-c','user.name=Fixture','-c','user.email=fixture@example.test','commit','--allow-empty','-m','fixture']));
-    ok(run(git, ['-C',target,'worktree','add','-b','fixture',worktree]));
-    ok(adapter(f.root,{action:'bootstrap',repositoryRoot:f.root,responses:{},downloads:{},yes:true},{env:{PATH:dirname(process.execPath)}}));
-    for (const root of [target,worktree]) {
-      const skill = join(root,'.agents/skills/gidd');
-      copySkill(skill);
-      write(join(skill,'config.toml'),'schema_version = 1\n');
-      publishRepositoryEntry(root,join(skill,'scripts.js/gidd.mjs'));
-      const before = snapshot(root);
-      const result = runRepositoryCommand(root,['doctor','--offline'],{cwd:f.root,env:{PATH:''}});
-      assert.equal(result.status,1);
-      sameDirectory(json(result).folder,root);
-      const override = runRepositoryCommand(root,['doctor','--repository',f.root],{cwd:f.root,env:{PATH:''}});
-      assert.equal(override.status,2);
-      assert.equal(json(override).reason,'repository_override_forbidden');
-      assert.deepEqual(snapshot(root),before);
-    }
-  } finally { f.dispose(); }
-});
-
-test('shell doctor and .gh.auth preserve JavaScript results, events and exit codes', { timeout: 30000 }, () => {
-  const f = fixture();
-  try {
-    const s = installation(f), git = findGit();
-    const config = join(s.target,'.agents/skills/gidd/config.toml');
-    const configured = 'schema_version = 1\n[repo]\nremote.name = "fixture"\nremote.url = "https://github.com/owner/repo"\nremote.account = "Octocat"\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[spec]\ncurrent = "direct-commit/00.auto"\n';
-    write(config,configured);
-    for (const args of [['init'], ['config','user.name','Fixture Author'], ['config','user.email','author@example.test'],
-      ['remote','add','fixture','git@github.com:owner/repo.git']]) ok(run(git, ['-C',s.target,...args]));
-    const compiled = compile(f.root,'auth-gh.cs'), gh = join(f.root,'bin/gh.exe');
-    stub(compiled, gh, 'existing');
-    bindFixture(f.root,{gh,git});
-    const env = { PATH: [dirname(process.execPath),dirname(git),dirname(gh)].join(';'), GH_CONFIG_DIR: join(f.root,'credentials'),
-      GH_TOKEN:'', GITHUB_TOKEN:'', GH_ENTERPRISE_TOKEN:'', GITHUB_ENTERPRISE_TOKEN:'' };
-    const before = snapshot(s.target);
-    const diagnosis = s.invoke(['doctor'],env);
-    assert.equal(diagnosis.status, 0);
-    const report = json(diagnosis);
-    assert.equal(report.schema,'gidd.doctor/v1');
-    assert.equal(report.checks.find(c => c.id === 'config.repo.remote.account..online').status,'ready');
-    assert.equal(report.checks.find(c => c.id === 'folder.git.identity').details.author.email,'author@example.test');
-    assert.equal(report.checks.find(c => c.id === 'config.repo.remote.url..online').reason,'online_incomplete');
-    assert.equal(report.status,'checks_incomplete');
-    assert.equal(report.checks.find(c => c.id === 'config.repo.remote.url..online').severity,'warning');
-    assert.equal(report.checks.find(c => c.id === 'folder.git.worktree').severity,'warning');
-    assert.ok(report.checks.every(c => c.severity !== 'error'));
-    assert.equal(json(ok(s.invoke(['.gh.auth'],env))).reason,'already_authenticated');
-    write(config,configured.replace('remote.name = "fixture"\n',''));
-    assert.equal(json(ok(s.invoke(['.gh.auth'],env))).reason,'already_authenticated');
-    assert.equal(json(s.invoke(['doctor'],env)).checks.find(c=>c.id==='config.repo.remote.name').reason,'config_missing_repo_remote_name');
-    for (const [text,reason] of [
-      [configured.replace('remote.url = "https://github.com/owner/repo"\n',''),'config_missing_repo_remote_url'],
-      [configured.replace('remote.account = "Octocat"\n',''),'config_missing_repo_remote_account'],
-      [configured.replace('https://github.com/owner/repo','invalid-url'),'config_invalid_repo_remote_url'],
-      [configured.replace('"Octocat"','"bad account"'),'config_invalid_repo_remote_account'],
-    ]) {
-      write(config,text);
-      assert.equal(json(s.invoke(['.gh.auth'],env)).reason,reason);
-      assert.equal(existsSync(gh + '.started'),false,'Invalid configuration must never start login');
-    }
-    write(config,configured.replace('https://github.com/owner/repo','https://github.com/other/repo'));
-    assert.equal(json(ok(s.invoke(['.gh.auth'],env))).reason,'already_authenticated');
-    assert.equal(json(s.invoke(['doctor','--offline'],env)).checks.find(c=>c.id==='config.repo.remote.url').reason,'repository_address_mismatch');
-    write(config,configured.replace('remote.name = "fixture"','remote.name = "absent"'));
-    assert.equal(json(ok(s.invoke(['.gh.auth'],env))).reason,'already_authenticated');
-    assert.equal(json(s.invoke(['doctor','--offline'],env)).checks.find(c=>c.id==='config.repo.remote.name').reason,'configured_remote_missing');
-    write(config,configured.replace('"Octocat"','"OtherAccount"'));
-    const mismatch = s.invoke(['.gh.auth'],env);
-    assert.equal(mismatch.status,1);
-    assert.equal(json(mismatch).reason,'unexpected_account');
-    write(config,configured);
-    write(gh + '.mode','success');
-    const auth = ok(s.invoke(['.gh.auth'],env));
-    assert.equal(json(auth).schema, 'gidd.auth/v1');
-    assert.equal(json(auth).reason,'authenticated');
-    assert.equal(JSON.parse(auth.stderr.trim()).schema, 'gidd.auth.event/v1');
-    assert.equal(JSON.parse(auth.stderr.trim()).type,'authorization_required');
-    assert.deepEqual(snapshot(s.target),before, 'Only the fake gh may write login state');
-  } finally { f.dispose(); }
-});
-
-test('shell .gh.auth needs only URL, account and gh even without a usable Git repository', { timeout: 30000 }, () => {
-  const f = fixture();
-  try {
-    const s = installation(f), config = join(s.target,'.agents/skills/gidd/config.toml');
-    const gh = compile(f.root,'auth-gh.cs');
-    write(gh + '.mode','existing');
-    bindFixture(f.root,{gh});
-    const env = { PATH: dirname(process.execPath), GH_CONFIG_DIR: join(f.root,'credentials') };
-    const minimal = 'schema_version = 1\n[repo]\nremote.url = "https://GHE.example.test/Another/Project.git"\nremote.account = "Octocat"\n';
-    // The fixture rejects token/API calls sent to any other host or account.
-    write(gh + '.hostname','ghe.example.test');
-    write(gh + '.account','Octocat');
-    rmSync(join(s.target,'.git'),{recursive:true});
-    for (const extra of ['', 'remote.name = "bad remote name"\n[git]\nuser.mode = "invalid"\ncredential.mode = "invalid"\n']) {
-      write(config,minimal + extra);
-      const before = snapshot(s.target);
-      const report = json(ok(s.invoke(['.gh.auth'],env)));
-      assert.equal(report.reason,'already_authenticated');
-      assert.equal(report.hostname,'ghe.example.test');
-      assert.equal(report.expected_account,'Octocat');
-      assert.deepEqual(snapshot(s.target),before);
-    }
-    // Even a recorded but obsolete/unavailable Git must not block gh authorization.
-    const binding = join(toolsRoot(f.root),'tool-bindings.json');
-    const record = JSON.parse(readFileSync(binding,'utf8'));
-    record.tools.git = { path: join(f.root,'missing/git.exe'), source: 'path', version: '2.0.0' };
-    write(binding,JSON.stringify(record));
-    write(join(s.target,'.git'),'not a worktree');
-    assert.equal(json(ok(s.invoke(['.gh.auth'],env))).reason,'already_authenticated');
-    // Device authorization also works before Git is ready.
-    write(config,minimal.replace('GHE.example.test','github.com'));
-    write(gh + '.hostname','github.com');
-    write(gh + '.mode','success');
-    const auth = ok(s.invoke(['.gh.auth'],env));
-    assert.equal(json(auth).reason,'authenticated');
-    assert.equal(JSON.parse(auth.stderr.trim()).type,'authorization_required');
-    record.tools.gh.version = '2.97.0';
-    write(binding,JSON.stringify(record));
-    assert.equal(json(s.invoke(['.gh.auth'],env)).reason,'tool_binding_incompatible:gh');
-  } finally { f.dispose(); }
-});
-
-test('top-level configuration commands create and edit defaults; .gh.auth rejects missing config and overrides', { timeout: 30000 }, () => {
+test('language commands edit shared preferences and preserve configuration display', { timeout: 30000 }, () => {
   const f = fixture();
   try {
     const s = installation(f), env = { PATH: dirname(process.execPath) };
-    const config = join(s.target,'.agents/skills/gidd/config.toml');
-    const original = readFileSync(config,'utf8');
+    const config = join(toolsRoot(f.root), 'config.toml');
+    const original = 'schema_version = 1';
     const missing = s.invoke(['.gh.auth'],env);
-    assert.equal(json(missing).reason,'config_missing_repo_remote_url');
+    assert.equal(json(missing).details.code,'unknown_command');
     for (const args of [['.gh.auth','--account','Octocat'],['.gh.auth','--hostname','github.com'],['.gh.auth','--remote','origin'],['.gh.auth','Octocat']]) {
-      assert.equal(json(s.invoke([...args],env)).reason,'invalid_arguments');
+      assert.equal(json(s.invoke([...args],env)).details.code,'unknown_command');
     }
-    for (const [key,value] of [['account','Octocat'],['name','upstream'],['url','https://github.com/owner/repo']]) {
-      const result = json(ok(s.invoke(['set',`repo.remote.${key}`,value],env)));
+    for (const value of ['zh', 'en']) {
+      const result = json(ok(s.invoke(['lang.set',value],env)));
       assert.equal(result.schema, 'gidd.config/v1');
       assert.equal(result.action, 'set');
-      assert.equal(result.key,`repo.remote.${key}`);
+      assert.equal(result.key,'ui.language');
     }
     assert.ok(readFileSync(config,'utf8').startsWith(original));
-    ok(s.invoke(['set','git.user.mode','inherit'],env));
-    ok(s.invoke(['set','git.credential.mode','inherit'],env));
     const shown = ok(s.invoke(['set.show'],env));
     assert.equal(shown.stderr, '');
     assert.equal(shown.stdout,readFileSync(config,'utf8'));
+    const cleared = json(ok(s.invoke(['lang.clear'],env)));
+    assert.equal(cleared.action, 'clear'); assert.equal(cleared.changed, true);
+    assert.equal(json(ok(s.invoke(['lang.clear'],env))).changed, false);
+    assert.doesNotMatch(readFileSync(config,'utf8'), /language\s*=/);
     const before = snapshot(s.target);
-    for (const [key,value] of [['repo.remote.account','bad name'],['github.token','secret'],['schema_version','2']]) {
+    assert.equal(json(s.invoke(['lang.set','fr'],env)).details.code, 'config_invalid_ui_language');
+    for (const [key,value] of [['repo.remote.account','Octocat'],['flow.current','00/00'],['github.token','secret'],['schema_version','2']]) {
       assert.equal(s.invoke(['set',key,value],env).status,2);
     }
     assert.deepEqual(snapshot(s.target),before);
     rmSync(config);
-    const created = s.invoke(['set','repo.remote.account','Octocat'],env);
+    const created = s.invoke(['lang.set','zh'],env);
     ok(created);
     const text = readFileSync(config,'utf8');
-    assert.doesNotMatch(text,/hostname/); assert.match(text,/remote.name = "origin"/);
-    assert.match(text,/remote.account = "Octocat"/);
-    // All tool settings are internal; only repository business settings are editable.
+    assert.doesNotMatch(text,/hostname/); assert.doesNotMatch(text,/remote.name|remote.url/);
+    assert.match(text,/language = "zh"/);
+    // All tool settings are internal; only the output language is editable.
     for (const key of ['tools.node.version','tools.bun.version','tools.node.source']) {
       assert.equal(s.invoke(['set',key,'999.0.0'],env).status,2);
     }
     assert.equal(s.invoke(['set','tools.directory','custom'],env).status,2);
     const direct = s.invoke(['set','repo.remote.url','https://github.example.test/owner/repo'],env);
-    assert.equal(json(ok(direct)).value,'https://github.example.test/owner/repo');
-    ok(s.invoke(['set','git.user.mode','inherit'],env));
-    ok(s.invoke(['set','git.credential.mode','inherit'],env));
+    assert.equal(json(direct).details.code,'unknown_command');
     ok(s.invoke(['set.show'],env));
   } finally { f.dispose(); }
 });
@@ -559,7 +611,7 @@ test('top-level configuration commands create and edit defaults; .gh.auth reject
 test('set.show prints exact TOML including invalid configuration and reports read errors only on stderr', { timeout: 30000 }, () => {
   const f = fixture();
   try {
-    const s = installation(f), config = join(s.target, '.agents/skills/gidd/config.toml');
+    const s = installation(f), config = join(toolsRoot(f.root), 'config.toml');
     for (const content of ['', 'schema_version = 1\n', 'broken TOML',
       '\uFEFF# 中文注释\r\n[git]\r\nuser.mode = "invalid"\r\n',
       '# comment\n[repo]\nremote.url = "bad url"\nremote.account = "bad account"']) {
@@ -575,7 +627,7 @@ test('set.show prints exact TOML including invalid configuration and reports rea
       if (content === null) rmSync(config); else write(config, content);
       const before = snapshot(f.root), result = s.invoke(['set.show']);
       assert.equal(result.status, 2); assert.equal(result.stdout, '');
-      assert.equal(JSON.parse(result.stderr.trim().split(/\r?\n/).at(-1)).reason, reason);
+      assert.equal(JSON.parse(result.stderr.trim().split(/\r?\n/).at(-1)).details.code, reason);
       assert.deepEqual(snapshot(f.root), before);
     }
     rmSync(config); mkdirSync(config);
@@ -585,33 +637,35 @@ test('set.show prints exact TOML including invalid configuration and reports rea
   } finally { f.dispose(); }
 });
 
-test('bare set shares main bilingual help without configuration; old commands and malformed arguments do not mutate files', { timeout: 30000 }, () => {
+test('help exposes language commands; removed setters and malformed arguments do not mutate files', { timeout: 30000 }, () => {
   const f = fixture();
   try {
-    const s = installation(f), config = join(s.target, '.agents/skills/gidd/config.toml');
-    const fields = ['repo.remote.name', 'repo.remote.url', 'repo.remote.account', 'git.user.mode',
-      'git.user.name', 'git.user.email', 'git.credential.mode', 'spec.current'];
-    for (const content of ['invalid TOML', null]) {
+    const s = installation(f), config = join(toolsRoot(f.root), 'config.toml');
+    const systemLanguage = /^zh(?:$|[-_])/.test(Intl.DateTimeFormat().resolvedOptions().locale) ? 'zh' : 'en';
+    for (const content of ['invalid TOML', 'schema_version = 1\n[ui]\nlanguage = "fr"\n', null]) {
       if (content === null) rmSync(config); else write(config, content);
       const before = snapshot(f.root);
       const stat = content === null ? undefined : statSync(config, { bigint: true });
-      for (const language of ['en', 'zh']) {
-        const help = ok(s.invoke(['set'], { GIDD_LANG: language })).stdout;
-        assert.equal(help, ok(s.invoke(['help'], { GIDD_LANG: language })).stdout);
-        for (const field of fields) assert.ok(help.includes(field));
-        for (const syntax of ['managed', 'inherit', 'gh|inherit', 'gidd.link set.show', 'gidd.link set', 'gidd.link clear']) assert.ok(help.includes(syntax));
-        assert.doesNotMatch(help, /^\s*gidd\.link set\s*(?:#.*)?$/m);
-        assert.doesNotMatch(help, /gidd\.link config/);
+      for (const locale of ['en_US.UTF-8', 'zh_CN.UTF-8', 'C.UTF-8']) {
+        const env = { LC_ALL: locale, LC_MESSAGES: locale, LANG: locale };
+        const help = ok(s.invoke(['help'], env)).stdout;
+        assert.equal(help, ok(s.invoke(['help',systemLanguage], env)).stdout);
+        assert.equal(/^GIDD（/.test(help), systemLanguage === 'zh');
+        for (const syntax of ['gidd lang.set', 'gidd lang.clear']) assert.ok(help.includes(syntax));
+        assert.doesNotMatch(help, /gidd set\s|gidd clear/);
+        assert.doesNotMatch(help, /gidd config/);
       }
       for (const args of [['show'], ['config'], ['config', 'show'], ['config', 'set', 'git.user.mode', 'inherit'],
         ['config', 'clear', 'git.user.name'], ['del', 'git.user.name'], ['delete', 'git.user.name'],
+        ['set'], ['set', 'ui.language', 'zh'], ['clear', 'ui.language'],
         ['set', 'show'], ['set', 'git.user.name'], ['set', 'git.user.name', 'Name', 'extra'],
-        ['set.show', 'extra'], ['clear'], ['clear', 'git.user.name', 'extra']]) {
+        ['set.show', 'extra'], ['clear'], ['clear', 'git.user.name', 'extra'],
+        ['lang.set'], ['lang.set', 'zh', 'extra'], ['lang.clear', 'zh'], ['lang.unknown']]) {
         const result = s.invoke(args);
         assert.equal(result.status, 2);
         const report = args[0] === 'set.show' ? JSON.parse(result.stderr) : json(result);
         if (args[0] === 'set.show') assert.equal(result.stdout, '');
-        assert.equal(report.reason, ['show', 'config', 'del', 'delete'].includes(args[0]) ? 'unknown_command' : 'invalid_arguments');
+        assert.equal(report.details.code, ['show', 'config', 'del', 'delete', 'set', 'clear'].includes(args[0]) ? 'unknown_command' : 'invalid_arguments');
       }
       assert.deepEqual(snapshot(f.root), before);
       if (stat) {

@@ -82,6 +82,11 @@ function Test-GiddPreparedLauncher {
     param([string]$Root, $Candidate)
     $git = Get-GiddLauncherGit $Root $Candidate
     $link = Join-Path $Root ($Candidate.id.Substring(5) + '.link.cmd'); Assert-GiddPlainPath $link
+    if ($git) {
+        $helper = Join-Path $Root 'gh.link.ps1'; Assert-GiddPlainPath $helper
+        if (-not [IO.File]::Exists($helper) -or
+            [IO.File]::ReadAllText($helper) -cne [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../lib/gh-link.ps1'))) { return $false }
+    }
     return (Test-GiddRuntimeBinding $Root (Get-GiddRuntimeBinding $Candidate)) -and
         (-not $git -or (Test-GiddRuntimeBinding $Root (Get-GiddRuntimeBinding $git))) -and
         [IO.File]::Exists($link) -and [IO.File]::ReadAllText($link) -ceq (Get-GiddLauncherText $Candidate $git)
@@ -92,6 +97,18 @@ function Write-GiddPreparedLauncher {
     $git = Get-GiddLauncherGit $Root $Candidate
     Write-GiddRuntimeBinding $Root (Get-GiddRuntimeBinding $Candidate)
     if ($git) { Write-GiddRuntimeBinding $Root (Get-GiddRuntimeBinding $git) }
+    if ($git) {
+        $helper = Join-Path $Root 'gh.link.ps1'; Assert-GiddPlainPath $helper
+        $source = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot '../lib/gh-link.ps1'))
+        if (-not [IO.File]::Exists($helper) -or [IO.File]::ReadAllText($helper) -cne [Text.Encoding]::UTF8.GetString($source)) {
+            $temporary = Join-Path $Root ('.gh-link-' + [guid]::NewGuid() + '.tmp')
+            try {
+                Write-GiddDurableFile $temporary $source
+                if ([IO.File]::Exists($helper)) { [IO.File]::Replace($temporary,$helper,[System.Management.Automation.Language.NullString]::Value) }
+                else { [IO.File]::Move($temporary,$helper) }
+            } finally { if ([IO.File]::Exists($temporary)) { [IO.File]::Delete($temporary) } }
+        }
+    }
     [void](Write-GiddLauncher $Root (Get-GiddLauncherText $Candidate $git) $Candidate.id.Substring(5))
 }
 
@@ -108,7 +125,7 @@ function Invoke-GiddPrepareTools {
                 if (-not $CheckOnly) { Restore-GiddInterruptedTool $root $name }
                 $extra = @()
                 try { $bound = (Read-GiddBindings $root).tools.$name; if ($bound.source -eq 'path') { $extra += $bound.path } } catch { }
-                $minimum = if ($name -eq 'git') { [version]'2.31.0' } else { [version]'2.98.0' }
+                $minimum = if ($name -eq 'git') { [version]'2.38.0' } else { [version]'2.98.0' }
                 $pattern = if ($name -eq 'git') { '^git version (\d+\.\d+\.\d+)' } else { '^gh version (\d+\.\d+\.\d+)(?:\s|$)' }
                 $managed = Join-Path $root ($name + '/' + (Get-GiddExecutableName $name))
                 $candidate = Find-Tool $name $minimum $pattern $managed -ExtraPaths $extra
@@ -151,7 +168,8 @@ function Invoke-GiddPrepareTools {
                 Restore-GiddInterruptedTool $root $name; Remove-GiddStage $root $name
             } catch {
                 $reason = if ($_.Exception.Message -match '^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$') { $_.Exception.Message } else { 'tool_preparation_failed' }
-                $checks += New-Check "tool.$name" 'invalid' $reason
+                $failureDetails = if ($_.Exception.Data['gidd_download']) { $_.Exception.Data['gidd_download'] } else { @{} }
+                $checks += New-Check "tool.$name" 'invalid' $reason $failureDetails
                 if (-not $CheckOnly) { try { Restore-GiddInterruptedTool $root $name } catch { $checks += New-Check "recovery.$name" 'invalid' 'tool_recovery_failed' } }
             }
         }

@@ -1,46 +1,51 @@
 import { existsSync } from 'node:fs';
+import { runTool, toolNames } from './commands/tool/index.mjs';
 import { isAbsolute, resolve } from 'node:path';
 import { configurationHint } from './shared/config.mjs';
 import { doctor, parseDoctorArguments } from './commands/doctor/index.mjs';
-import { auth } from './commands/gh/auth.mjs';
-import { parseSpecArguments, runSpec, specError } from './commands/spec/index.mjs';
-import { git } from './commands/git/index.mjs';
-import { gh } from './commands/gh/index.mjs';
+import { parseFlowArguments, runFlow, flowError } from './commands/flow/index.mjs';
 import { printHelp } from './commands/help.mjs';
-import { set } from './commands/set/index.mjs';
+import { parseLangArguments, langCommand } from './commands/lang/index.mjs';
 import { show } from './commands/set/show.mjs';
-import { clear } from './commands/clear.mjs';
 import { parseWorktreeArguments, runWorktree } from './commands/worktree/index.mjs';
-import { parseWorkflowArguments, runWorkflow } from './commands/workflow/index.mjs';
+import { parseGhArguments, runGh } from './commands/gh/index.mjs';
+import { parseIssueArguments, runIssue } from './commands/issue/index.mjs';
+import { parseIssueTaskArguments, runIssueTask } from './commands/issue-task/index.mjs';
 import { workspaceReport } from './shared/workspace-report.mjs';
-import { runInit } from './commands/init.mjs';
+import { diagnosticReport } from './shared/diagnostics.mjs';
+import { currentRepository } from './shared/current-repository.mjs';
 
 // Keep validation order, output channels and exit codes at the CLI boundary.
 export async function main(args, { boundRepository } = {}) {
   const route = (args.shift() || 'help').toLowerCase();
-  const command = route.startsWith('spec.') ? 'spec' : route.startsWith('worktree.') ? 'worktree' : route.startsWith('workflow.') ? 'workflow' : route;
-  const configurationCommand = ['set.show', 'set', 'clear'].includes(command);
-  const schemas = { init: 'gidd.init/v1', 'set.show': 'gidd.config/v1', set: 'gidd.config/v1', clear: 'gidd.config/v1', doctor: 'gidd.doctor/v1', '.gh.auth': 'gidd.auth/v1', spec: 'gidd.spec/v1', worktree: 'gidd.worktree/v1', workflow: 'gidd.workflow/v1' };
+  if (toolNames.includes(route)) return runTool(route, args);
+  const command = route.startsWith('flow.') ? 'flow'
+    : route.startsWith('worktree.') ? 'worktree'
+    : route.startsWith('gh.') ? 'gh'
+    : route.startsWith('lang.') ? 'lang'
+    : /^[0-9]+(?:\.|$)/.test(route) ? 'issue-task' : route;
+  const repositoryCommand = ['gh', 'issue', 'issue-task'].includes(command);
+  const flowOutput = command === 'flow' || command === 'issue-task' && route.endsWith('.flow');
+  const configurationCommand = ['set.show', 'lang'].includes(command);
+  const schemas = { 'set.show': 'gidd.config/v1', lang: 'gidd.config/v1', doctor: 'gidd.doctor/v1', flow: 'gidd.flow/v1', worktree: 'gidd.worktree/v1', gh: 'gidd.task-command/v1', issue: 'gidd.task-command/v1', 'issue-task': 'gidd.task-command/v1' };
   let schema = 'gidd.cli/v1';
   try {
     if (['help','--help','-h'].includes(command)) {
       if (args.length > 1) throw new Error('invalid_arguments');
-      printHelp(args[0]); return 0;
-    }
-    if (command === 'set' && args.length === 0) {
-      printHelp(); return 0;
-    }
-    if (['.gh', '.git'].includes(command)) {
-      if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');
-      if (!boundRepository) throw new Error('repository_binding_required');
-      return await (command === '.git' ? git : gh)(boundRepository, args);
+      printHelp(args[0], boundRepository); return 0;
     }
     if (!Object.hasOwn(schemas,command)) throw new Error('unknown_command');
     if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');
-    let key, value, specOptions, worktreeOptions, workflowOptions;
-    if (command === 'workflow') {
-      schema = schemas.workflow;
-      workflowOptions = parseWorkflowArguments(route, args);
+    let flowOptions, worktreeOptions, commandOptions;
+    if (repositoryCommand) {
+      schema = schemas[command];
+      commandOptions = command === 'gh' ? parseGhArguments(route, args) : command === 'issue'
+        ? parseIssueArguments(route, args) : parseIssueTaskArguments(route, args);
+      args = [];
+    }
+    if (command === 'lang') {
+      schema = schemas.lang;
+      commandOptions = parseLangArguments(route, args);
       args = [];
     }
     if (command === 'worktree') {
@@ -48,14 +53,10 @@ export async function main(args, { boundRepository } = {}) {
       worktreeOptions = parseWorktreeArguments(route, args);
       args = [];
     }
-    if (command === 'spec') {
-      schema = schemas.spec;
-      specOptions = parseSpecArguments(route, args);
+    if (command === 'flow') {
+      schema = schemas.flow;
+      flowOptions = parseFlowArguments(route, args);
       args = [];
-    }
-    if (configurationCommand) {
-      if (command !== 'set.show') { key = args.shift(); if (key === undefined) throw new Error('invalid_arguments'); }
-      if (command === 'set') { value = args.shift(); if (value === undefined) throw new Error('invalid_arguments'); }
     }
     let doctorOptions;
     if (command === 'doctor') {
@@ -63,80 +64,101 @@ export async function main(args, { boundRepository } = {}) {
       args = [];
     }
     if (args.length) throw new Error('invalid_arguments');
-    if (!boundRepository) throw new Error('repository_binding_required');
-    const repository = boundRepository;
-    if (!isAbsolute(repository)) throw new Error('repository_must_be_absolute');
-    if (!['doctor', '.gh.auth'].includes(command) && !existsSync(resolve(repository, '.git'))) throw new Error('not_git_repository_root');
+    const needsRepository = !configurationCommand && command !== 'doctor' &&
+      (command !== 'flow' || flowOptions.action === 'history');
+    const repository = needsRepository ? boundRepository || await currentRepository()
+      : command === 'doctor' ? boundRepository || process.cwd() : undefined;
+    if (repository && !isAbsolute(repository)) throw new Error('repository_must_be_absolute');
+    if (needsRepository && !existsSync(resolve(repository, '.git'))) throw new Error('not_git_repository_root');
     schema = schemas[command];
-    if (command === 'spec') return await runSpec(repository, specOptions);
+    if (command === 'flow') return await runFlow(repository, flowOptions);
+    if (command === 'issue-task' && commandOptions.action === 'flow') return await runIssueTask(repository, commandOptions);
     let report;
-    if (command === 'doctor') report = await doctor(repository, { ...doctorOptions, fixedRepository: true });
-    else if (command === 'init') report = await runInit(repository);
+    if (command === 'doctor') report = await doctor(repository, { ...doctorOptions, fixedRepository: !!boundRepository });
     else if (command === 'worktree') report = await runWorktree(repository, worktreeOptions);
-    else if (command === 'workflow') report = await runWorkflow(repository, workflowOptions);
-    else if (command === 'set') report = set(repository, key, value);
+    else if (command === 'gh') report = await runGh(repository, commandOptions);
+    else if (command === 'issue') report = await runIssue(repository, commandOptions);
+    else if (command === 'issue-task') report = await runIssueTask(repository, commandOptions);
+    else if (command === 'lang') report = langCommand(repository, commandOptions);
     else if (command === 'set.show') report = show(repository);
-    else if (command === 'clear') report = clear(repository, key);
-    else report = await auth(repository);
     if (command === 'set.show') process.stdout.write(report.content);
-    else console.log(JSON.stringify(['workflow', 'worktree'].includes(command) ? workspaceReport(report) : report));
+    else console.log(JSON.stringify(repositoryCommand || command === 'worktree' ? workspaceReport(report) : report));
     // Explicit omissions and blocked local checks cannot establish readiness.
     // Preserve the existing zero exit for otherwise healthy, partial online probes.
     if (command === 'doctor' && report.checks?.some(item => item.status === 'not_checked' &&
-      (!item.id.endsWith('..online') || ['disabled', 'not_declared'].includes(item.reason)))) return 1;
+      (!item.id.endsWith('..online') || ['disabled', 'not_declared'].includes(item.details?.code)))) return 1;
     return ['ready','local_ready','checks_passed','checks_incomplete'].includes(report.status) ? 0 : 1;
   } catch (error) {
     const reason = /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : 'operation_failed';
-    if (command === 'spec') {
-      console.log(JSON.stringify(specError(boundRepository, undefined, reason), null, 2));
+    if (flowOutput) {
+      console.log(JSON.stringify(flowError(boundRepository, undefined, reason), null, 2));
       return 2;
     }
-    if (reason.startsWith('tool_binding')) console.error('Run gidd.pre.ensure.cmd --repo with the target directory to prepare tools and rebuild bindings.');
-    const hint = configurationHint(reason); if (hint) console.error(hint);
-    if (['.gh', '.git'].includes(command)) {
-      console.error(JSON.stringify({ schema: 'gidd.exec/v1', status: 'error', reason,
-        ...(error.executionScope ? { details: error.executionScope } : {}) }));
-      return 2;
-    }
+    const bindingHint = reason.startsWith('tool_binding') ? 'Run tools.ensure.cmd to prepare shared tools and rebuild bindings.' : '';
+    const hint = configurationHint(reason);
+    if (bindingHint) console.error(bindingHint);
+    if (hint) console.error(hint);
     const worktreeHints = {
-      workflow_context_exists: 'A direct-commit workflow record already exists. Use gidd.link workflow.workspace --resume <issue> to continue; after delivery, run gidd.link workflow.cleanup <issue> before starting a new task.',
-      workflow_issue_registered: 'This Issue already has a workspace record. Use gidd.link workflow.workspace --resume <issue> to inspect it.',
-      workflow_target_branch_required: 'Check out the intended target branch in the target repository, then prepare the workspace again.',
-      workflow_target_ahead: 'The local target branch is ahead of its remote counterpart. Inspect unpublished commits or a remote history rewrite, resolve the difference, then retry workspace preparation. Nothing was pushed or reset.',
-      workflow_target_diverged: 'Local and remote target histories have diverged. Resolve the target branch history before preparing a new workspace; local changes are retained.',
-      workflow_target_dirty: 'The target checkout has uncommitted changes. Preserve or finish them before retrying the target update.',
-      workflow_target_busy: 'The target checkout has an unfinished Git operation or a Git lock. Resolve it before retrying the target update.',
-      workflow_target_index_flags: 'The target index hides tracked changes. Inspect assume-unchanged or skip-worktree flags before retrying the target update.',
-      workflow_target_changed: 'The target branch changed during this command. Inspect the current branches and workspace records before retrying.',
-      workflow_context_required: 'No local workspace is recorded for this Issue. Inspect worktree.list, then prepare it with gidd.link workflow.workspace <issue>.',
-      workflow_target_checkout_required: 'Check out the recorded target branch in its intended directory, then retry workflow.merge <issue>.',
-      workflow_pr_head_changed: 'The PR head differs from the local development commit. Inspect and synchronize the intended changes before retrying.',
-      workflow_pr_merge_pending: 'The PR is not confirmed merged. Inspect its checks, branch rules or queue before retrying; retain the workspace.',
-      workflow_target_not_synced: 'Run gidd.link workflow.target-sync <issue> before closing the Issue.',
-      workflow_issue_link_failed: 'GitHub rejected the Development association. Inspect permissions and API availability, then retry workflow.close-issue <issue>.',
-      workflow_issue_link_unconfirmed: 'The Development association is not confirmed. Inspect the Issue and retry workflow.close-issue <issue>; resources are retained.',
-      workflow_issue_links_incomplete: 'The Issue has more PR associations than this command can inspect. Inspect its Development links before retrying.',
-      workflow_issue_not_completed: 'The Issue was closed as not planned. Confirm how it should be resolved before retrying.',
-      workflow_issue_close_unconfirmed: 'Issue closure is not confirmed. Inspect its state and retry workflow.close-issue <issue>; resources are retained.',
-      worktree_branch_exists: 'The generated development branch already exists. Inspect it and worktree.list; resume its recorded workflow or resolve the existing branch before preparing this Issue again.',
-      workflow_remote_branch_exists: 'The generated development branch already exists on the working remote. Inspect that branch before preparing this Issue again.',
-      workflow_workspace_released: 'This dedicated worktree has already been released. Start a new workflow for a new Issue; its directory may be reused.',
-      worktree_not_released: 'This directory has not been released. After delivery, run gidd.link workflow.cleanup <issue> before gidd.link worktree.remove <path>.',
+      task_required: 'Register and prepare the Issue with gidd <Issue编号> --flow <flow>.',
+      task_flow_required: 'Choose a flow with the user, then supply --flow <flow> when creating or first registering the Issue.',
+      task_flow_changed: 'Read the saved approval points with gidd <Issue编号>.flow; use <Issue编号>.flow.set <flow> to change them.',
+      task_flow_mode_locked: 'Preparation has started. Keep its delivery mode, or abort preparation or finish and clean the task before changing modes.',
+      task_registration_pending: 'Registration is incomplete. Repeat gidd <Issue编号> --flow <flow> before changing its flow.',
+      account_token_unavailable: 'Run gidd gh.auth to authorize the delivery account for this repository.',
+      gh_auth_required: 'Run gidd gh.auth to choose and authorize the delivery account for this repository.',
+      gh_login_failed: 'GitHub login did not complete. Retry gidd gh.auth when ready.',
+      unexpected_account: 'The current credentials belong to a different account from the task record. Use the recorded account credentials before retrying.',
+      issue_ambiguous: 'Multiple workspace records match this Issue. Inspect local records before continuing.',
+      task_workspace_changed: 'The task and workspace records disagree. Inspect local records before continuing.',
+      issue_creation_unconfirmed: 'Issue creation was not confirmed. Inspect GitHub before creating again; continue a confirmed Issue with gidd <Issue编号> --flow <flow>.',
+      issue_creation_pending: 'An unfinished creation request is recorded. Repeat its original command, or inspect create-pending.json and resolve that request first.',
+      issue_copy_required: 'The local Issue copy is missing. Repeat gidd <Issue编号> --flow <flow> to complete registration.',
+      worktree_preparation_pending: 'Preparation is incomplete. Repeat gidd <Issue编号> --flow <flow>, or run gidd <Issue编号>.cleanup to abort preparation.',
+      issue_draft_missing: 'The file supplied with --file does not exist. Relative paths are resolved from the calling directory.',
+      issue_draft_invalid: 'Supply a UTF-8 Markdown file whose first nonblank line is # Title.',
+      issue_title_empty: 'Write an Issue title after # in the file supplied with --file. The [gidd] prefix alone is not a title.',
+      delivery_context_exists: 'A direct-commit delivery record already exists. Inspect gidd <Issue编号>; resume with gidd <Issue编号> --flow <flow>. After delivery, run gidd <Issue编号>.cleanup before starting a new task.',
+      issue_registered: 'This Issue number already has a local task record. Inspect it with gidd <Issue编号>; the existing record is retained.',
+      delivery_target_branch_required: 'Check out the intended target branch in the target repository, then prepare the workspace again.',
+      delivery_target_ahead: 'The local target branch is ahead of its remote counterpart. Inspect unpublished commits or a remote history rewrite, resolve the difference, then retry workspace preparation. Nothing was pushed or reset.',
+      delivery_target_diverged: 'Local and remote target histories have diverged. Resolve the target branch history before preparing a new workspace; local changes are retained.',
+      delivery_target_dirty: 'The target checkout has uncommitted changes. Preserve or finish them before retrying the target update.',
+      delivery_target_busy: 'The target checkout has an unfinished Git operation or a Git lock. Resolve it before retrying the target update.',
+      delivery_target_index_flags: 'The target index hides tracked changes. Inspect assume-unchanged or skip-worktree flags before retrying the target update.',
+      delivery_target_changed: 'The target branch changed during this command. Inspect the current branches and workspace records before retrying.',
+      delivery_merge_changed: 'The saved squash plan differs from the current branches or arguments. Inspect the target checkout and saved plan, and resolve the difference with Git before continuing.',
+      delivery_merge_unconfirmed: 'The local merge result is not confirmed. Inspect the target checkout, commit history and saved squash plan before continuing.',
+      workspace_branch_changed: 'The checkout differs from the recorded working branch. Inspect the expected and actual branches, restore the working branch, then retry.',
+      worktree_branch_mismatch: 'The checkout differs from the recorded working branch. Inspect the expected and actual branches before retrying.',
+      delivery_context_required: 'No local workspace is recorded for this Issue. Inspect worktree.list, then prepare it with gidd <Issue编号> --flow <flow>.',
+      delivery_target_checkout_required: 'Check out the recorded target branch in its intended directory, then retry <Issue编号>.merge.',
+      pr_head_changed: 'The PR head differs from the local working branch commit. Inspect and synchronize the intended changes before retrying.',
+      pr_merge_pending: 'The PR is not confirmed merged. Inspect its checks, branch rules or queue before retrying; retain the workspace.',
+      delivery_target_not_synced: 'Run gidd <Issue编号>.target-sync before closing the Issue.',
+      issue_link_failed: 'GitHub rejected the Development association. Inspect permissions and API availability, then retry <Issue编号>.close-issue.',
+      issue_link_unconfirmed: 'The Development association is not confirmed. Inspect the Issue and retry <Issue编号>.close-issue; resources are retained.',
+      issue_links_incomplete: 'The Issue has more PR associations than this command can inspect. Inspect its Development links before retrying.',
+      issue_not_completed: 'The Issue was closed as not planned. Confirm how it should be resolved before retrying.',
+      issue_close_unconfirmed: 'Issue closure is not confirmed. Inspect its state and retry <Issue编号>.close-issue; resources are retained.',
+      worktree_branch_exists: 'The generated working branch already exists. Inspect it and worktree.list; continue its recorded task or resolve the existing branch before preparing this Issue again.',
+      delivery_remote_branch_exists: 'The generated working branch already exists on the working remote. Inspect that branch before preparing this Issue again.',
+      workspace_released: 'This dedicated worktree has already been released. Start a new task for a new Issue; its directory may be reused.',
+      worktree_not_released: 'This directory has not been released. After delivery, run gidd <Issue编号>.cleanup before gidd worktree.remove <path>.',
       worktree_state_changed: 'The Git checkout no longer matches its verified state. Inspect the registered directory before retrying.',
-      worktree_target_repository_protected: 'The target repository checkout cannot be removed by worktree.remove. Use workflow.cleanup to finish its workflow record after delivery.',
+      worktree_target_repository_protected: 'The target repository checkout cannot be removed by worktree.remove. Use <Issue编号>.cleanup after delivery.',
       worktree_unknown_selector: command === 'worktree'
-        ? 'No GIDD worktree is registered at this directory. Use gidd.link worktree.list to find its path.'
-        : 'No GIDD workspace record matches this Issue. Use gidd.link worktree.list to inspect registered workspaces.',
-      worktree_pr_not_found: 'No merged PR matches the recorded repository, branches and development commit. Resources are retained; inspect delivery before retrying.',
-      worktree_pr_ambiguous: 'Multiple merged PRs match this development branch and commit. Resources are retained; inspect the conflicting delivery records.',
+        ? 'No GIDD worktree is registered at this directory. Use gidd worktree.list to find its path.'
+        : 'No GIDD workspace record matches this Issue. Use gidd worktree.list to inspect registered workspaces.',
+      worktree_pr_not_found: 'No merged PR matches the recorded repository, branches and working branch commit. Resources are retained; inspect delivery before retrying.',
+      worktree_pr_ambiguous: 'Multiple merged PRs match this working branch and commit. Resources are retained; inspect the conflicting delivery records.',
       worktree_pr_discovery_incomplete: 'PR discovery could not inspect the complete matching history. Resources are retained; inspect delivery before retrying.'
     };
     const errorFields = { schema, status: 'error', reason,
       ...(error.dataReport ? { details: error.dataReport } : {}),
-      ...(command === 'init' ? { hint: 'Resolve the reported problem, then rerun gidd.link init. Existing configuration and resources are retained.' } : {}),
-      ...(command === 'workflow' && error.workspace ? error.workspace : {}),
-      ...(['worktree', 'workflow'].includes(command) && worktreeHints[reason] ? { hint: worktreeHints[reason] } : {}) };
-    const errorReport = JSON.stringify(['workflow', 'worktree'].includes(command) ? workspaceReport(errorFields) : errorFields);
+      ...(error.details ? { details: error.details } : {}),
+      ...(repositoryCommand && error.workspace ? error.workspace : {}),
+      ...((command === 'worktree' || repositoryCommand) && worktreeHints[reason] ? { hint: worktreeHints[reason] } : {}) };
+    const errorReport = JSON.stringify(repositoryCommand || command === 'worktree' ? workspaceReport(errorFields) : diagnosticReport(errorFields));
     if (command === 'set.show') console.error(errorReport);
     else console.log(errorReport);
     return 2;

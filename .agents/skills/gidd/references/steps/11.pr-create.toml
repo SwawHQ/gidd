@@ -1,0 +1,11 @@
+[zh-CN."pr-merge"]
+title = "创建或更新 PR"
+body = '''
+PR 使用任务记录中的交付仓库、工作分支和目标分支。已有对应的未关闭 PR 时，更新并复用。
+
+PR 标题沿用提交消息格式。使用 `Refs #NNN` 引用 Issue；`<Issue编号>.close-issue` 会建立 Issue 的 Development 关联。
+'''
+
+[en."pr-merge"]
+title = ""
+body = ""

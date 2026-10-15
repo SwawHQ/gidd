@@ -35,9 +35,10 @@ function Get-GiddBoundRuntime {
 function Find-GiddBootstrapRuntime {
     param($Storage, [switch]$Node, [ValidateSet('','bun','node')][string]$Runtime = '')
     if ($Node) { $Runtime = 'node' }
-    $bound = Get-GiddBoundRuntime $Storage.tools_root -Runtime $Runtime
-    if ($bound -and (-not $Runtime -or $bound.id -eq "tool.$Runtime")) {
-        $name = $bound.id.Substring(5)
+    $order = if ($Runtime) { @($Runtime) } else { @('bun','node') }
+    foreach ($name in $order) {
+        $bound = Get-GiddBoundRuntime $Storage.tools_root -Runtime $name
+        if (-not $bound) { continue }
         $owned = $bound.details.source -ne 'managed' -or (Test-GiddManagedTool (Join-Path $Storage.tools_root $name) $name)
         if ($owned) {
             $probe = Invoke-GiddRuntimeCompatibility $bound.details.path $name
@@ -47,9 +48,8 @@ function Find-GiddBootstrapRuntime {
             }
         }
     }
-    $order = if ($Runtime) { @($Runtime) } elseif ($Node) { @('node') } else { @('bun','node') }
     $attempts = @()
-    foreach ($source in @('managed','path')) {
+    foreach ($source in @('path','managed')) {
         foreach ($name in $order) {
             $candidate = Find-Tool $name ([version]'0.0.0') '' (Join-Path $Storage.tools_root "$name/$name.exe") -Source $source -CheckCompatibility
             $attempts += $candidate
@@ -115,6 +115,13 @@ function Get-GiddLauncherText {
             'set "GIT_EXEC_PATH="'
         }
         ('set "GIDD_JS_EXEC=' + $executable + '"')
+        if ($Candidate.id -eq 'tool.gh' -and $GitCandidate) {
+            'if defined GH_CONFIG_DIR goto run'
+            ('set "GIDD_GH_GIT=' + $gitExecutable + '"')
+            '"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0gh.link.ps1" --gidd-forward %*'
+            'exit /b %ERRORLEVEL%'
+            ':run'
+        }
         '"%GIDD_JS_EXEC%" %*'
         'exit /b %ERRORLEVEL%'
         ''
@@ -182,28 +189,48 @@ function Invoke-GiddBootstrap {
         $found = Find-GiddBootstrapRuntime $Storage -Runtime $Runtime
         $candidate = $found.candidate
         if (-not $candidate -or $Reinstall) {
-            $name = if ($Runtime) {$Runtime} else {'bun'}
-            $target = Join-Path $root $name
-            $replace = Test-Path -LiteralPath $target
-            if ($replace -and -not (Test-GiddOwnedRuntime $target $name)) { throw "occupied_or_unknown_target:$name" }
-            $manifest = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../runtimes.json')) | ConvertFrom-Json
-            $pinned = @($manifest.tools | Where-Object name -eq $name) | Select-Object -First 1
-            $definition = Resolve-GiddRelease $name $Storage.tools[$name] $pinned
-            Write-GiddInstallationGuide $root
-            $prepared = $name
-            [void](Install-GiddTool $root $definition { param($phase) [Console]::Error.WriteLine("GIDD bootstrap: $phase") } -Replace:$replace -ValidatePayload {
-                param($path,$runtimeName)
-                if ((Invoke-GiddRuntimeCompatibility $path $runtimeName).status -ne 'compatible') { throw 'runtime_incompatible' }
-            })
-            $candidate = Find-Tool $name ([version]'0.0.0') '' (Join-Path $target "$name.exe") -Source managed -CheckCompatibility
-            if ($candidate.status -ne 'ready') { throw 'bootstrap_runtime_unusable' }
+            [string[]]$installOrder = if ($Runtime) { @($Runtime) } else { @('bun','node') }
+            foreach ($name in $installOrder) {
+                $target = Join-Path $root $name
+                $replace = Test-Path -LiteralPath $target
+                if ($replace -and -not (Test-GiddOwnedRuntime $target $name)) { throw "occupied_or_unknown_target:$name" }
+                try {
+                    $manifest = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '../runtimes.json')) | ConvertFrom-Json
+                    $pinned = @($manifest.tools | Where-Object name -eq $name) | Select-Object -First 1
+                    $definition = Resolve-GiddRelease $name $Storage.tools[$name] $pinned
+                    Write-GiddInstallationGuide $root
+                    $prepared = $name
+                    [void](Install-GiddTool $root $definition -Replace:$replace -ValidatePayload {
+                        param($path,$runtimeName)
+                        if ((Invoke-GiddRuntimeCompatibility $path $runtimeName).status -ne 'compatible') { throw 'runtime_incompatible' }
+                    })
+                    $candidate = Find-Tool $name ([version]'0.0.0') '' (Join-Path $target "$name.exe") -Source managed -CheckCompatibility
+                    if ($candidate.status -ne 'ready') { throw 'bootstrap_runtime_unusable' }
+                    break
+                } catch {
+                    # Finish rollback before trying the other runtime. A rollback
+                    # failure stops preparation and preserves the recovery evidence.
+                    if ($prepared) { Restore-GiddRuntimeBackup $root $prepared; $prepared = $null }
+                    if ($name -eq $installOrder[-1]) { throw }
+                    $found.attempts += New-Check "tool.$name" 'invalid' 'runtime_preparation_failed'
+                    [Console]::Error.WriteLine("GIDD: $name preparation failed; trying Node. $($_.Exception.Message)")
+                }
+            }
         }
         Write-GiddInstallationGuide $root
         Write-GiddRuntimeBinding $root (Get-GiddRuntimeBinding $candidate)
         $name = $candidate.id.Substring(5)
         $launcher = Join-Path $root "$name.link.cmd"
         $action = Write-GiddLauncher $root (Get-GiddLauncherText $candidate) $name
-        $published = $true; $cleanupPending = $false
+        $published = $true
+        if (-not $Runtime -and $name -eq 'node') {
+            # Automatic selection has already rejected the higher-priority Bun
+            # binding. Do not let its stale launcher hide the published Node.
+            $stale = Join-Path $root 'bun.link.cmd'
+            Assert-GiddPlainPath $stale
+            if ([IO.File]::Exists($stale)) { [IO.File]::Delete($stale) }
+        }
+        $cleanupPending = $false
         if ($candidate.details.source -eq 'managed') {
             try {
                 Remove-GiddRuntimeBackup $root $candidate.id.Substring(5)
@@ -214,7 +241,7 @@ function Invoke-GiddBootstrap {
             }
         }
         return @{ schema='gidd.bootstrap/v1';status='ready';read_only=$false;runtime=$candidate;attempts=$found.attempts;
-            launcher=$launcher;launcher_action=$action;cleanup_pending=$cleanupPending;runtime_action=$(if ($prepared) {'installed'} else {'reused'}) }
+            launcher=$launcher;launcher_action=$action;cleanup_pending=$cleanupPending;runtime_action=$(if ($prepared -and $Reinstall -and $replace) {'reinstalled'} elseif ($prepared -and $replace) {'repaired'} elseif ($prepared) {'installed'} else {'reused'}) }
     } catch {
         if ($prepared -and -not $published) { Restore-GiddRuntimeBackup $root $prepared }
         throw

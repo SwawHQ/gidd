@@ -1,0 +1,9 @@
+[zh-CN."pr-merge"]
+title = "PR 合并"
+body = '''
+`gidd <Issue编号>.merge` 按任务记录查找对应 PR 并合并。默认采用 merge；按仓库约定可指定 `--squash` 或 `--rebase`。
+'''
+
+[en."pr-merge"]
+title = ""
+body = ""

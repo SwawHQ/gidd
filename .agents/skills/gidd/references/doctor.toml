@@ -6,19 +6,19 @@
 # Reasons match exactly, then by longest prefix ending in *. Per-check rules win.
 # Templates: {id}, {reason}, {blocked_by}, {config_key}, {configured}, {repository}.
 # Commands are suggestions only. Arguments stay arrays and are never evaluated.
-# Executables: link = repository gidd.link.cmd, ensure = gidd.pre.ensure.cmd, git = bound Git.
+# Executables: link = skill gidd.cmd, ensure = tools.ensure.cmd, git = bound Git.
 # 中英文提示共用检查开关和命令；检查 ID 是注册键，不是模块路径。
 # 仅执行已声明且 enabled = true 的检查；禁用或未声明会导致检查不完整（退出码 1）。
 # --offline 始终跳过联网检查；禁用的前置检查不会被自动重新启用。
 # Text pairs require en and zh-CN with matching placeholders; commands are shared.
 # 文本必须成对提供 en 和 zh-CN，且占位符一致；命令定义共用。
-# --lang > GIDD_LANG > system locale; zh variants use zh-CN.
-# 语言优先级：--lang > GIDD_LANG > 系统语言；中文变体使用 zh-CN。
+# --lang > config ui.language > system locale; zh variants use zh-CN.
+# 语言优先级：--lang > 配置 ui.language > 系统语言；中文变体使用 zh-CN。
 schema_version = 1
 
 [defaults]
-hint.en = "Inspect this check's reason and details, repair the reported problem, then rerun doctor."
-hint.zh-CN = "请查看此检查的 reason 和 details，修复报告的问题后重新运行 doctor。"
+hint.en = "Inspect this check's details, repair the reported problem, then rerun doctor."
+hint.zh-CN = "请查看此检查的 details，修复报告的问题后重新运行 doctor。"
 commands = []
 
 [report]
@@ -61,68 +61,33 @@ commands = []
 
 [commands."ensure"]
 executable = "ensure"
-args = ["--repo","{repository}"]
+args = []
 
 [commands."remotes"]
 executable = "git"
 args = ["-C","{repository}","remote","-v"]
 
-[commands."set_field"]
+[commands."set_language"]
 executable = "link"
-args = ["set","{config_key}","<value>"]
-required_inputs = ["{config_key}"]
+args = ["lang.set","<zh|en>"]
 
-[commands."init"]
+[commands."clear_language"]
 executable = "link"
-args = ["init"]
+args = ["lang.clear"]
 
-[commands."set_url"]
+[commands."flow_deliveries"]
 executable = "link"
-args = ["set","repo.remote.url","<value>"]
-required_inputs = ["repo.remote.url"]
-requires_configuration_review = true
+args = ["flow.deliveries"]
 
-[commands."set_account"]
+[commands."flow_list"]
 executable = "link"
-args = ["set","repo.remote.account","<value>"]
-required_inputs = ["repo.remote.account"]
-
-[commands."clear_field"]
-executable = "link"
-args = ["clear","{config_key}"]
-
-[commands."managed_identity"]
-executable = "link"
-args = ["set","git.user.mode","managed"]
-
-[commands."identity_name"]
-executable = "link"
-args = ["set","git.user.name","<value>"]
-required_inputs = ["git.user.name"]
-
-[commands."identity_email"]
-executable = "link"
-args = ["set","git.user.email","<value>"]
-required_inputs = ["git.user.email"]
-
-[commands."spec_modes"]
-executable = "link"
-args = ["spec.modes"]
-
-[commands."spec_list"]
-executable = "link"
-args = ["spec.list","<mode-id>"]
+args = ["flow.list","<mode-id>"]
 required_inputs = ["mode-id"]
 
-[commands."spec_read"]
+[commands."flow_read"]
 executable = "link"
-args = ["spec","<mode-id>/<name>"]
-required_inputs = ["spec.current"]
-
-[commands."spec_select"]
-executable = "link"
-args = ["set","spec.current","<mode-id>/<name>"]
-required_inputs = ["spec.current"]
+args = ["flow","<mode-id>/<name>"]
+required_inputs = ["flow"]
 
 [checks."tool.platform"]
 enabled = true
@@ -134,14 +99,14 @@ enabled = true
 
 [checks."tool.git"]
 enabled = true
-hint.en = "Run gidd.pre.ensure.cmd with this repository to repair shared tools and rebuild its entry."
-hint.zh-CN = "请针对本仓库运行 gidd.pre.ensure.cmd，修复共享工具并重建仓库入口。"
+hint.en = "Run tools.ensure.cmd to repair shared tools."
+hint.zh-CN = "请运行 tools.ensure.cmd，修复共享工具。"
 commands = ["ensure"]
 
 [checks."tool.gh"]
 enabled = true
-hint.en = "Run gidd.pre.ensure.cmd with this repository to repair shared tools and rebuild its entry."
-hint.zh-CN = "请针对本仓库运行 gidd.pre.ensure.cmd，修复共享工具并重建仓库入口。"
+hint.en = "Run tools.ensure.cmd to repair shared tools."
+hint.zh-CN = "请运行 tools.ensure.cmd，修复共享工具。"
 commands = ["ensure"]
 
 [checks."folder.git.worktree"]
@@ -158,14 +123,13 @@ hint.en = "Repair the repository HEAD, then rerun doctor."
 hint.zh-CN = "请修复仓库 HEAD，然后重新运行 doctor。"
 
 [checks."folder.git.worktree".reasons."target_required"]
-hint.en = "Run the actual skill gidd.pre.ensure.cmd --repo <Git-working-tree-root>, then invoke the generated gidd.link.cmd by its full path."
-hint.zh-CN = "请运行实际技能中的 gidd.pre.ensure.cmd --repo <Git-working-tree-root>，然后用完整路径调用生成的 gidd.link.cmd。"
+hint.en = "Run the skill gidd.cmd from the target repository or one of its worktrees."
+hint.zh-CN = "请在目标仓库或其工作树中，通过技能安装路径调用 gidd.cmd。"
 
 [checks."folder.git.identity"]
 enabled = true
-hint.en = "Check effective Git author and committer. Repair inherited Git identity, or select git.user.mode=managed and set both git.user.name and git.user.email."
-hint.zh-CN = "请检查实际生效的 Git 作者和提交者身份。修复继承的 Git 身份配置，或选择 git.user.mode=managed 并同时设置 git.user.name 和 git.user.email。"
-commands = ["managed_identity","identity_name","identity_email"]
+hint.en = "Check effective Git author and committer. Configure user.name and user.email through Git."
+hint.zh-CN = "请检查实际生效的 Git 作者和提交者身份，并通过 Git 配置 user.name 和 user.email。"
 
 [checks."config.toml"]
 enabled = true
@@ -176,16 +140,13 @@ hint.zh-CN = "请修复报告路径下的 config.toml，保留无关设置和注
 hint.en = "Use the error code to repair config.toml at the reported path, then rerun doctor."
 hint.zh-CN = "请根据错误代码修复报告路径下的 config.toml，然后重新运行 doctor。"
 
-[checks."config.toml".reasons."config_missing"]
-hint.en = "Run gidd.link init to create basic local configuration and initialize the data directory, then configure identity, remote and spec settings."
-hint.zh-CN = "请运行 gidd.link init 创建基础本地配置并初始化数据目录，再配置身份、远端和规范。"
-commands = ["init"]
 
-[checks."config.repo.remote.name"]
+[checks."config.ui.language"]
 enabled = true
-hint.en = "Review the local remote and the expected repository address, then repair the reported config field or the local remote. Do not accept a changed target automatically."
-hint.zh-CN = "请核对本地远端和预期仓库地址，再修复报告的配置字段或本地远端。不要自动接受已变更的目标。"
-commands = ["remotes","set_field"]
+hint.en = "Use lang.set to choose zh or en, or lang.clear to use the system language."
+hint.zh-CN = "请用 lang.set 设置 zh 或 en；也可用 lang.clear 恢复按系统语言选择。"
+commands = ["set_language","clear_language"]
+
 
 [checks."folder.gidd"]
 enabled = true
@@ -193,114 +154,80 @@ hint.en = "Inspect the reported data directory and gidd-wt worktree paths, owner
 hint.zh-CN = "请检查报告中的数据目录及 gidd-wt 工作树路径、归属和 Git 登记，人工处理不一致项后重试。"
 
 [checks."folder.gidd".reasons."data_missing"]
-hint.en = "The fixed data directory is absent or empty. For first use, run gidd.link init; if the repository or data was moved or deleted, inspect existing resources first."
-hint.zh-CN = "固定数据目录不存在或为空。首次使用请运行 gidd.link init；若曾移动或删除仓库及数据，请先检查现有资源。"
+hint.en = "The fixed data directory is absent or empty. Authorizing an account or registering an Issue creates it when needed. If the repository or data was moved or deleted, inspect existing resources first."
+hint.zh-CN = "固定数据目录不存在或为空。登录账号或登记 Issue 时，会按需创建该目录。若曾移动或删除仓库及数据，请先检查现有资源。"
 
-[checks."config.repo.remote.url"]
+
+
+[checks."folder.gidd.flow"]
 enabled = true
-hint.en = "Review the local remote and the expected repository address, then repair the reported config field or the local remote. Do not accept a changed target automatically."
-hint.zh-CN = "请核对本地远端和预期仓库地址，再修复报告的配置字段或本地远端。不要自动接受已变更的目标。"
-commands = ["remotes","set_url"]
+hint.en = "Inspect details.path and details.field; repair the task flow, mode description.toml, step guidance or Issue template, then rerun doctor."
+hint.zh-CN = "请查看 details.path 和 details.field，修复任务工作流程、交付模式 description.toml 或其依赖的环节经验及 Issue 模板，然后重新运行 doctor。"
 
-[checks."config.repo.remote.account"]
-enabled = true
-hint.en = "Set repo.remote.account to the expected GitHub login. This does not log in or change Git author information."
-hint.zh-CN = "请将 repo.remote.account 设为预期的 GitHub 登录名。此设置不会执行登录，也不会更改 Git 作者信息。"
-commands = ["remotes","set_field"]
-
-[checks."config.git.user.mode"]
-enabled = true
-hint.en = "Set git.user.mode explicitly to managed or inherit with gidd.link set."
-hint.zh-CN = "请用 gidd.link set 将 git.user.mode 明确设为 managed 或 inherit。"
-
-[checks."config.git.user.name"]
-enabled = true
-hint.en = "Set a valid git.user.name with gidd.link set; managed mode requires both name and email."
-hint.zh-CN = "请用 gidd.link set 设置有效的 git.user.name；managed 模式需要同时设置姓名和邮箱。"
-
-[checks."config.git.user.name".reasons."config_git_user_inherit_conflict"]
-hint.en = "With git.user.mode=inherit, Git supplies the commit identity. Run gidd.link clear {config_key} to remove the conflicting field from gidd's config.toml."
-hint.zh-CN = "当前 git.user.mode=inherit，提交身份由 Git 提供。请运行 gidd.link clear {config_key}，移除 gidd 中冲突的配置字段。"
-commands = ["clear_field"]
-
-[checks."config.git.user.email"]
-enabled = true
-hint.en = "Set a valid git.user.email with gidd.link set; managed mode requires both name and email."
-hint.zh-CN = "请用 gidd.link set 设置有效的 git.user.email；managed 模式需要同时设置姓名和邮箱。"
-
-[checks."config.git.user.email".reasons."config_git_user_inherit_conflict"]
-hint.en = "With git.user.mode=inherit, Git supplies the commit identity. Run gidd.link clear {config_key} to remove the conflicting field from gidd's config.toml."
-hint.zh-CN = "当前 git.user.mode=inherit，提交身份由 Git 提供。请运行 gidd.link clear {config_key}，移除 gidd 中冲突的配置字段。"
-commands = ["clear_field"]
-
-[checks."config.git.credential.mode"]
-enabled = true
-notes.gh.en = "gh credentials apply to HTTPS; SSH uses its native configuration."
-notes.gh.zh-CN = "gh 凭据用于 HTTPS；SSH 使用原生配置。"
-notes.inherit.en = "Git authentication is inherited; the push account is not verified."
-notes.inherit.zh-CN = "沿用 Git 身份验证配置；未验证推送账号。"
-hint.en = "Set git.credential.mode explicitly to gh or inherit with gidd.link set."
-hint.zh-CN = "请用 gidd.link set 将 git.credential.mode 明确设为 gh 或 inherit。"
-
-[checks."config.spec.current"]
-enabled = true
-hint.en = "Inspect details.path and details.field; repair the selected spec, mode description.toml or referenced workflow/Issue template, then rerun doctor."
-hint.zh-CN = "请查看 details.path 和 details.field，修复所选规范、模式 description.toml 或其依赖的环节经验及 Issue 模板，然后重新运行 doctor。"
-
-[checks."config.spec.current".reasons."spec_mode_id_conflict"]
+[checks."folder.gidd.flow".reasons."flow_mode_id_conflict"]
 hint.en = "Mode directory prefixes must be unique. Rename the conflicting directories listed in details.conflicts, then rerun doctor."
-hint.zh-CN = "模式目录的编号前缀必须唯一。请重命名 details.conflicts 列出的冲突目录，然后重新运行 doctor。"
+hint.zh-CN = "交付模式目录的编号前缀必须唯一。请重命名 details.conflicts 列出的冲突目录，然后重新运行 doctor。"
 
-[checks."config.spec.current".reasons."spec_mode_name_conflict"]
-hint.en = "A workflow mode must have exactly one directory. Resolve the duplicate mode names in details.conflicts, then rerun doctor."
-hint.zh-CN = "同一种模式只能对应一个目录。请处理 details.conflicts 列出的重复模式目录，然后重新运行 doctor。"
+[checks."folder.gidd.flow".reasons."flow_mode_name_conflict"]
+hint.en = "A delivery mode must have exactly one directory. Resolve the duplicate mode names in details.conflicts, then rerun doctor."
+hint.zh-CN = "同一种交付模式只能对应一个目录。请处理 details.conflicts 列出的重复交付模式目录，然后重新运行 doctor。"
 
-[checks."config.spec.current".reasons."spec_mode_directory_invalid"]
+[checks."folder.gidd.flow".reasons."flow_mode_directory_invalid"]
 hint.en = "Use a two-digit prefix and supported mode name for each mode directory, such as 00.direct-commit."
-hint.zh-CN = "模式目录使用两位数字前缀及受支持的模式名，例如 00.direct-commit。"
+hint.zh-CN = "交付模式目录使用两位数字前缀及受支持的交付模式名，例如 00.direct-commit。"
 
-[checks."config.spec.current".reasons."spec_mode_missing"]
-hint.en = "Run gidd.link spec.modes to find the current directory IDs, then select an existing mode and spec."
-hint.zh-CN = "请运行 gidd.link spec.modes 查看当前目录编号，再选择已有的模式和规范。"
-commands = ["spec_modes","spec_list","spec_read","spec_select"]
+[checks."folder.gidd.flow".reasons."flow_mode_missing"]
+hint.en = "Run gidd flow.deliveries to find the current directory IDs, then select an existing delivery mode and authorization preset."
+hint.zh-CN = "请运行 gidd flow.deliveries 查看当前目录编号，再选择已有的交付模式和授权方案。"
+commands = ["flow_deliveries","flow_list","flow_read"]
 
-[checks."config.spec.current".reasons."spec_number_missing"]
-hint.en = "Run gidd.link spec.list <mode-id> and select a preset number or complete name shown there."
-hint.zh-CN = "请运行 gidd.link spec.list <mode-id>，选择列表中存在的规范编号或完整名称。"
-commands = ["spec_list","spec_read","spec_select"]
+[checks."folder.gidd.flow".reasons."flow_number_missing"]
+hint.en = "Run gidd flow.list <mode-id> and select a preset number or complete name shown there."
+hint.zh-CN = "请运行 gidd flow.list <mode-id>，选择列表中存在的授权方案编号或完整名称。"
+commands = ["flow_list","flow_read"]
 
-[checks."config.spec.current".reasons."spec_number_ambiguous"]
+[checks."folder.gidd.flow".reasons."flow_number_ambiguous"]
 hint.en = "Multiple presets have this number. Give them unique prefixes or select a complete preset name."
-hint.zh-CN = "多份规范使用了同一编号。请将规范前缀改为唯一编号，或用完整规范名明确选择。"
+hint.zh-CN = "多份授权方案使用了同一编号。请将授权方案前缀改为唯一编号，或用完整授权方案名明确选择。"
 
-[checks."config.spec.current".reasons."spec_current_missing"]
-hint.en = "Run gidd.link spec.modes, then gidd.link spec.list <mode-id>. Read gidd.link spec <mode-id>/<name> before selecting it with gidd.link set spec.current <mode-id>/<name>."
-hint.zh-CN = "请运行 gidd.link spec.modes 和 gidd.link spec.list <mode-id> 查看模式与规范；用 gidd.link spec <mode-id>/<name> 阅读后，通过 gidd.link set spec.current <mode-id>/<name> 选择。"
-commands = ["spec_modes","spec_list","spec_read","spec_select"]
+[checks."folder.gidd.flow".reasons."flow_history_invalid"]
+hint.en = "Inspect flow-history.jsonl in the local data directory and correct its reported structure. Task records remain separate."
+hint.zh-CN = "请检查本地数据目录中的 flow-history.jsonl，修正记录格式。任务记录独立保存。"
 
-[checks."config.spec.current".reasons."spec_current_unsupported"]
-hint.en = "The stored selector is unsupported. Run gidd.link spec.modes and gidd.link spec.list <mode-id>, read gidd.link spec <mode-id>/<name>, then select it with gidd.link set spec.current <mode-id>/<name>."
-hint.zh-CN = "已保存的规范标识不受支持。请运行 gidd.link spec.modes 和 gidd.link spec.list <mode-id>，阅读 gidd.link spec <mode-id>/<name> 后，用 gidd.link set spec.current <mode-id>/<name> 重新选择。"
-commands = ["spec_modes","spec_list","spec_read","spec_select"]
+[checks."folder.gidd.flow".reasons."flow_language_unavailable"]
+hint.en = "The selected flow has no complete language. Complete its mode description and titles for existing guidance, or choose an available flow."
+hint.zh-CN = "所选工作流程尚无完整可用的语言。请补齐交付模式简介及已有正文的标题，或选择可用的工作流程。"
 
-[checks."config.spec.current".reasons."spec_language_unavailable"]
-hint.en = "The selected spec has no complete language. Complete its mode description and workflow references, or choose an available spec."
-hint.zh-CN = "所选规范尚无完整可用的语言。请补齐模式说明和环节参考经验，或选择已有可用正文的规范。"
-
-[checks."config.repo.remote.account..online"]
+[checks."tool.gh.account..online"]
 enabled = true
-hint.en = "Check connectivity and saved gh credentials for the configured host/account. A failed API request does not prove login is required."
-hint.zh-CN = "请检查网络连接，以及配置的主机和账号所保存的 gh 凭据。API 请求失败并不一定表示需要登录。"
+hint.en = "Check connectivity and the repository account credentials for the delivery host. A failed API request does not prove login is required."
+hint.zh-CN = "请检查网络连接，以及本仓库账号在交付主机上的凭据。API 请求失败并不一定表示需要登录。"
 
-[checks."config.repo.remote.account..online".reasons."unexpected_account"]
-hint.en = "The selected token does not belong to repo.remote.account. Review the configured account and saved gh credentials."
-hint.zh-CN = "选中的令牌不属于 repo.remote.account。请检查配置的账号和已保存的 gh 凭据。"
+[checks."tool.gh.account..online".reasons."unexpected_account"]
+hint.en = "The credential identity differs from the task account. Check the task record and gh credentials."
+hint.zh-CN = "凭据身份与任务账号不一致。请检查任务记录和 gh 凭据。"
 
-[checks."config.repo.remote.account..online".reasons."account_token_unavailable"]
-hint.en = "Run gidd.link.cmd .gh.auth to authorize the configured account."
-hint.zh-CN = "请运行 gidd.link.cmd .gh.auth，为配置的账号授权。"
+[checks."tool.gh.account..online".reasons."gh_auth_required"]
+hint.en = "Run gidd gh.auth to select this repository’s account."
+hint.zh-CN = "请运行 gidd gh.auth，选择本仓库的账号。"
 
-[checks."config.repo.remote.url..online"]
+[checks."tool.gh.account..online".reasons."account_token_unavailable"]
+hint.en = "Run gidd gh.auth to authorize this repository’s account."
+hint.zh-CN = "请运行 gidd gh.auth，为本仓库的账号授权。"
+
+[checks."folder.git.remote..online"]
 enabled = true
-hint.en = "Inspect details.gh_remote_read and details.git_remote_read. Skipped checks remain unverified; Git reading and API reading do not prove write permission."
-hint.zh-CN = "请查看 details.gh_remote_read 和 details.git_remote_read。已跳过的检查仍未验证；Git 和 API 的读取成功不能证明具有写入权限。"
+hint.en = "Inspect details.gh_remote_read and details.git_fetch_read and details.git_push_read. Skipped checks remain unverified; Git reading and API reading do not prove write permission."
+hint.zh-CN = "请查看 details.gh_remote_read 和 details.git_fetch_read、details.git_push_read。已跳过的检查仍未验证；Git 和 API 的读取成功不能证明具有写入权限。"
+
+[checks."folder.git.remote"]
+enabled = true
+hint.en = "Inspect Git remotes and target branch settings. Use for.swaw.gidd to select a separate delivery remote with one fetch URL and at most one push URL."
+hint.zh-CN = "请检查 Git 远端和目标分支配置。需要为 GIDD 单独选择远端时，可配置 for.swaw.gidd，其中使用一个 url 和至多一个 pushurl。"
+commands = ["remotes"]
+
+[checks."folder.gidd.remote"]
+enabled = true
+hint.en = "The remote selection differs from an active task. Inspect its recorded fetch source and delivery target before changing Git configuration."
+hint.zh-CN = "当前远端选择与未结束的任务记录不一致。请先核对任务记录中的读取来源和交付目标，再调整 Git 配置。"
+commands = ["remotes"]

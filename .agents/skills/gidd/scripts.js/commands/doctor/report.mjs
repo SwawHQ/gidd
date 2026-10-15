@@ -1,6 +1,6 @@
-import { resolve } from 'node:path';
 import { skillPath } from '../../shared/paths.mjs';
 import { reasonRule, render } from './catalog.mjs';
+import { diagnosticReport } from '../../shared/diagnostics.mjs';
 
 // Blocker relationships and severity are execution semantics, not editable text.
 const blockers = {
@@ -15,13 +15,7 @@ function describeCheck(item, context) {
   const declaration = catalog.checks.get(id);
   item.severity = status === 'ready' || skippedReasons.includes(reason) ? 'info' :
     ['unborn_branch', 'ssh_probe_unsupported', 'online_incomplete'].includes(reason) ? 'warning' : 'error';
-  if (status === 'ready') {
-    if (id === 'config.git.credential.mode') {
-      const note = declaration?.['notes.' + item.details.mode + '.' + lang];
-      if (note) item.details.note = note;
-    }
-    return;
-  }
+  if (status === 'ready') return;
   let schedulerReason = skippedReasons.includes(reason) ? reason : null;
   if (!schedulerReason && status === 'not_checked' && (item.blocked_by || blockers[reason])) {
     item.severity = 'info'; item.blocked_by ||= blockers[reason]; schedulerReason = 'dependency_unavailable';
@@ -39,9 +33,9 @@ function describeCheck(item, context) {
   const commands = [];
   for (const name of guidance.commands || []) {
     const template = catalog.commands.get(name);
-    if (!root) continue;
-    const executable = template.executable === 'link' ? resolve(root, '.agents/skills/gidd/gidd.link.cmd') :
-      template.executable === 'ensure' ? skillPath('gidd.pre.ensure.cmd') : context.bindings().bindings.git?.path;
+    if (!root && template.args.some(arg => arg.includes('{repository}'))) continue;
+    const executable = template.executable === 'link' ? skillPath('gidd.cmd') :
+      template.executable === 'ensure' ? skillPath('tools.ensure.cmd') : context.bindings().bindings.git?.path;
     if (!executable) continue;
     // Substitution only fills individual arguments. No shell interpolation or execution.
     commands.push({ executable, args: template.args.map(arg => render(arg, values)),
@@ -68,5 +62,11 @@ export function report(context, results) {
   if (offline) hints.push(catalog.report['offline.' + lang]);
   hints.push(catalog.report['push.' + lang]);
   return { schema: 'gidd.doctor/v1', mode: offline ? 'offline' : 'online', status,
-    hint: hints.join(' '), folder: target, checks };
+    hint: hints.join(' '), folder: target, checks: checks.map(item => {
+      // Remote probes are observations too; retain their status and blockers.
+      const details = item.details && { ...item.details };
+      for (const key of ['git_fetch_read', 'git_push_read', 'gh_remote_read'])
+        if (details?.[key]) details[key] = diagnosticReport(details[key]);
+      return diagnosticReport({ ...item, ...(details ? { details } : {}) });
+    }) };
 }

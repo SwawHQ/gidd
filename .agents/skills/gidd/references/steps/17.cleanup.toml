@@ -1,0 +1,33 @@
+[zh-CN."direct-commit"]
+title = "清理"
+body = '''
+`gidd <Issue编号>.cleanup` 核验目标分支已推送，再删除本次 Issue 编号目录，包括任务记录和 Issue 副本。需要保留的内容应先另存。目标分支和仓库目录会保留。
+'''
+
+[zh-CN."direct-merge"]
+title = "清理"
+body = '''
+`gidd <Issue编号>.cleanup` 核验交付，删除本地工作分支并释放工作区。命令同时删除本次 Issue 编号目录，包括任务记录和 Issue 副本；需要保留的内容应先另存。
+
+专用工作树目录会保留供后续复用。需要删除目录时，再用 `gidd worktree.remove <工作区目录>`。
+'''
+
+[zh-CN."pr-merge"]
+title = "清理"
+body = '''
+`gidd <Issue编号>.cleanup` 核验 PR 交付，删除本地及交付仓库的同名工作分支，并释放工作区。命令同时删除本次 Issue 编号目录，包括任务记录和 Issue 副本；需要保留的内容应先另存。
+
+专用工作树目录会保留供后续复用。需要删除目录时，再用 `gidd worktree.remove <工作区目录>`。
+'''
+
+[en."direct-commit"]
+title = ""
+body = ""
+
+[en."direct-merge"]
+title = ""
+body = ""
+
+[en."pr-merge"]
+title = ""
+body = ""

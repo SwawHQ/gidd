@@ -1,0 +1,9 @@
+[zh-CN."direct-merge"]
+title = "本地合并"
+body = '''
+`gidd <Issue编号>.merge` 将工作分支合入本地目标分支。可用 `--squash` 将工作提交合为一个提交，用 `--message <标题>` 指定提交标题。squash 先检查合并结果；存在冲突时保留原工作区，处理冲突后重试。命令中断后，重复执行 `.merge` 会核对已保存的提交与暂存内容，再继续交付。
+'''
+
+[en."direct-merge"]
+title = ""
+body = ""

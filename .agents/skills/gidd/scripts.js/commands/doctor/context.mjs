@@ -1,13 +1,11 @@
 import { existsSync, lstatSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { repositoryRoot } from '../../shared/storage.mjs';
-import { githubTarget } from '../../shared/config.mjs';
-import { gitEnvironment } from '../../shared/execution-env.mjs';
+import { remoteTarget } from '../../shared/remote-binding.mjs';
+import { noninteractiveEnvironment } from '../../shared/noninteractive.mjs';
 import { toolEnvironment } from '../../shared/tools.mjs';
 import { inspectConfiguration } from './shared/configuration.mjs';
 import { inspectBindings } from './shared/tools.mjs';
-import { remoteField } from './shared/remote.mjs';
-import { identityBlocker } from './shared/git-settings.mjs';
 import { inspectWorktree } from './shared/worktree.mjs';
 import { inspectAccount } from './shared/account.mjs';
 import { check, safeReason } from './shared/result.mjs';
@@ -36,41 +34,30 @@ export function createContext(target, { offline, fixedRepository, execute, catal
     target, configRoot, targetExists, targetError, offline, fixedRepository, execute, catalog, lang,
     configuration: () => memo('configuration', () => {
       const result = skipped('config.toml');
-      return result ? { result, remote: {} } : inspectConfiguration(configRoot);
+      return result ? { result } : inspectConfiguration(configRoot);
     }),
     bindings: () => memo('bindings', inspectBindings),
-    remote: key => memo('remote.' + key, () => skipped('config.repo.remote.' + key) || remoteField(context.configuration(), key)),
     worktree: () => memo('worktree', () => {
       const result = skipped('folder.git.worktree');
       return result ? { result, readable: false } : inspectWorktree(context);
     }),
     account: () => memo('account', async () => {
-      const result = skipped('config.repo.remote.account..online');
+      const result = skipped('tool.gh.account..online');
       return result ? { result, env: (await context.environment()).env } : inspectAccount(context);
     }),
-    apiTarget: () => memo('apiTarget', () => {
-      const url = context.remote('url'), account = context.remote('account'), name = context.remote('name');
-      return url.details?.expected && account.status === 'ready' ? githubTarget({
-        url: url.details.expected, name: name.details?.expected, account: account.details.expected,
-      }) : null;
+    apiTarget: () => memo('apiTarget', async () => {
+      const remote = await context.run('folder.git.remote');
+      return remote.status === 'ready' ? remoteTarget(remote.details) : null;
     }),
     environment: () => memo('environment', async () => {
       const bindings = context.bindings().bindings;
       const gitReady = (await context.run('tool.git')).status === 'ready';
-      const ghReady = (await context.run('tool.gh')).status === 'ready';
-      const blocker = await identityBlocker(context);
-      const credential = await context.run('config.git.credential.mode');
-      const configuration = context.configuration(), target = context.apiTarget();
-      let env = toolEnvironment(gitReady ? bindings.git.path : undefined), error;
-      try {
-        env = gitEnvironment({ user: !blocker ? configuration.git?.user : {},
-          credential: credential.status === 'ready' && ghReady && target ? configuration.git.credential : {} }, bindings, target, env);
-      } catch (caught) { error = safeReason(caught, 'git_environment_invalid'); }
-      return { env, error };
+      const env = toolEnvironment(gitReady ? bindings.git.path : undefined);
+      return { env: gitReady ? noninteractiveEnvironment(bindings.git.path, env) : env };
     }),
     async invoke(args, timeoutMs = 5000, env) {
-      return execute(context.bindings().bindings.git.path, ['-C', target, ...args],
-        { timeoutMs, env: env || (await context.environment()).env });
+      return execute(context.bindings().bindings.git.path, ['-C', context.target, ...args],
+        { timeoutMs, env: env || toolEnvironment(context.bindings().bindings.git?.path) });
     },
     run(id) {
       if (!entries.has(id)) throw new Error('doctor_unknown_check');

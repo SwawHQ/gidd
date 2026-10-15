@@ -1,7 +1,6 @@
-import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { createHash } from 'node:crypto';
 
 export const versionPattern = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/;
 export const stringPattern = String.raw`(?:"(?:[^"\\]|\\["\\])*"|'[^']*')`;
@@ -10,7 +9,6 @@ export const platformName = () => process.platform === 'win32' && process.arch =
 export const executableName = name => process.platform === 'win32' ? `${name}.exe` : name;
 // MinGit must retain its layout so git.exe can locate helpers and libraries.
 export const managedExecutable = name => name === 'git' ? 'cmd/git.exe' : executableName(name);
-export const hashFile = path => createHash('sha256').update(readFileSync(path)).digest('hex');
 
 export function compareVersions(a, b) {
   const left = a.split('.').map(Number), right = b.split('.').map(Number);
@@ -37,16 +35,16 @@ export function readConfigurationText(path) {
   catch { throw new Error('config_invalid_utf8'); }
 }
 
-// Only repository business settings live in config.toml.
+// User preferences are shared by all repositories; task choices stay local.
 export function parseConfiguration(text) {
   if (Buffer.byteLength(text) > 16384) throw new Error('config_too_large');
-  const result = { repo: { remote: {} }, git: { user: {}, credential: {} }, spec: {} }, tables = new Set(), seen = new Set();
+  const result = { ui: {} }, tables = new Set(), seen = new Set();
   let section = '', schema = false;
   for (const [index, input] of text.replace(/^\uFEFF/, '').split('\n').entries()) {
     const line = input.replace(/\r$/, '');
     if (/[\x00-\x08\x0b-\x1f\x7f]/.test(line)) throw new Error('config_control_character:' + (index + 1));
     if (/^[ \t]*(?:#.*)?$/.test(line)) continue;
-    const table = /^[ \t]*\[(repo|git|spec)\][ \t]*(?:#.*)?$/.exec(line);
+    const table = /^[ \t]*\[(ui)\][ \t]*(?:#.*)?$/.exec(line);
     if (table) {
       section = table[1];
       if (tables.has(section)) throw new Error('config_duplicate_' + section + '_table');
@@ -56,20 +54,13 @@ export function parseConfiguration(text) {
       if (schema) throw new Error('config_duplicate_schema_version');
       schema = true; continue;
     }
-    const names = section === 'repo' ? 'remote\\.(?:name|url|account)' : section === 'git' ? '(?:user\\.(?:mode|name|email)|credential\\.mode)' : section === 'spec' ? 'current' : '(?!)';
+    const names = section === 'ui' ? 'language' : '(?!)';
     const field = new RegExp('^[ \\t]*(' + names + ')[ \\t]*=[ \\t]*(' + stringPattern + ')[ \\t]*(?:#.*)?$').exec(line);
     if (!field) throw new Error('config_unsupported_syntax_or_field:' + (index + 1));
     const key = section + '.' + field[1];
     if (seen.has(key)) throw new Error('config_duplicate_key:' + key);
     seen.add(key);
-    if (section === 'repo') {
-      const [group, name] = field[1].split('.');
-      (result.repo[group] ??= {})[name] = decodeString(field[2]);
-    }
-    else if (section === 'git') {
-      const [group, name] = field[1].split('.');
-      result.git[group][name] = decodeString(field[2]);
-    } else result.spec.current = decodeString(field[2]);
+    result.ui.language = decodeString(field[2]);
   }
   if (!schema) throw new Error('config_missing_key:schema_version');
   return result;
@@ -86,96 +77,12 @@ export function repositoryRoot(path) {
   }
 }
 
-export function configurationPath(repository) {
-  if (!repository || !isAbsolute(repository)) throw new Error('repository_must_be_absolute');
-  return join(repository, '.agents/skills/gidd/config.toml');
+export function configurationPath() {
+  return join(toolsRoot(), 'config.toml');
 }
 
 export function toolsRoot() {
   const home = process.platform === 'win32' ? process.env.USERPROFILE || homedir() : homedir();
   if (!isAbsolute(home) || (process.platform === 'win32' && !/^[a-z]:[\\/]/i.test(home))) throw new Error('user_home_absolute_local_path_required');
   return resolve(home, '.agents/skills.tools/gidd');
-}
-
-export function inspectToolTree(root) {
-  plainPath(root);
-  if (!existsSync(root)) return;
-  if (!lstatSync(root).isDirectory()) throw new Error('tools_directory_not_a_directory');
-  const pending = [root];
-  while (pending.length) {
-    const directory = pending.pop();
-    for (const item of readdirSync(directory, { withFileTypes: true })) {
-      if (item.isSymbolicLink()) {
-        // Bootstrap validates the selected binding; external tool trees are not owned here.
-        if (directory === root && /^\.runtime-path-[a-f0-9]{64}$/.test(item.name)) continue;
-        throw new Error('reparse_tools_directory');
-      }
-      if (['skill.md', 'config.toml', '.git'].includes(item.name.toLowerCase())) throw new Error('tools_directory_contains_project_or_skill');
-      if (item.isDirectory()) pending.push(join(directory, item.name));
-    }
-  }
-}
-
-export function safePayloadName(name) {
-  return typeof name === 'string' && name.length <= 240 && name.split('/').every(part =>
-    /^[a-z0-9_.+@-]+$/i.test(part) && !['.', '..'].includes(part) && !/[. ]$/.test(part) &&
-    !/^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(part) &&
-    !['install.json', 'skill.md', 'config.toml', '.git'].includes(part.toLowerCase()));
-}
-
-export function payloadFiles(root, nested = false) {
-  const files = [];
-  function visit(directory, prefix = '') {
-    for (const item of readdirSync(directory, { withFileTypes: true })) {
-      if (!prefix && item.name === 'install.json') continue;
-      const name = prefix + item.name, path = join(directory, item.name);
-      if (item.isFile()) files.push(name);
-      else if (nested && item.isDirectory()) {
-        const before = files.length; visit(path, name + '/');
-        if (files.length === before) throw new Error('empty_payload_directory');
-      } else throw new Error('invalid_payload_entry');
-      if (files.length > 10000) throw new Error('too_many_payload_files');
-    }
-  }
-  visit(root); return files.sort();
-}
-
-export function managedToolValid(root, name, { allowDamaged = false } = {}) {
-  try {
-    plainPath(root);
-    const recordPath = join(root, 'install.json'); plainPath(recordPath);
-    const stat = lstatSync(recordPath);
-    if (!stat.isFile() || stat.size > (name === 'git' ? 4 * 1024 * 1024 : 65536)) return false;
-    const record = JSON.parse(readFileSync(recordPath, 'utf8').replace(/^\uFEFF/, ''));
-    if (record.schema !== (name === 'git' ? 'gidd.install/v2' : 'gidd.install/v1') || record.name !== name || record.platform !== platformName() || !versionPattern.test(record.version) || !/^[a-f0-9]{64}$/.test(record.archive_sha256) || !Array.isArray(record.files)) return false;
-    if (record.files.length > 10000) return false;
-    const names = new Set();
-    for (const file of record.files) {
-      if (!(name === 'git' ? safePayloadName(file.name) : /^[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$/i.test(file.name)) || names.has(file.name.toLowerCase()) || file.name.toLowerCase() === 'install.json') return false;
-      names.add(file.name.toLowerCase());
-      if (!Number.isSafeInteger(file.length) || file.length < 0 || !/^[a-f0-9]{64}$/.test(file.sha256)) return false;
-      const path = join(root, file.name); plainPath(path);
-      if (allowDamaged && !existsSync(path)) continue;
-      const actual = lstatSync(path);
-      if (!actual.isFile() || (!allowDamaged && (actual.size !== file.length || hashFile(path) !== file.sha256))) return false;
-    }
-    if (!names.has(managedExecutable(name).toLowerCase())) return false;
-    if (allowDamaged) {
-      const allowed = new Set(names);
-      for (const file of names) {
-        const parts=file.split('/'); parts.pop();
-        while(parts.length) { allowed.add(parts.join('/')); parts.pop(); }
-      }
-      function owned(directory,prefix='') {
-        return readdirSync(directory,{withFileTypes:true}).every(item=>{
-          if (!prefix && item.name === 'install.json') return item.isFile();
-          const path=prefix+item.name;
-          return allowed.has(path.toLowerCase()) && (item.isFile() || (item.isDirectory() && owned(join(directory,item.name),path+'/')));
-        });
-      }
-      return owned(root);
-    }
-    const actual = payloadFiles(root, name === 'git');
-    return actual.length === names.size && actual.every(file => names.has(file.toLowerCase()));
-  } catch { return false; }
 }

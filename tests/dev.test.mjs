@@ -24,18 +24,21 @@ test('test command executes every suite and rejects failures or premature zero e
     const runner=join(f.root,'dev/dev.mjs');
     write(runner,readFileSync(join(repo,'dev/dev.mjs'),'utf8'));
     write(join(f.root,'dev/node-test.cjs'),readFileSync(join(repo,'dev/node-test.cjs'),'utf8'));
-    for (const suite of ['doctor','setup','process','dev','config','github','execution','entry','repository-entry','spec','worktree','issue-workflow','workflow','data','init']) {
+    for (const name of ['test-process.mjs', 'test-process.cs', 'compile-test-process.ps1'])
+      write(join(f.root, 'dev', name), readFileSync(join(repo, 'dev', name), 'utf8'));
+    const suites = ['doctor','setup','process','dev','skill','config','remotes','github','execution','entry','repository-entry','flow','worktree','repository-auth','issues','gh','issue','issue-task','data','init'];
+    for (const suite of suites) {
       const marker=join(f.root,`${suite}.ran`);
       write(join(f.root,`tests/${suite}.test.mjs`),
         `import {test,after} from 'node:test'; import {writeFileSync} from 'node:fs';\nafter(() => writeFileSync(process.env.GIDD_TEST_COMPLETION, 'completed'));\ntest('${suite}', () => { writeFileSync(${JSON.stringify(marker)}, 'ran'); ${suite === 'setup' ? "throw new Error('expected fixture failure');" : suite === 'entry' ? 'process.exit(0);' : ''} });\n`);
     }
     const result=run(process.execPath,[runner,'.test']);
     assert.equal(result.status,1,'A failing suite must fail the command');
-    assert.match(result.stdout,/Suite summary: 13 passed, 2 failed/);
-    assert.match(result.stderr,/Test worker did not complete: tests\/entry.test.mjs/);
+    assert.match(result.stdout,/Suite summary: 18 passed, 2 failed/);
+    assert.match(result.stderr,/Test worker did not complete: tests\/entry.test.mjs \(exit 0\)/);
     assert.match(result.stdout,/FAIL tests\/setup.test.mjs \(\d+\.\d+s\)/);
     assert.match(result.stdout,/Rerun \(PowerShell\): .*\.test-(bun|node) setup/);
-    for (const suite of ['doctor','setup','process','dev','config','github','execution','entry','repository-entry','spec','worktree','issue-workflow','workflow','data','init']) {
+    for (const suite of suites) {
       assert.equal(existsSync(join(f.root,`${suite}.ran`)),true,`${suite} must actually execute, including after a failure`);
     }
     const selected=ok(run(process.execPath,[runner,'.test','doctor']));
@@ -43,6 +46,15 @@ test('test command executes every suite and rejects failures or premature zero e
     assert.doesNotMatch(selected.stdout,/Rerun \(PowerShell\):/);
     assert.notEqual(run(process.execPath,[runner,'.test','unknown']).status,0);
     assert.notEqual(run(process.execPath,[runner,'.test-live',f.root]).status,0);
+    const locked = join(f.root, 'suite-child'), executable = compile(f.root, 'fixture-worker.cs');
+    write(join(f.root, 'tests/doctor.test.mjs'),
+      `import {test} from 'node:test'; import {spawn} from 'node:child_process'; test('hang', () => { spawn(${JSON.stringify(executable)}, ['hold', ${JSON.stringify(locked)}], {stdio:'inherit'}); return new Promise(()=>{}); });`);
+    const timedOut = run(process.execPath, [runner, '.test', 'doctor'], { env: { GIDD_TEST_SUITE_TIMEOUT_MS: '1500' } });
+    assert.equal(timedOut.status, 1);
+    assert.match(timedOut.stderr, /Test command timed out/);
+    assert.match(timedOut.stdout, /Suite summary: 0 passed, 1 failed/);
+    const pid = Number(readFileSync(locked + '.pid', 'utf8'));
+    assert.throws(() => process.kill(pid, 0), 'Timed-out suites must not leave their descendants');
   } finally { f.dispose(); }
 });
 
@@ -51,6 +63,9 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
   try {
     const checkout=join(f.root,'开发 repo & spaces'); mkdirSync(checkout);
     for (const path of ['dev.cmd','dev','.agents/skills/gidd/scripts.powershell','.agents/skills/gidd/scripts.js']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    const script=join(checkout,'dev/windows.ps1');
+    // Exercise different UI and regional cultures regardless of the test host.
+    write(script,'[Globalization.CultureInfo]::CurrentUICulture = [Globalization.CultureInfo]::GetCultureInfo("en-US")\n[Globalization.CultureInfo]::CurrentCulture = [Globalization.CultureInfo]::GetCultureInfo("zh-CN")\n'+readFileSync(script,'utf8'));
     const entry=join(checkout,'dev.cmd'), cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
     const invoke=(args, env={}) => run(cmd,['/d','/s','/c',`""${entry}" ${args.join(' ')}"`],{
       cwd:f.root,windowsVerbatimArguments:true,env:{PATH:'',GIDD_DEV_LANG:'',LC_ALL:'en_US.UTF-8',...env},
@@ -60,7 +75,10 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     assert.match(ok(invoke(['.help','en'])).stdout,/repository development/);
     assert.match(ok(invoke([],{GIDD_DEV_LANG:'zh-CN'})).stdout,/仓库开发/);
     assert.match(ok(invoke(['.help','en'],{GIDD_DEV_LANG:'zh-CN'})).stdout,/repository development/);
-    assert.match(ok(invoke([],{LC_ALL:'zh_CN.UTF-8'})).stdout,/仓库开发/);
+    const systemHelp=ok(invoke(['.help','zh'])).stdout;
+    for (const locale of ['en_US.UTF-8','zh_CN.UTF-8','C.UTF-8']) {
+      assert.equal(ok(invoke([],{LC_ALL:locale,LC_MESSAGES:locale,LANG:locale})).stdout,systemHelp);
+    }
     for (const args of [['.help','invalid'],['.help','en','extra'],['.unknown'],['.auth'],['.auth','Octocat'],['.info','extra'],['.test','unknown'],['.setup','relative-path'],['.test-live',`"${f.root}"`],['.test']]) {
       assert.notEqual(invoke(args).status,0,`Must reject: ${args.join(' ')}`);
     }
@@ -122,7 +140,7 @@ test('development setup keeps runtime selectors and retires the gh shortcut',()=
     for(const path of ['dev.cmd','dev','.agents/skills/gidd'])cpSync(join(repo,path),join(checkout,path),{recursive:true});
     const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
     const invoke=tool=>run(cmd,['/d','/s','/c',`""${join(checkout,'dev.cmd')}" .setup ${tool}"`],{windowsVerbatimArguments:true,env:{PATH:''}});
-    const rejected=invoke('gh');assert.notEqual(rejected.status,0);assert.match(rejected.stderr,/gidd\.pre\.ensure/);
+    const rejected=invoke('gh');assert.notEqual(rejected.status,0);assert.match(rejected.stderr,/tools\.ensure/);
     assert.equal(existsSync(toolsRoot(f.root)),false);
     for(const tool of ['unknown','bun extra','node extra'])assert.notEqual(invoke(tool).status,0);
   } finally {f.dispose();}

@@ -1,0 +1,29 @@
+[zh-CN."direct-commit"]
+title = "push"
+body = '''
+`gidd <Issue编号>.push` 将本地目标分支推送到交付仓库的同名分支。
+'''
+
+[zh-CN."direct-merge"]
+title = "push"
+body = '''
+`gidd <Issue编号>.push` 将本地目标分支推送到交付仓库的同名分支。命令会先核验工作分支已合入目标分支。
+'''
+
+[zh-CN."pr-merge"]
+title = "push"
+body = '''
+`gidd <Issue编号>.push` 将工作分支推送到交付仓库的同名分支。
+'''
+
+[en."direct-commit"]
+title = ""
+body = ""
+
+[en."direct-merge"]
+title = ""
+body = ""
+
+[en."pr-merge"]
+title = ""
+body = ""

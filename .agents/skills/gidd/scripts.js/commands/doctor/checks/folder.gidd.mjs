@@ -15,7 +15,7 @@ export async function run(context) {
     const storage = await storageLocation(context.configRoot, git);
     const details = await inspectData(storage, git);
     if (!details.issues.length) return { id, status: 'ready', details };
-    const missing = details.issues.length === 1 && details.issues[0].reason === 'data_missing';
-    return { id, status: missing ? 'missing' : 'invalid', reason: missing ? 'data_missing' : 'data_needs_attention', details };
+    const missing = details.issues.length === 1 && details.issues[0].code === 'data_missing';
+    return { id, status: missing ? 'ready' : 'invalid', reason: missing ? 'data_missing' : 'data_needs_attention', details };
   } catch (error) { return { id, status: 'invalid', reason: safeReason(error, 'data_unavailable') }; }
 }

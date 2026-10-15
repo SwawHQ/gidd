@@ -1,16 +1,11 @@
 function Read-GiddReleaseText {
     param([string]$Url)
-    if (([uri]$Url).Scheme -ne 'https') { throw 'https_required' }
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $request = [Net.HttpWebRequest]::Create($Url)
-    $request.Timeout = 30000; $request.ReadWriteTimeout = 30000
-    $request.UserAgent = 'GIDD-bootstrap'
     $response = $null; $stream = $null
     $buffer = New-Object IO.MemoryStream
     try {
-        $response = $request.GetResponse()
-        if ($response.ResponseUri.Scheme -ne 'https') { throw 'https_redirect_required' }
-        $stream = $response.GetResponseStream()
+        $download = Open-GiddDownload $Url
+        $response = $download.response
+        $stream = $download.stream
         $bytes = New-Object byte[] 65536
         while (($count = $stream.Read($bytes,0,$bytes.Length)) -gt 0) {
             if ($buffer.Length + $count -gt 4MB) { throw 'release_metadata_too_large' }

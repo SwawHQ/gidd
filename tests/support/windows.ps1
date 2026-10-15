@@ -5,29 +5,31 @@ $ErrorActionPreference = 'Stop'
 $lock = $null
 try {
     $request = [IO.File]::ReadAllText($RequestPath) | ConvertFrom-Json
-    foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','setup-tools/_filesystem.ps1','setup-tools/download.ps1','setup-tools/releases.ps1','setup-tools/install.ps1','lib/_bootstrap.ps1','setup-tools/prepare.ps1','lib/_repository.ps1')) {
+    foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','setup-tools/_filesystem.ps1','setup-tools/download.ps1','setup-tools/releases.ps1','setup-tools/install.ps1','lib/_bootstrap.ps1','lib/_report.ps1','setup-tools/prepare.ps1')) {
         $source = Join-Path $request.codeRoot $file
         . $source
     }
     switch ($request.action) {
         'runtime' { Invoke-GiddRuntimeCompatibility $request.executable $request.name | ConvertTo-Json -Compress }
-        'repository' {
-            switch ($request.operation) {
-                'assert' {
-                    $owner = Get-GiddInstallationRepository $request.repositoryRoot $request.entry
-                    if ($null -eq $owner) { 'null' } else { ConvertTo-Json -InputObject $owner -Compress }
-                }
-                'inspect' {
-                    Test-GiddRepository $request.repositoryRoot $request.git | ConvertTo-Json -Depth 8 -Compress
-                }
-                default {
-                    Get-GiddRepositoryLink $request.repositoryRoot $request.entry $request.runtime -CheckOnly:($request.operation -eq 'check') -BeforePublish {
-                        if ($request.PSObject.Properties['concurrentText']) {
-                            [IO.File]::WriteAllText((Get-GiddEntryPath $request.repositoryRoot),$request.concurrentText)
-                        }
-                    } | ConvertTo-Json -Depth 8 -Compress
-                }
+        'read-release' { Read-GiddReleaseText $request.url }
+        'download-failure' {
+            if ($request.PSObject.Properties['networkStatus']) {
+                $failure = Get-GiddDownloadFailure ([Net.WebException]::new('private fixture error',
+                    [IO.IOException]::new('private fixture inner error'),[Net.WebExceptionStatus]$request.networkStatus,$null))
+            } else {
+                $probe = [Net.HttpWebRequest]::Create($request.url)
+                $probe.Proxy = $null; $probe.KeepAlive = $false
+                try { $probe.GetResponse().Dispose(); throw 'expected_http_failure' }
+                catch { $failure = Get-GiddDownloadFailure $_.Exception }
             }
+            $native = Invoke-GiddPrepareTools (Resolve-GiddToolStorage) -Names @('gh') -ReadText { throw $failure }
+            function Read-GiddReleaseText { throw $failure }
+            try { [void](Invoke-GiddBootstrap (Resolve-GiddToolStorage) -Yes -Runtime bun) }
+            catch { $runtime = New-GiddToolsReport @() $_.Exception.Message $_.Exception.Data['gidd_download'] }
+            @{
+                native = New-GiddToolsReport @(Convert-GiddNativeReport $native @('gh'))
+                runtime = $runtime
+            } | ConvertTo-Json -Depth 12 -Compress
         }
         'prepare' {
             function Read-GiddReleaseText {
@@ -46,6 +48,9 @@ try {
             if ($request.PSObject.Properties['root']) { $storage.tools_root = $request.root }
             $checkOnly = $request.PSObject.Properties['checkOnly'] -and $request.checkOnly
             $force = $request.PSObject.Properties['force'] -and $request.force
+            if ($request.PSObject.Properties['failRecovery'] -and $request.failRecovery) {
+                function Restore-GiddInterruptedTool { throw 'fixture_recovery_failed' }
+            }
             $result = Invoke-GiddPrepareTools $storage -Names $request.names -CheckOnly:$checkOnly -Force:$force -ReadText {
                 param($url)
                 $property = $request.responses.PSObject.Properties[$url]
@@ -54,6 +59,9 @@ try {
             } -OnPhase {
                 param($name,$phase)
                 if ($request.PSObject.Properties['stopAt'] -and $phase -eq $request.stopAt) { [Diagnostics.Process]::GetCurrentProcess().Kill() }
+            }
+            if ($request.PSObject.Properties['publicReport'] -and $request.publicReport) {
+                $result = New-GiddToolsReport @(Convert-GiddNativeReport $result $request.names)
             }
             $result | ConvertTo-Json -Depth 12 -Compress
             if ($result.status -ne 'ready') { exit 1 }
@@ -64,6 +72,7 @@ try {
         'compile' {
             Add-Type -TypeDefinition ([IO.File]::ReadAllText($request.source)) -OutputAssembly $request.destination -OutputType ConsoleApplication
         }
+        'fixture-worker' { & $request.executable @($request.arguments); exit $LASTEXITCODE }
         'syntax' {
             foreach ($source in $request.paths) {
                 $tokens=$null; $errors=$null
@@ -111,7 +120,11 @@ try {
             if ($request.PSObject.Properties['failCleanup'] -and $request.failCleanup) {
                 function Remove-GiddRuntimeBackup { throw 'fixture_cleanup_failed' }
             }
-            Invoke-GiddBootstrap (Resolve-GiddToolStorage) -Yes:$yes -Node:$node -Reinstall:$reinstall -Runtime $runtime | ConvertTo-Json -Depth 12 -Compress
+            $result = Invoke-GiddBootstrap (Resolve-GiddToolStorage) -Yes:$yes -Node:$node -Reinstall:$reinstall -Runtime $runtime
+            if ($request.PSObject.Properties['publicReport'] -and $request.publicReport) {
+                $result = New-GiddToolsReport @(Convert-GiddRuntimeReport $result $runtime)
+            }
+            $result | ConvertTo-Json -Depth 12 -Compress
         }
         'release' {
             $settings = @{ version=$request.version;source=$request.source }

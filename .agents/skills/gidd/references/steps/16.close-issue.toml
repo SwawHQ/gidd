@@ -1,0 +1,29 @@
+[zh-CN."direct-commit"]
+title = "Issue 关闭"
+body = '''
+确认 Issue 的验收清单已完成后，可用 `gidd <Issue编号>.close-issue` 关闭 Issue。命令会先核验目标分支已推送。
+'''
+
+[zh-CN."direct-merge"]
+title = "Issue 关闭"
+body = '''
+确认 Issue 的验收清单已完成后，可用 `gidd <Issue编号>.close-issue` 关闭 Issue。命令会先核验工作分支已合并且目标分支已推送。
+'''
+
+[zh-CN."pr-merge"]
+title = "Issue 关闭"
+body = '''
+确认 Issue 的验收清单已完成后，可用 `gidd <Issue编号>.close-issue` 关闭 Issue。命令会先核验对应 PR 已合并且本地目标分支已同步，并建立 Issue 与 PR 的 Development 关联。
+'''
+
+[en."direct-commit"]
+title = ""
+body = ""
+
+[en."direct-merge"]
+title = ""
+body = ""
+
+[en."pr-merge"]
+title = ""
+body = ""

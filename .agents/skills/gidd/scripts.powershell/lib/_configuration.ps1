@@ -1,4 +1,4 @@
-# Internal preparation policy. Repository config.toml is never read here.
+# Internal preparation policy. User preferences do not select tool sources.
 function Get-GiddDefaultTools {
     return @{
         node = @{ version = 'lts'; source = 'https://nodejs.org/dist' }
@@ -36,7 +36,7 @@ function Resolve-GiddToolStorage {
                     if ($directory -eq $root -and $item.Name -cmatch '^\.runtime-path-[a-f0-9]{64}$') { continue }
                     throw 'reparse_tools_directory'
                 }
-                if ($item.Name -in @('SKILL.md','config.toml','.git')) { throw 'tools_directory_contains_project_or_skill' }
+                if ($item.Name -in @('SKILL.md','.git') -or ($item.Name -eq 'config.toml' -and $directory -ne $root)) { throw 'tools_directory_contains_project_or_skill' }
                 if ($item.PSIsContainer) { $pending.Push($item.FullName) }
             }
         }

@@ -1,5 +1,3 @@
-import { fileURLToPath } from 'node:url';
-import { toolEnvironment } from './tools.mjs';
 import { checkGitHubIdentity } from './github.mjs';
 import { runCommand } from './process.mjs';
 
@@ -36,31 +34,20 @@ export function gitConfigurationEnvironment(env, pairs) {
   return result;
 }
 
-const shellQuote = value => "'" + value.replaceAll('\\', '/').replaceAll("'", "'\\''") + "'";
-
-export function gitEnvironment(settings, bindings, target, env = process.env) {
-  const pairs = [];
-  if (settings.user?.mode === 'managed') pairs.push(['user.name', settings.user.name], ['user.email', settings.user.email]);
-  if (settings.credential?.mode === 'gh') {
-    // Lazy authentication: local Git operations do not need a token or network.
-    // Git invokes this broker only when it needs HTTPS credentials for this host.
-    const helper = '!' + [process.execPath, fileURLToPath(new URL('./credential-helper.mjs', import.meta.url)),
-      bindings.gh.path, target.hostname, target.account].map(shellQuote).join(' ');
-    const key = `credential.https://${target.hostname}.helper`;
-    pairs.push([key, ''], [key, helper]);
-  }
-  return gitConfigurationEnvironment(toolEnvironment(bindings.git?.path, env), pairs);
-}
-
 // Never return the token in a diagnostic report; only the caller's private env.
 export async function selectGitHubAccount({ gh, hostname, account, repository },
   { env = process.env, cwd, signal, execute = runCommand } = {}) {
   hostname = hostname.toLowerCase();
   const clean = githubEnvironment({ hostname, repository }, env);
-  const token = await execute(gh, ['auth', 'token', '--hostname', hostname, '--user', account], { env: clean, cwd, signal });
+  const key = hostname === 'github.com' || hostname.endsWith('.ghe.com') ? 'GH_TOKEN' : 'GH_ENTERPRISE_TOKEN';
+  const source = Object.fromEntries(Object.entries(env).map(([name, value]) => [name.toUpperCase(), value]));
+  const inherited = source[key] || source[key === 'GH_TOKEN' ? 'GITHUB_TOKEN' : 'GITHUB_ENTERPRISE_TOKEN'];
+  // Initial discovery follows native credentials. A recorded account selects its
+  // saved token, or verifies an explicitly supplied environment token by API.
+  const token = inherited ? { ok: true, text: inherited } : await execute(gh,
+    ['auth', 'token', '--hostname', hostname, ...(account ? ['--user', account] : [])], { env: clean, cwd, signal });
   if (!token.ok) throw new Error(token.reason === 'command_failed' ? 'account_token_unavailable' : token.reason);
   if (!token.text || /\s/.test(token.text) || token.text.length > 16384) throw new Error('invalid_account_token');
-  const key = hostname === 'github.com' || hostname.endsWith('.ghe.com') ? 'GH_TOKEN' : 'GH_ENTERPRISE_TOKEN';
   const selected = { ...clean, [key]: token.text };
   const identity = await checkGitHubIdentity({ gh, hostname, account },
     (exe, args) => execute(exe, args, { env: selected, cwd, signal }));

@@ -37,7 +37,7 @@ function Find-Tool {
                     minimum = $result.minimum; rejected = $attempts
                 }
             }
-            $attempts += @{ path=$candidate.path; source=$candidate.source; reason='runtime_incompatible'; version=$null }
+            $attempts += @{ path=$candidate.path; source=$candidate.source; reason='runtime_incompatible'; version=$result.version }
             continue
         }
         $result = Invoke-GiddProcess $candidate.path @('--version')

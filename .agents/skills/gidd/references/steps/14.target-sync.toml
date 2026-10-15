@@ -1,0 +1,9 @@
+[zh-CN."pr-merge"]
+title = "同步本地目标分支"
+body = '''
+`gidd <Issue编号>.target-sync` 核验 PR 已合并，并快进更新本地目标分支。目标分支已在其他工作树检出时，命令在对应目录处理。
+'''
+
+[en."pr-merge"]
+title = ""
+body = ""

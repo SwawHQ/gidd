@@ -1,39 +1,20 @@
 import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { parseConfiguration, stringPattern } from './storage.mjs';
-import { validateSpecName, specSelectionHint, specCatalogHint } from './specs.mjs';
-import { validateGitField } from './git-settings.mjs';
-import { ensureLocalIgnore } from './managed-storage.mjs';
+import { dirname, resolve } from 'node:path';
+import { configurationPath, parseConfiguration, stringPattern } from './storage.mjs';
+import { flowSelectionHint, flowCatalogHint } from './flows.mjs';
+import { validateUiLanguage } from './language.mjs';
 
-const initialConfiguration = 'schema_version = 1\n\n[repo]\nremote.name = "origin"\n';
-const editableKey = /^(?:repo\.remote\.(?:name|url|account)|git\.(?:user\.(?:mode|name|email)|credential\.mode)|spec\.current)$/;
+const initialConfiguration = 'schema_version = 1\n';
+const editableKey = /^ui\.language$/;
 const hostnamePattern = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i;
 
 export function normalizeRepositoryIdentity(value) {
   const match = typeof value === 'string' && !/[\s\\%?#]/.test(value) && /^https:\/\/([^/:@]+)\/([a-z0-9_.-]+)\/([a-z0-9_.-]+)\/?$/i.exec(value);
-  if (!match || !hostnamePattern.test(match[1]) || [match[2], match[3]].some(part => ['.', '..'].includes(part))) throw new Error('config_invalid_repo_remote_url');
+  if (!match || !hostnamePattern.test(match[1]) || [match[2], match[3]].some(part => ['.', '..'].includes(part))) throw new Error('remote_address_unsupported');
   const name = match[3].replace(/\.git$/i, '');
-  if (!name || ['.', '..'].includes(name)) throw new Error('config_invalid_repo_remote_url');
+  if (!name || ['.', '..'].includes(name)) throw new Error('remote_address_unsupported');
   return `https://${match[1]}/${match[2]}/${name}`.toLowerCase();
-}
-
-export function validateRemoteField(key, value) {
-  if (key === 'url') { normalizeRepositoryIdentity(value); return; }
-  const pattern = { name: /^[a-z0-9][a-z0-9._/-]*$/i, account: /^[a-z0-9][a-z0-9-]{0,99}$/i }[key];
-  if (!pattern) throw new Error('config_unknown_repo_remote_field');
-  if (typeof value !== 'string' || /[\x00-\x20\x7f]/.test(value) || !pattern.test(value)) throw new Error('config_invalid_repo_remote_' + key);
-}
-
-export function validateRemoteSettings(remote, required = []) {
-  for (const key of required) if (!Object.hasOwn(remote, key)) throw new Error('config_missing_repo_remote_' + key);
-  for (const [key, value] of Object.entries(remote)) validateRemoteField(key, value);
-  return remote;
-}
-
-export function githubTarget(remote) {
-  const canonical = normalizeRepositoryIdentity(remote.url);
-  return { hostname: new URL(canonical).hostname, repository: canonical, remote: remote.name, account: remote.account };
 }
 
 // Never return raw transport addresses: they can contain credentials.
@@ -55,15 +36,12 @@ function validateKey(key) {
 
 function validateSetting(key, value) {
   validateKey(key);
-  if (key === 'spec.current') return validateSpecName(value);
-  if (key.startsWith('git.')) return validateGitField(key.slice(4), value);
-  validateRemoteField(key.slice('repo.remote.'.length), value);
+  return validateUiLanguage(value);
 }
 
 export function editConfiguration(text, key, value, { clear = false } = {}) {
   if (clear) validateKey(key); else validateSetting(key, value);
   parseConfiguration(text); // Other invalid values remain independently repairable.
-  if (!clear && key === 'repo.remote.url') value = normalizeRepositoryIdentity(value);
   const [section, ...parts] = key.split('.'), field = parts.join('.');
   const lines = text.split('\n'), newline = text.includes('\r\n') ? '\r\n' : '\n';
   let start = -1, end = lines.length;
@@ -96,10 +74,7 @@ export function editConfiguration(text, key, value, { clear = false } = {}) {
   return prefix + (prefix.endsWith('\n') ? '' : newline) + setting + text.slice(offset);
 }
 
-export function configPath(repository) {
-  if (!repository || !isAbsolute(repository)) throw new Error('repository_must_be_absolute');
-  return join(repository, '.agents/skills/gidd/config.toml');
-}
+export const configPath = configurationPath;
 
 function plainPath(path) {
   for (let current = resolve(path); ; current = dirname(current)) {
@@ -118,41 +93,21 @@ function readText(path) {
   catch { throw new Error('config_invalid_utf8'); }
 }
 
-export function readRemoteConfiguration(repository, required = []) {
-  const path = configPath(repository);
-  if (!existsSync(path)) throw new Error('config_missing');
-  return validateRemoteSettings(parseConfiguration(readText(path)).repo.remote, required);
-}
-
 export function readConfiguration(repository) {
   const path = configPath(repository);
-  if (!existsSync(path)) throw new Error('config_missing');
+  if (!existsSync(path)) return { ui: {} };
   return parseConfiguration(readText(path));
 }
 
-export function readAuthorizationConfiguration(repository) {
-  const { remote } = readConfiguration(repository).repo;
-  for (const key of ['url', 'account']) {
-    if (!Object.hasOwn(remote, key)) throw new Error('config_missing_repo_remote_' + key);
-    validateRemoteField(key, remote[key]);
-  }
-  return { hostname: new URL(normalizeRepositoryIdentity(remote.url)).hostname, account: remote.account };
-}
-
 export function configurationHint(reason) {
-  if (['spec_current_unsupported', 'spec_number_missing', 'spec_mode_missing'].includes(reason)) return specSelectionHint;
-  if (reason === 'spec_number_ambiguous') return 'This number matches multiple presets. Use the full preset name, for example 00/00.auto.';
-  if (reason === 'spec_mode_id_conflict' || reason === 'spec_mode_name_conflict') return 'Run gidd.link spec.modes to locate conflicting mode directories; their IDs and mode names must be unique.';
-  if (reason.startsWith('spec_')) return specCatalogHint;
-  if (reason === 'config_missing') return 'Create config with: gidd.link.cmd set repo.remote.account <login>. Then set repo.remote.url and review repo.remote.name.';
-  if (/^config_(missing|invalid)_git_user_mode$/.test(reason)) return 'Set git.user.mode explicitly to managed or inherit with gidd.link set.';
-  const userField = /^config_(?:missing|invalid)_git_user_(name|email)$/.exec(reason);
-  if (userField) return `Set a valid git.user.${userField[1]} with gidd.link set; managed mode requires both name and email.`;
-  if (reason === 'config_incomplete_git_user') return 'Managed identity requires both git.user.name and git.user.email. Set both, or choose inherit and remove both with gidd.link clear.';
-  if (reason === 'config_git_user_inherit_conflict') return 'With git.user.mode=inherit, Git supplies the commit identity. Run gidd.link clear git.user.name and gidd.link clear git.user.email to remove the conflicting fields from the gidd config.toml.';
-  if (/^config_(missing|invalid)_git_credential_mode$/.test(reason)) return 'Set git.credential.mode explicitly to gh or inherit with gidd.link set.';
-  const field = /^config_(?:missing|invalid)_repo_remote_(name|url|account)$/.exec(reason);
-  if (field) return `Run doctor --offline and repair repo.remote.${field[1]} with gidd.link set.`;
+  if (reason.startsWith('remote_')) return 'Inspect Git remotes and target branch settings. Use for.swaw.gidd to select a dedicated remote with one fetch URL and at most one push URL.';
+  if (reason === 'delivery_remote_changed') return 'Inspect the recorded source repository, fetch branch and delivery repository with doctor, then resolve the Git configuration change. The task binding is retained.';
+  if (reason === 'config_invalid_ui_language') return 'Use gidd lang.set zh or gidd lang.set en; use gidd lang.clear to follow the system language.';
+  if (['flow_selector_invalid', 'flow_number_missing', 'flow_mode_missing'].includes(reason)) return flowSelectionHint;
+  if (reason === 'flow_number_ambiguous') return 'This number matches multiple presets. Use the full preset name, for example 00/00.auto.';
+  if (reason === 'flow_mode_id_conflict' || reason === 'flow_mode_name_conflict') return 'Run gidd flow.deliveries to locate conflicting mode directories; their IDs and mode names must be unique.';
+  if (reason.startsWith('flow_')) return flowCatalogHint;
+  if (reason === 'config_missing') return 'Set optional language preferences with gidd lang.set zh or gidd lang.set en.';
   if (reason.startsWith('config_')) return 'Use the error code to check the requested settings and config.toml, then rerun the command.';
   return '';
 }
@@ -167,7 +122,6 @@ export function configure(repository, action, key, value) {
   }
   if (!['set', 'clear'].includes(action) || action === 'clear' && value !== undefined) throw new Error('config_invalid_arguments');
   const clear = action === 'clear';
-  if (!clear && key === 'repo.remote.url') value = normalizeRepositoryIdentity(value);
   if (clear) validateKey(key); else validateSetting(key, value);
   const report = { schema: 'gidd.config/v1', status: 'ready', config_path: path, action, key, ...(!clear ? { value } : {}) };
   if (clear && !existsSync(path)) return { ...report, changed: false };
@@ -184,7 +138,6 @@ export function configure(repository, action, key, value) {
     let result = editConfiguration(text, key, value, { clear });
     if (clear && result === original) return { ...report, changed: false };
     parseConfiguration(result);
-    if (original === null) ensureLocalIgnore(repository);
     const fd = openSync(temporary, 'wx');
     try { writeFileSync(fd, result, 'utf8'); fsyncSync(fd); } finally { closeSync(fd); }
     plainPath(path);

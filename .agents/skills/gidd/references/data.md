@@ -1,31 +1,84 @@
-# Issue 与本地记录 / Issue and local records
-
-Issue 记录需求、验收及交付关联，不承载机器配置。首次 `workflow.workspace <Issue编号>` 在线核验 Issue，并安全快进落后的目标分支；交付模式取入口的 `spec.current`，目标分支取目标仓库当前分支，起始提交点取同步后的目标提交。领先或分叉时停止；远端无目标分支时，仅直接交付模式可继续。合并模式创建 `codex/issue-<编号>` 开发分支；直接提交的开发分支为 null。
-
-Issues contain requirements, acceptance and delivery links, without machine configuration. Initial `workflow.workspace <issue>` checks the Issue online and safely fast-forwards a behind target. It takes the delivery mode from the entry's `spec.current`, the target branch from the target checkout and the starting commit from the synchronized target. An ahead or diverged target stops preparation; only direct delivery can proceed without a remote target. Merge modes create `codex/issue-<number>`; direct commit has no development branch.
-
-workflow 命令按 Issue 编号定位本地记录，后续沿用已保存的模式、分支、起始提交点及远端，不从 Issue 正文或当前规范重建交付上下文。resume 只核对本地记录与 Git 状态，不需要 GitHub 凭据或网络，也不接管会话。同一 Issue 在本机最多关联一个工作区。推送及交付核验按需访问远端；PR 按仓库、来源/目标分支和开发提交匹配，目标不同则报告，保留现场。close-issue 在线核验交付并关闭 Issue，PR 模式先补建 Development 关联；清理仍由 cleanup 处理。
-
-Workflow commands locate local records by Issue number and retain the saved mode, branches, starting commit and remote without deriving delivery settings anew from Issue prose or the current spec. Resume checks local records and Git state without GitHub credentials or network access, and does not claim a session. Each Issue has at most one local workspace. Push and delivery verification access remotes as needed; PR discovery checks repository, head/base branches and development commit, retaining resources when the target differs. Close-issue verifies delivery online and closes the Issue, adding its Development association in PR mode; cleanup remains separate.
-
 # GIDD 本地数据目录 / Local data
 
-数据目录固定为 `<目标仓库>.gidd/`，关联 worktree 共用主工作树旁的目录。`state/storage.json` 保存目录归属，`state/worktrees/` 保存专用 worktree 登记，`state/workflows/` 保存直接提交的流程上下文。专用 worktree 使用 `gidd-wt-<UUID>/` 命名，并通过绝对路径关联 Git。
+GIDD 的本地数据目录固定为 `<目标仓库>.gidd/`。例如，目标仓库为 `D:/repos/demo/` 时，数据目录为 `D:/repos/demo.gidd/`。目标仓库和它的关联工作树共用这个数据目录。
 
-Local data lives at `<repository>.gidd/` beside the main checkout, shared by linked worktrees. `state/storage.json` identifies the owner; `state/worktrees/` holds dedicated worktree records; `state/workflows/` holds direct-commit contexts. Dedicated worktrees use `gidd-wt-<UUID>/` names and absolute Git links.
+GIDD stores local data at `<repository>.gidd/`. For example, a target repository at `D:/repos/demo/` uses `D:/repos/demo.gidd/` for its data. The target repository and its linked worktrees share this directory.
 
-`gidd.pre.ensure --repo` 准备工具及入口后调用 `gidd.link init`，创建缺失的基础配置、数据目录、说明文件和忽略规则；已有有效配置及记录保持原样。初始化先核对 GIDD worktree 的路径和登记，异常时报告并停止。`--check` 与 `--tools-only` 不初始化仓库。
+数据目录按以下结构保存：
 
-After preparing tools and the entry, `gidd.pre.ensure --repo` calls `gidd.link init` to create missing basic configuration, local data, the notice and ignore rules. Valid configuration and records are retained. Initialization checks GIDD worktree paths and registrations first, reporting inconsistencies without proceeding. `--check` and `--tools-only` do not initialize repository data.
+```text
+<目标仓库>.gidd/
+├─ gh/                    #仓库专用的 gh 配置
+├─ create-pending.json    #当前 Issue 创建请求及恢复记录
+├─ flow-history.jsonl     #任务工作流程使用历史
+├─ storage.json           #目录归属和可复用工作树的资源记录
+├─ <Issue编号>/
+│  ├─ state.json          #任务约定及工作区关联
+│  └─ issue.md            #Issue 标题和正文的本地副本
+├─ README.md
+└─ gidd-wt-<UUID>/        #专用工作树
+```
 
-Doctor 的 `folder.gidd` 检查核对目录归属、Git 登记的 `gidd-wt-` 路径与实际目录、以及 GIDD 记录是否一致。配置或某条记录损坏时仍检查其余可读内容；普通用户 worktree 不属于此检查。
+`issue --file <文件> --flow <工作流程>` 创建 Issue、登记任务并准备工作区；`<Issue编号> --flow <工作流程>` 登记已有 Issue 并准备或继续准备工作区。登记时创建 `<Issue编号>/state.json`，准备时补充工作区记录。所有交付模式都使用这份记录。后续命令按 Issue 编号读取已保存的工作流程与确认点、账号、交付模式、分支、起始提交点和仓库约定，不从 Issue 正文或当前工作流程重新确定这些信息。
 
-Doctor's `folder.gidd` check verifies directory ownership and consistency between registered `gidd-wt-` paths, actual directories and GIDD records. Damaged configuration or individual records do not prevent checking other readable resources. Ordinary user worktrees are outside this check.
+`issue --file <file> --flow <flow>` creates an Issue, registers its task and prepares its workspace. `<Issue编号> --flow <flow>` registers an existing Issue and prepares or resumes its workspace. Registration creates `<Issue编号>/state.json`; preparation adds the workspace record. All delivery modes use this record. Later commands use the Issue number to read the saved flow and approval points, account, delivery mode, branches, starting commit and repository bindings, rather than deriving them from Issue prose or the current flow.
 
-仓库改名、搬移或数据损坏时，请按报告人工检查目录和 Git 关联，处理后重试初始化或 doctor。安全移除方式见目录内的 `README.md`。
+`state.json` 的 `flow` 保存工作流程标识 `selector`、交付模式 `mode` 和授权配置 `authorization`。`delivery` 保存交付模式 `mode` 和远程绑定 `remote`。远程绑定包含获取来源仓库、获取分支和推送目标仓库。独立工作树的对应记录保存在 `storage.json` 的 `worktrees` 中，也使用 `delivery` 字段。`gidd <Issue编号>` 将这些信息打印为 `delivery_mode` 和 `target.remote`。任务命令输出使用 `gidd.task-command/v1`；任务文件使用 `gidd.task/v1`。
 
-After repository renames, moves or data damage, inspect the reported directories and Git links manually, then retry initialization or doctor. See the directory's `README.md` for removal guidance.
+The `flow` field in `state.json` stores the workflow selector (`selector`), delivery mode (`mode`) and authorization settings (`authorization`). The `delivery` field stores the delivery mode (`mode`) and remote binding (`remote`). The binding contains the fetch repository, fetch branch and push repository. Dedicated worktree records are stored under `worktrees` in `storage.json` and also use `delivery`. `gidd <Issue编号>` reports these values as `delivery_mode` and `target.remote`. Task command output uses `gidd.task-command/v1`; task files use `gidd.task/v1`.
 
-命令协调锁位于入口配置旁，仅保护命令执行，不表示任务或 Agent 会话占用。配置、生成的入口和锁由技能目录内的 `.gitignore` 忽略；已被 Git 跟踪的文件不会自动取消跟踪。
+`state.json` 的 `registration` 保存登记 ID 和完成状态，供中断后补写 Issue 副本及工作流程历史。`preparation` 在执行 fetch 或快进更新目标分支前，保存已确定的起始提交点、更新前的提交点，以及获取来源使用的临时 Git 引用。重试沿用已保存的提交点，先核对记录与 Git，再继续准备。
 
-The lock beside the entry configuration protects command execution, not task or agent-session ownership. The skill's local `.gitignore` excludes configuration, generated entry and locks; already tracked files are not automatically untracked.
+The `registration` field in `state.json` saves the registration ID and completion state so interrupted writes of the Issue copy and flow history can resume. Before fetch or a target branch fast-forward, `preparation` saves the selected starting commit, the previous commit and any temporary Git reference used to fetch the source. A retry retains the saved commit and checks the records against Git before continuing.
+
+本地合并成功后，工作树资源记录的 `local_merge` 只保存参与合并的工作提交 `head` 和目标分支的结果提交 `commit`。后续交付检查确认工作提交未变，且结果提交仍在目标分支历史中；普通 merge 也可直接用提交历史核验。复用工作树时移除这份记录。
+
+After a local merge succeeds, the worktree resource record's `local_merge` field stores only the source commit (`head`) and the result commit on the target branch (`commit`). Delivery checks confirm that the source has not changed and that the target history contains the result. A normal merge can also be verified from commit history. Worktree reuse removes this record.
+
+squash 修改目标工作区前，先保存 `head`、合并前目标提交 `before`、预期结果 `tree` 和提交标题 `message`。中断后按这些信息核对 Git；确认结果后，将临时记录替换为两个提交 hash。
+
+Before squash changes the target checkout, it stores `head`, the previous target commit (`before`), the expected result tree (`tree`) and the commit title (`message`). A retry checks Git against this plan. Once confirmed, the two commit hashes replace the plan.
+
+专用工作树在操作 Git 前，将准备意图保存到 `storage.json` 中对应 UUID 的 `preparation` 字段，同时保存 Issue 编号、工作分支、目标分支和起始提交点。复用工作树时也保存原释放记录。重复执行编号命令时，按 Issue 编号找到同一工作区，核对 Git 现场并补做未完成操作。记录与实际状态不一致时停止，不扫描系统临时目录，也不自动恢复其他任务。
+
+Before Git changes, dedicated worktree preparation saves its intent in the corresponding UUID record's `preparation` field in `storage.json`, with the Issue number, working branch, target branch and starting commit. Reuse also saves the previous release record. A repeated numbered command finds the same workspace by Issue number, checks its actual Git state and completes unfinished operations. Inconsistent state stops preparation. Commands do not scan system temporary directories or resume other tasks automatically.
+
+创建 Issue 前，`create-pending.json` 保存请求 ID、草稿绝对路径及内容校验值、工作流程和任务约定。阶段依次为 `planned`、`creating`、`created`、`ready`。收到 Issue 编号后，先保存编号，再登记任务；完成后保留最近一次请求。草稿路径、内容和 `--flow` 参数相同的请求重试时，沿用已确认的编号，不再次创建 Issue。未完成的创建请求会阻止其他创建请求覆盖它。
+
+Before creating an Issue, `create-pending.json` saves the request ID, absolute draft path and content hash, flow and task plan. Its phases are `planned`, `creating`, `created` and `ready`. After receiving an Issue number, the command saves that number before task registration; completion retains the latest request. A request with the same draft path, contents and `--flow` argument uses the confirmed number without creating another Issue. An unfinished creation request prevents another request from replacing its record.
+
+已有编号时，优先用 `gidd <Issue编号> --flow <工作流程>` 继续。准备成功后，匹配的已确认创建记录标记为 `ready`，可以开始下一次创建。创建结果不明时先核对交付仓库；记录不能证明远端没有创建 Issue，命令不会自动重复提交创建请求。只有确认远端结果后，才可人工移除这份创建记录。
+
+With a known number, use `gidd <Issue编号> --flow <flow>` to continue. Successful preparation marks the matching confirmed creation record `ready`, so a new creation request can start. An unknown creation result requires checking the delivery repository first. The record cannot prove that no remote Issue was created; the command does not automatically repeat the creation request. Remove this creation record manually only after confirming the remote result.
+
+`flow-history.jsonl` 每行保存时间 `at` 和完整工作流程标识 `selector`。首次登记的条目也可保存登记 UUID `id`，中断后按此 ID 去重；`.flow.set` 的条目只保存时间和工作流程标识。平时追加；超过500条时，只保留最新200条。未写完的末行不算记录，下次写入时移除。`flow.history` 倒序显示最近200条，`-v` 加上时间。首次绑定及成功修改任务工作流程时追加记录；查看或重复准备工作区不追加。`<Issue编号>.flow` 使用任务保存的确认点。历史在任务清理后仍保留，不表示用户已授权新的操作。
+
+Each line in `flow-history.jsonl` stores the time (`at`) and full flow name (`selector`). Initial registration entries can also store their registration UUID (`id`) to prevent duplicate entries after an interrupted append; `.flow.set` entries store only the time and flow name. New records are appended. Above 500 records, only the latest 200 are retained. An unfinished final line is ignored and removed on the next write. `flow.history` shows the latest 200 records, newest first; `-v` adds timestamps. Initial binding and successful changes append records; viewing or repeated preparation does not. `<Issue编号>.flow` uses the saved task approval points. History remains after task cleanup and does not grant approval for new actions.
+
+任务账号记录只包含登录名。`gh/` 保存仓库的 gh 配置，由 `gh.auth` 创建，任务清理时保留。凭据由 gh 管理，不写入任务记录。
+
+Task account records contain only login names. `gh.auth` creates `gh/` for repository-specific gh configuration; task cleanup retains it. gh manages credentials, which are not written to task records.
+
+创建或登记 Issue 时，命令将标题和正文副本保存为 `<Issue编号>/issue.md`。重复准备会保留已有副本；本地副本与 GitHub Issue 不会自动同步。通过 `--file` 提供的草稿由调用者管理，创建命令不会修改或删除它。
+
+Creating or registering an Issue saves its title and body to `<Issue编号>/issue.md`. Repeated preparation retains the existing copy. The local copy and GitHub Issue do not synchronize automatically. The caller manages the draft supplied with `--file`; the creation command does not modify or delete it.
+
+尚未保存准备意图且未分配工作区时，`<Issue编号>.cleanup` 撤销未准备的任务登记，删除 Issue 编号目录。若匹配的创建记录已确认该 Issue，则将它标记为 `ready`，可以开始下一次创建。GitHub 上的 Issue 保留。
+
+Before a preparation intent or workspace allocation exists, `<Issue编号>.cleanup` removes the unprepared task registration and its numbered directory. If the matching creation record confirms that Issue, cleanup marks it `ready` so a new creation request can start. The GitHub Issue remains.
+
+已保存准备意图后中断时，`<Issue编号>.cleanup` 可以撤销未完成的工作区准备，保留任务和 Issue 副本。新建工作树仅在没有用户文件或修改时移除；复用工作树恢复原释放状态。资源不安全时停止。修复后，仍可执行编号命令继续准备。
+
+After an interruption with a saved preparation intent, `<Issue编号>.cleanup` can undo unfinished workspace preparation and retain the task and Issue copy. It removes a new worktree only when no user files or changes are present, or restores a reused worktree to its previous released state. Unsafe resources stop cleanup. After repairs, the numbered command can prepare the workspace again.
+
+交付完成后，`<Issue编号>.cleanup` 成功时删除整个 Issue 编号目录，包括文本副本和其中的临时文件。专用工作树及其释放记录保留，供后续检查、移除或复用。cleanup 不删除远端 Issue；编号目录之外的草稿由调用者清理。
+
+After delivery, successful `<Issue编号>.cleanup` deletes the entire Issue directory, including its text copy and temporary files. Dedicated worktrees and their release records remain available for inspection, removal or reuse. Cleanup retains the remote Issue; the caller removes drafts outside the numbered directory.
+
+登录账号或登记任务时，GIDD 按需创建数据目录和说明文件。已有配置和记录会保留。
+
+GIDD creates the data directory and its notice when authorizing an account or registering a task. It retains existing configuration and records.
+
+仓库改名、搬移或数据损坏时，根据诊断报告人工检查目录和 Git 关联。修复后，重新运行 `gidd doctor`。需要移除本地数据时，先阅读数据目录内的 `README.md`，按其中的安全移除步骤处理。
+
+After a repository rename, move or data damage, inspect the directories and Git links identified in the diagnostic report. After repairs, run `gidd doctor` again. Before removing local data, read the `README.md` in the data directory and follow its removal procedure.

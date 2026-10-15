@@ -1,0 +1,25 @@
+[authorization_schema]
+development         = ["auto", "ask"]
+internal_acceptance = ["auto", "ask"]
+add                 = ["auto", "ask"]
+commit              = ["auto", "ask"]
+direct_merge        = ["not_applicable"]
+direct_merge_error  = ["not_applicable"]
+push                = ["auto", "ask"]
+push_error          = ["auto", "ask"]
+pr_merge            = ["auto", "ask"]
+pr_merge_error      = ["auto", "ask"]
+target_sync         = ["auto", "ask"]
+target_sync_error   = ["auto", "ask"]
+close_issue         = ["auto", "ask"]
+cleanup             = ["auto", "ask"]
+
+[issue_template]
+zh-CN = "../../references/issue.zh-CN.json"
+en = "../../references/issue.en.json"
+
+[zh-CN]
+description = "以 Issue 为依据，从当前分支派生专用工作树进行开发，推送工作分支后通过 PR 合并到远端目标分支。"
+
+[en]
+description = ""

@@ -1,0 +1,10 @@
+[zh-CN."*"]
+title = "commit"
+body = '''
+默认只提交当前任务的改动；不同 Issue 的改动分开提交。
+仅使用 `Refs #NNN` 在提交消息末尾关联 Issue。
+'''
+
+[en."*"]
+title = ""
+body = ""

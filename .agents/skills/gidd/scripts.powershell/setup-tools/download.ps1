@@ -1,3 +1,36 @@
+function Get-GiddDownloadFailure {
+    param([Exception]$Exception)
+    $cause = $Exception
+    while ($cause -isnot [Net.WebException] -and $cause.InnerException) { $cause = $cause.InnerException }
+    $details = @{}
+    $code = if ($cause -is [Net.WebException] -and $cause.Status -eq [Net.WebExceptionStatus]::Timeout) { 'network_timeout' } else { 'network_error' }
+    if ($cause -is [Net.WebException] -and $cause.Response) {
+        $response = $cause.Response
+        try {
+            $details.http_status = [int]$response.StatusCode
+            $headers = $response.Headers
+            $limited = $details.http_status -eq 429 -or ($details.http_status -eq 403 -and
+                ($headers['X-RateLimit-Remaining'] -eq '0' -or $headers['Retry-After']))
+            $code = if ($limited) { 'http_rate_limited' } else { 'http_error' }
+            $seconds = 0; $retryAt = [DateTimeOffset]::MinValue; $reset = 0L
+            if ([int]::TryParse($headers['Retry-After'],[ref]$seconds) -and $seconds -ge 0) {
+                $retryAt = [DateTimeOffset]::UtcNow.AddSeconds($seconds)
+            } else {
+                [void][DateTimeOffset]::TryParse($headers['Retry-After'],[Globalization.CultureInfo]::InvariantCulture,
+                    [Globalization.DateTimeStyles]::AssumeUniversal,[ref]$retryAt)
+                if ($retryAt -eq [DateTimeOffset]::MinValue -and $headers['X-RateLimit-Remaining'] -eq '0' -and
+                    [long]::TryParse($headers['X-RateLimit-Reset'],[ref]$reset) -and $reset -ge 0 -and $reset -le 253402300799L) {
+                    $retryAt = [DateTimeOffset]::FromUnixTimeSeconds($reset)
+                }
+            }
+            if ($retryAt -ne [DateTimeOffset]::MinValue) { $details.retry_at = $retryAt.UtcDateTime.ToString('o') }
+        } finally { $response.Dispose() }
+    }
+    $failure = New-Object InvalidOperationException $code
+    $failure.Data['gidd_download'] = $details
+    return $failure
+}
+
 function Receive-GiddFile {
     param([string]$Url, [string]$Destination, [string]$ExpectedHash)
     if ($ExpectedHash -notmatch '^[a-f0-9]{64}$') { throw 'invalid_expected_hash' }
@@ -27,11 +60,13 @@ function Receive-GiddFile {
 
 function Open-GiddDownload {
     param([string]$Url)
+    if (([uri]$Url).Scheme -ne 'https') { throw 'https_required' }
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $request = [Net.HttpWebRequest]::Create($Url)
     $request.Timeout = 30000; $request.ReadWriteTimeout = 30000
     $request.UserAgent = 'GIDD-bootstrap'
-    $response = $request.GetResponse()
+    try { $response = $request.GetResponse() }
+    catch { throw (Get-GiddDownloadFailure $_.Exception) }
     try {
         if ($response.ResponseUri.Scheme -ne 'https') { throw 'https_redirect_required' }
         return @{ response=$response; stream=$response.GetResponseStream() }
@@ -61,7 +96,7 @@ function Expand-GiddPayload {
         }
         $files = if ($nested) { @($zip.Entries | Where-Object { -not $_.FullName.EndsWith('/') } | ForEach-Object { @{entry=$_.FullName;name=$_.FullName} }) } else { $Definition.files }
         if ($nested) {
-            foreach ($required in @('cmd/git.exe','mingw64/bin/git.exe','LICENSE.txt')) {
+            foreach ($required in @('cmd/git.exe','LICENSE.txt')) {
                 $found = @($zip.Entries | Where-Object { $_.FullName -ceq $required -and $_.Length -gt 0 })
                 if ($found.Count -ne 1) { throw 'missing_git_payload' }
             }

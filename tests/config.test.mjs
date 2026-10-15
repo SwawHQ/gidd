@@ -1,69 +1,113 @@
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import { symlinkSync, unlinkSync, realpathSync, statSync } from 'node:fs';
-import { configure, editConfiguration, readRemoteConfiguration, normalizeRepositoryIdentity } from '../.agents/skills/gidd/scripts.js/shared/config.mjs';
+import { configure, editConfiguration, readConfiguration, normalizeRepositoryIdentity } from '../.agents/skills/gidd/scripts.js/shared/config.mjs';
 import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/shared/storage.mjs';
+import { resolveLanguage } from '../.agents/skills/gidd/scripts.js/shared/language.mjs';
 import { prepare, toolsRoot, adapter, assert, compile, existsSync, fixture, hash, join, json, mkdirSync, ok, readFileSync, repo, snapshot, stub, write } from './support/helpers.mjs';
 
-const configText = 'schema_version = 1\n[git]\nuser.mode = "inherit"\ncredential.mode = "inherit"\n[repo]\nremote.name = "origin"\nremote.url = "https://github.com/owner/repo"\nremote.account = "Octocat"\n';
+const configText = 'schema_version = 1\n[ui]\nlanguage = "zh"\n';
 
-test('repository config uses three dotted fields and rejects unsupported or conflicting structure without writes', () => {
+test('optional user language supports set, clear, explicit overrides and read-only fallback', () => {
+  const f = fixture();
+  const localeVariables = ['LC_ALL', 'LC_MESSAGES', 'LANG'];
+  const previous = Object.fromEntries(localeVariables.map(name => [name, process.env[name]]));
+  try {
+    const path = join(f.root, '.agents/skills.tools/gidd/config.toml');
+    const system = /^zh(?:$|[-_])/.test(Intl.DateTimeFormat().resolvedOptions().locale) ? 'zh-CN' : 'en';
+    const preference = system === 'en' ? 'zh' : 'en';
+    const preferred = preference === 'zh' ? 'zh-CN' : 'en';
+    const select = explicit => resolveLanguage(explicit, 'unsupported_help_language', f.root);
+    const missing = snapshot(f.root);
+    assert.equal(select(), system); assert.deepEqual(snapshot(f.root), missing);
+    for (const locale of ['en_US.UTF-8', 'zh_CN.UTF-8', 'C.UTF-8']) {
+      for (const name of localeVariables) process.env[name] = locale;
+      assert.equal(select(), system, 'Terminal locale variables must not override the runtime locale');
+    }
+    configure(f.root, 'set', 'ui.language', preference);
+    assert.equal(parseConfiguration(readFileSync(path, 'utf8')).ui.language, preference);
+    assert.equal(select(), preferred); assert.equal(select(system), system);
+    assert.equal(resolveLanguage(undefined, undefined, join(f.root, 'another-repository')), preferred);
+    assert.equal(resolveLanguage(), preferred, 'The same preference applies outside a repository');
+    assert.throws(() => select('fr'), /unsupported_help_language/);
+    const configured = snapshot(f.root);
+    for (const invalid of ['fr', 'zh-CN', 'EN', '', undefined]) {
+      assert.throws(() => configure(f.root, 'set', 'ui.language', invalid), /config_invalid_ui_language/);
+      assert.deepEqual(snapshot(f.root), configured);
+    }
+    assert.equal(configure(f.root, 'clear', 'ui.language').changed, true);
+    assert.equal(select(), system);
+    assert.equal(configure(f.root, 'clear', 'ui.language').changed, false);
+    for (const content of ['broken TOML', 'schema_version = 1\n[ui]\nlanguage = "fr"\n', Buffer.from([255])]) {
+      write(path, content); const damaged = snapshot(f.root);
+      assert.equal(select(), system); assert.equal(select(preference), preferred);
+      assert.deepEqual(snapshot(f.root), damaged, 'Language selection must not repair or write configuration');
+    }
+    write(path, 'schema_version = 1\n[ui]\nlanguage = "fr"\n');
+    configure(f.root, 'set', 'ui.language', preference);
+    assert.equal(select(), preferred, 'An invalid value can be repaired with set');
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+    f.dispose();
+  }
+});
+
+test('user config keeps language preferences and rejects unsupported fields or conflicting structure without writes', () => {
   const f = fixture();
   try {
-    const path = join(f.root, '.agents/skills/gidd/config.toml');
+    const path = join(f.root, '.agents/skills.tools/gidd/config.toml');
     write(path, configText);
-    assert.deepEqual(readRemoteConfiguration(f.root, ['name','url','account']), { name: 'origin', url: 'https://github.com/owner/repo', account: 'Octocat' });
-    for (const key of ['github.account','repo.hostname','repo.remote.url.account','tools.node.source','tools.gh.version','bootstrap.runtime']) {
+    assert.deepEqual(readConfiguration(f.root).ui, { language: 'zh' });
+    for (const key of ['flow.current', 'repo.remote.account', 'git.user.mode','git.user.name','git.user.email','git.credential.mode','repo.remote.name','repo.remote.url','github.account','repo.hostname','repo.remote.url.account','tools.node.source','tools.gh.version','bootstrap.runtime']) {
       assert.throws(() => configure(f.root, 'set', key, 'value'), /config_unknown_key/);
       assert.equal(readFileSync(path,'utf8'), configText);
     }
-    for (const table of ['github', 'github.auth', 'tools', 'tools.gh', 'bootstrap', 'custom']) {
+    for (const table of ['repo', 'flow', 'git', 'github', 'github.auth', 'tools', 'tools.gh', 'bootstrap', 'custom']) {
       const text = 'schema_version = 1\n[' + table + ']\n';
       write(path, text);
       const unsupported = { message: 'config_unsupported_syntax_or_field:2' };
       assert.throws(() => parseConfiguration(text), unsupported);
       assert.equal(configure(f.root,'show').content, text);
-      assert.throws(() => configure(f.root, 'set', 'repo.remote.account', 'Octocat'), unsupported);
-      assert.throws(() => configure(f.root, 'clear', 'git.user.name'), unsupported);
+      assert.throws(() => configure(f.root, 'set', 'ui.language', 'zh'), unsupported);
+      assert.throws(() => configure(f.root, 'clear', 'ui.language'), unsupported);
       assert.equal(readFileSync(path,'utf8'), text);
     }
-    for (const suffix of ['remote.url.account = "a"\n','remote.name = "other"\n','hostname = "github.com"\n','[repo]\n','remote.token = "secret"\n']) {
+    for (const suffix of ['remote.url.account = "a"\n','remote.name = "other"\n','hostname = "github.com"\n','[ui]\n','remote.token = "secret"\n']) {
       assert.throws(() => parseConfiguration(configText + suffix), /config_/);
     }
-    assert.equal(existsSync(toolsRoot(f.root)),false);
+    assert.equal(existsSync(join(f.root, '.agents/skills/gidd/config.toml')), false);
   } finally { f.dispose(); }
 });
 
 test('config editing repairs fields independently and preserves comments, BOM, line endings and locks', () => {
   const f = fixture();
   try {
-    const path = join(f.root,'.agents/skills/gidd/config.toml');
+    const path = join(f.root,'.agents/skills.tools/gidd/config.toml');
     assert.throws(() => configure(f.root,'show'),/config_missing/);
-    configure(f.root,'set','repo.remote.account','Octocat');
-    assert.deepEqual(readRemoteConfiguration(f.root), { name:'origin',account:'Octocat' });
-    assert.throws(() => readRemoteConfiguration(f.root,['url']), /config_missing_repo_remote_url/);
-    configure(f.root,'set','repo.remote.url','https://GitHub.com/Owner/Repo.git/');
-    assert.equal(readRemoteConfiguration(f.root).url,'https://github.com/owner/repo');
+    configure(f.root,'set','ui.language','zh');
+    assert.deepEqual(readConfiguration(f.root).ui, { language:'zh' });
     for (const newline of ['\n','\r\n']) {
-      const original='\uFEFF'+['# 保留','schema_version = 1','[git]','user.mode = "inherit"','credential.mode = "inherit"','[repo] # target',"  remote.account = 'bad account' # 注释",'remote.url = "bad url"','[spec]','current = "direct-commit/00.auto"',''].join(newline);
+      const original='\uFEFF'+['# 保留','schema_version = 1','[ui] # target',"  language = 'bad account' # 注释",''].join(newline);
       write(path,original);
-      configure(f.root,'set','repo.remote.account','Octocat');
-      assert.equal(readFileSync(path,'utf8'),original.replace("'bad account'",'"Octocat"'));
-      configure(f.root,'set','repo.remote.name','upstream');
-      configure(f.root,'set','repo.remote.url','https://github.example.test/Owner/Repo');
-      const expected=original.replace("'bad account'",'"Octocat"').replace('bad url','https://github.example.test/owner/repo').replace('[spec]','remote.name = "upstream"'+newline+'[spec]');
+      configure(f.root,'set','ui.language','zh');
+      assert.equal(readFileSync(path,'utf8'),original.replace("'bad account'",'"zh"'));
+      const expected=original.replace("'bad account'",'"zh"');
       assert.equal(configure(f.root,'show').content,expected);
-      for (const [key,value] of [['name','--bad'],['account','a b'],['url','https://u:secret@github.com/a/b'],['url','https://github.com/a/b?token=secret'],['url','https://github.com/a/..'],['url','git@github.com:a/b'],['url','https://github.com/a/b\n']]) {
-        assert.throws(() => configure(f.root,'set','repo.remote.'+key,value),/config_invalid_repo_remote_/);
+      for (const [key,value] of [['account','a b'],['account','']]) {
+        assert.throws(() => configure(f.root,'set','ui.language',value),/config_invalid_ui_language/);
         assert.equal(readFileSync(path,'utf8'),expected);
       }
       write(path+'.lock','another writer');
-      assert.throws(() => configure(f.root,'set','repo.remote.account','Other'),/config_locked/);
+      assert.throws(() => configure(f.root,'set','ui.language','en'),/config_locked/);
       assert.equal(readFileSync(path,'utf8'),expected); unlinkSync(path+'.lock');
     }
     const outside=join(f.root,'outside'), linked=join(f.root,'linked');mkdirSync(outside);mkdirSync(linked);
     symlinkSync(outside,join(linked,'.agents'),'junction');
-    assert.throws(() => configure(linked,'set','repo.remote.account','Octocat'),/config_reparse_path/);
+    process.env.USERPROFILE = linked;
+    try { assert.throws(() => configure(linked,'set','ui.language','zh'),/config_reparse_path/); }
+    finally { process.env.USERPROFILE = f.root; }
     assert.equal(existsSync(join(outside,'skills')),false);
     for (const bytes of [Buffer.from([255]),'#'.repeat(16385)]) {
       write(path,bytes);assert.throws(()=>configure(f.root,'show'),/config_(invalid_utf8|too_large)/);
@@ -76,41 +120,39 @@ test('config editing repairs fields independently and preserves comments, BOM, l
 test('clear preserves other bytes and comments and is idempotent for every editable field', () => {
   const f = fixture();
   try {
-    const path = join(f.root, '.agents/skills/gidd/config.toml'), before = snapshot(f.root);
-    assert.equal(configure(f.root, 'clear', 'git.user.name').changed, false);
+    const path = join(f.root, '.agents/skills.tools/gidd/config.toml'), before = snapshot(f.root);
+    assert.equal(configure(f.root, 'clear', 'ui.language').changed, false);
     assert.deepEqual(snapshot(f.root), before, 'Missing config must not create files or directories');
     for (const newline of ['\n', '\r\n']) for (const bom of ['', '\uFEFF']) {
       for (const value of [JSON.stringify('A # "quoted" \\ name'), "'Literal # name'", '""']) for (const comment of ['', '  # 保留行内注释']) {
-        const assignment = '  user.name = ' + value + comment;
-        const text = bom + ['schema_version = 1', '[git] # section', '# nearby', assignment,
-          'user.email = "keep@example.test"', '[repo]', 'remote.name = "origin"', ''].join(newline);
+        const assignment = '  language = ' + value + comment;
+        const text = bom + ['schema_version = 1', '[ui] # section', '# nearby', assignment,
+          '# retained', ''].join(newline);
         write(path, text);
-        const result = configure(f.root, 'clear', 'git.user.name');
-        assert.equal(result.action, 'clear'); assert.equal(result.key, 'git.user.name');
+        const result = configure(f.root, 'clear', 'ui.language');
+        assert.equal(result.action, 'clear'); assert.equal(result.key, 'ui.language');
         assert.equal(result.changed, true); assert.equal(Object.hasOwn(result, 'value'), false);
         const expected = text.replace(assignment + newline, comment ? '  ' + comment.trimStart() + newline : '');
         assert.equal(readFileSync(path, 'utf8'), expected);
-        assert.equal(Object.hasOwn(parseConfiguration(expected).git.user, 'name'), false);
+        assert.equal(Object.hasOwn(parseConfiguration(expected).ui, 'language'), false);
         const saved = statSync(path, { bigint: true }), unchanged = snapshot(f.root);
-        assert.equal(configure(f.root, 'clear', 'git.user.name').changed, false);
+        assert.equal(configure(f.root, 'clear', 'ui.language').changed, false);
         assert.deepEqual(snapshot(f.root), unchanged);
         assert.equal(statSync(path, { bigint: true }).mtimeNs, saved.mtimeNs);
         assert.equal(statSync(path, { bigint: true }).ino, saved.ino);
       }
-      const prefix = bom + ['schema_version = 1', '[git]', ''].join(newline);
-      for (const tail of ['user.name = "last"', 'user.name = "last"' + newline]) {
+      const prefix = bom + ['schema_version = 1', '[ui]', ''].join(newline);
+      for (const tail of ['language = "last"', 'language = "last"' + newline]) {
         write(path, prefix + tail);
-        configure(f.root, 'clear', 'git.user.name');
+        configure(f.root, 'clear', 'ui.language');
         assert.equal(readFileSync(path, 'utf8'), prefix);
       }
-      write(path, prefix + 'user.name = "last" # last comment');
-      configure(f.root, 'clear', 'git.user.name');
+      write(path, prefix + 'language = "last" # last comment');
+      configure(f.root, 'clear', 'ui.language');
       assert.equal(readFileSync(path, 'utf8'), prefix + '# last comment');
     }
     write(path, 'schema_version = 1\n');
-    const fields = { 'repo.remote.name': 'origin', 'repo.remote.url': 'https://github.com/owner/repo',
-      'repo.remote.account': 'Octocat', 'git.user.mode': 'managed', 'git.user.name': 'Name',
-      'git.user.email': 'name@example.test', 'git.credential.mode': 'gh', 'spec.current': 'direct-commit/00.auto' };
+    const fields = { 'ui.language': 'zh' };
     for (const [key, value] of Object.entries(fields)) configure(f.root, 'set', key, value);
     for (const key of Object.keys(fields)) {
       assert.equal(configure(f.root, 'clear', key).changed, true);
@@ -124,38 +166,40 @@ test('clear preserves other bytes and comments and is idempotent for every edita
 test('clear rejects invalid requests, unsafe paths and broken files without changing them', () => {
   const f = fixture();
   try {
-    const path = join(f.root, '.agents/skills/gidd/config.toml');
+    const path = join(f.root, '.agents/skills.tools/gidd/config.toml');
     write(path, configText);
     const before = snapshot(f.root);
     for (const key of ['', undefined, 'schema_version', 'git.user', 'git.user.mod', 'repo.remote.unknown']) {
       assert.throws(() => configure(f.root, 'clear', key), /config_unknown_key/);
     }
-    assert.throws(() => configure(f.root, 'clear', 'git.user.name', ''), /config_invalid_arguments/);
+    assert.throws(() => configure(f.root, 'clear', 'ui.language', ''), /config_invalid_arguments/);
     assert.deepEqual(snapshot(f.root), before);
     write(path + '.lock', 'another writer');
-    assert.throws(() => configure(f.root, 'clear', 'repo.remote.name'), /config_locked/);
+    assert.throws(() => configure(f.root, 'clear', 'ui.language'), /config_locked/);
     assert.equal(readFileSync(path + '.lock', 'utf8'), 'another writer');
     unlinkSync(path + '.lock');
     assert.deepEqual(snapshot(f.root), before);
     for (const bytes of ['broken TOML', configText + 'remote.name = "duplicate"\n', Buffer.from([255]), '#'.repeat(16385)]) {
       write(path, bytes); const broken = snapshot(f.root);
-      assert.throws(() => configure(f.root, 'clear', 'repo.remote.name'), /config_/);
+      assert.throws(() => configure(f.root, 'clear', 'ui.language'), /config_/);
       assert.deepEqual(snapshot(f.root), broken);
     }
     unlinkSync(path); mkdirSync(path);
-    assert.throws(() => configure(f.root, 'clear', 'repo.remote.name'), /config_not_a_file/);
+    assert.throws(() => configure(f.root, 'clear', 'ui.language'), /config_not_a_file/);
     assert.equal(existsSync(path + '.lock'), false);
     const outside = join(f.root, 'outside'), linked = join(f.root, 'linked'); mkdirSync(outside); mkdirSync(linked);
     symlinkSync(outside, join(linked, '.agents'), 'junction');
-    assert.throws(() => configure(linked, 'clear', 'git.user.name'), /config_reparse_path/);
+    process.env.USERPROFILE = linked;
+    try { assert.throws(() => configure(linked, 'clear', 'ui.language'), /config_reparse_path/); }
+    finally { process.env.USERPROFILE = f.root; }
     assert.equal(existsSync(join(outside, 'skills')), false);
   } finally { f.dispose(); }
 });
 
-test('native tool policy ignores absent, malformed and hostile repository configuration', () => {
+test('native tool policy ignores absent, malformed and hostile user preferences', () => {
   const f=fixture();
   try {
-    const path=join(f.root,'.agents/skills/gidd/config.toml');
+    const path=join(f.root,'.agents/skills.tools/gidd/config.toml');
     const resolve=()=>json(ok(adapter(f.root,{action:'configuration',repositoryRoot:f.root},{env:{PATH:''}})));
     const original=resolve();
     assert.equal(original.tools_root,join(realpathSync.native(f.root),'.agents/skills.tools/gidd'));
@@ -168,14 +212,14 @@ test('native tool policy ignores absent, malformed and hostile repository config
       assert.deepEqual(resolve(),original);assert.deepEqual(readFileSync(path),before);
     }
     unlinkSync(path);mkdirSync(path);assert.deepEqual(resolve(),original);
-    assert.equal(existsSync(toolsRoot(f.root)),false);
+    assert.equal(existsSync(join(toolsRoot(f.root), 'tool-bindings.json')), false);
   } finally {f.dispose();}
 });
 
 test('shared tool storage retains ownership guards while preparation ignores business configuration', {timeout:120000}, () => {
   const f=fixture();
   try {
-    const path=join(f.root,'.agents/skills/gidd/config.toml'), tools=toolsRoot(f.root);
+    const path=join(f.root,'.agents/skills.tools/gidd/config.toml'), tools=toolsRoot(f.root);
     write(path,'invalid TOML');const before=hash(path), exe=compile(f.root);
     stub(exe,join(tools,'gh/gh.exe'),undefined,true);
     const report=json(ok(prepare(f.root,'gh',{env:{PATH:''}})));

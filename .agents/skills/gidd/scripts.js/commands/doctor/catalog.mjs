@@ -95,13 +95,9 @@ export function parseCatalog(text, ids) {
   validateRule(catalog.defaults, ruleFields);
   if (!catalog.defaults['hint.en']) fail('missing_hint');
   for (const rule of catalog.reasons.values()) validateRule(rule, ruleFields);
-  for (const [id, check] of catalog.checks) {
-    const notes = id === 'config.git.credential.mode' ? ['notes.gh', 'notes.inherit'] : [];
-    validateRule(check, ['enabled', ...ruleFields, 'reasons', ...notes.flatMap(translatedKeys)]);
+  for (const check of catalog.checks.values()) {
+    validateRule(check, ['enabled', ...ruleFields, 'reasons']);
     if (typeof check.enabled !== 'boolean') fail('invalid_enabled');
-    for (const key of notes) {
-      if (translatedKeys(key).some(field => Object.hasOwn(check, field))) validateTranslation(check, key, new Set());
-    }
     for (const rule of check.reasons.values()) validateRule(rule, ruleFields);
   }
   for (const command of catalog.commands.values()) {

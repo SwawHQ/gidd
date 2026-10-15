@@ -5,8 +5,8 @@ const fail = reason => { throw new Error(reason); };
 
 // Merge, sync, Issue closure and cleanup share repository/branch/commit matching.
 // No PR number is persisted as task identity; cleanup alone retains its evidence.
-export async function prConnection(repository, execute, signal) {
-  const connection = await repositoryConnection(repository, { execute, signal, github: true, prefix: 'worktree' });
+export async function prConnection(repository, execute, signal, record) {
+  const connection = await repositoryConnection(repository, { execute, signal, github: true, prefix: 'worktree', record });
   const { target, call, verifyRemote: address } = connection;
   const api = async (path, method = 'GET', fields = {}) => {
     const args = ['api', '--hostname', target.hostname, '--method', method];
@@ -49,23 +49,23 @@ export async function prConnection(repository, execute, signal) {
     if (!candidates.length) return { ...await proof(record, head), already_merged: true };
     if (candidates.length !== 1) fail('worktree_pr_ambiguous');
     const number = candidates[0].number, pr = await api(endpoint + '/' + number);
-    if (!branchesMatch(pr, record) || pr.number !== number || pr.state !== 'open') fail('workflow_pr_changed');
-    if (pr.head.sha !== head) fail('workflow_pr_head_changed');
-    if (pr.draft) fail('workflow_pr_draft');
+    if (!branchesMatch(pr, record) || pr.number !== number || pr.state !== 'open') fail('pr_changed');
+    if (pr.head.sha !== head) fail('pr_head_changed');
+    if (pr.draft) fail('pr_draft');
     // GitHub atomically rejects a moved PR head via sha. Server branch rules
     // remain authoritative; no admin bypass, auto-merge or queue polling.
     const result = await api(endpoint + '/' + number + '/merge', 'PUT', {
       sha: head, merge_method: method, ...(message ? { commit_title: message } : {}),
     });
-    if (result?.merged !== true || !oid(result.sha)) fail('workflow_pr_merge_pending');
+    if (result?.merged !== true || !oid(result.sha)) fail('pr_merge_pending');
     const confirmed = await proof(record, head, number);
-    if (confirmed.merge !== result.sha) fail('workflow_pr_merge_unconfirmed');
+    if (confirmed.merge !== result.sha) fail('pr_merge_unconfirmed');
     return { ...confirmed, already_merged: false };
   }
   async function remoteHead(branch) {
     await address();
     const ref = 'refs/heads/' + branch;
-    const text = await call('git', ['-C', repository, '-c', 'core.hooksPath=NUL', 'ls-remote', '--refs', target.remote, ref]);
+    const text = await call('git', ['-C', repository, '-c', 'core.hooksPath=NUL', 'ls-remote', '--refs', connection.remote.push.url, ref]);
     if (!text) return { ref, head: null };
     const lines = text.split('\n'), fields = lines[0].split('\t');
     if (lines.length !== 1 || fields[1] !== ref || !oid(fields[0])) fail('worktree_remote_response_invalid');
@@ -75,7 +75,7 @@ export async function prConnection(repository, execute, signal) {
     const remote = await remoteHead(branch);
     if (remote.head === null) return;
     if (remote.head !== expected) fail('worktree_remote_branch_changed');
-    await call('git', ['-C', repository, '-c', 'core.hooksPath=NUL', '-c', `remote.${target.remote}.mirror=false`,
-      'push', '--no-follow-tags', `--force-with-lease=${remote.ref}:${expected}`, target.remote, ':' + remote.ref]);
+    await call('git', ['-C', repository, '-c', 'core.hooksPath=NUL',
+      'push', '--no-mirror', '--no-follow-tags', `--force-with-lease=${remote.ref}:${expected}`, connection.remote.push.url, ':' + remote.ref]);
   } };
 }

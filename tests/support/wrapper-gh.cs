@@ -15,11 +15,26 @@ public static class WrapperGh {
             }
             return 0;
         }
+        if (Env("GIDD_AUTH_LOGIN") != "" && args.Length > 1) {
+            string profile = Path.Combine(Env("GH_CONFIG_DIR"), "hosts.yml");
+            if (args[0] == "auth" && args[1] == "login") {
+                if (Env("GH_PROMPT_DISABLED") != "1" || Env("GH_TOKEN") != "" || Env("GITHUB_TOKEN") != "") return 96;
+                Directory.CreateDirectory(Path.GetDirectoryName(profile));
+                File.WriteAllText(profile, Env("GIDD_AUTH_LOGIN"));
+                Console.WriteLine("fixture browser login progress"); return 0;
+            }
+            if (args[0] == "config" && args[1] == "get") {
+                if (!File.Exists(profile)) return 1;
+                Console.WriteLine(File.ReadAllText(profile)); return 0;
+            }
+        }
+        if (args.Length > 1 && args[0] == "config" && args[1] == "get") { Console.WriteLine("Octocat"); return 0; }
         if (args.Length > 1 && args[0] == "auth" && args[1] == "token") {
             // Token selection must ignore all inherited authentication tokens.
             foreach (string key in new[] {"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"})
                 if (Env(key) != "") return 96;
-            string user = args[args.Length - 1];
+            int userFlag = Array.IndexOf(args, "--user");
+            string user = userFlag >= 0 ? args[userFlag + 1] : "Octocat";
             if (user == "missing") { Console.Error.WriteLine("PRIVATE_TOKEN"); return 1; }
             Console.WriteLine("fixture-" + (user == "mismatch" ? "other" : user)); return 0;
         }
@@ -45,6 +60,16 @@ public static class WrapperGh {
         }
         if (args.Length > 0 && args[0] == "api" && args[args.Length - 1].Contains("/issues/") && Env("GIDD_ISSUE_FIXTURE") != "") {
             Console.Write(File.ReadAllText(Env("GIDD_ISSUE_FIXTURE"))); return 0;
+        }
+        if (args.Length > 0 && args[0] == "api" && args[args.Length - 1].EndsWith("/issues") &&
+                Array.IndexOf(args, "POST") >= 0 && Env("GIDD_ISSUE_FIXTURE") != "") {
+            if (Array.IndexOf(args, "--input") < 0) return 98;
+            File.WriteAllText(Env("GIDD_ISSUE_INPUT"), Console.In.ReadToEnd(), new UTF8Encoding(false));
+            Console.Write(File.ReadAllText(Env("GIDD_ISSUE_FIXTURE"))); return 0;
+        }
+        if (args.Length > 0 && args[0] == "--test-profile") {
+            foreach (string key in new[] {"GH_CONFIG_DIR", "GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_PROMPT_DISABLED", "GH_EDITOR"})
+                Emit(key, Env(key));
         }
         foreach (string arg in args) Emit("arg", arg);
         Emit("cwd", Environment.CurrentDirectory);

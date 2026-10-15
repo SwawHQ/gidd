@@ -6,16 +6,12 @@ import * as worktree from './checks/folder.git.worktree.mjs';
 import * as identity from './checks/folder.git.identity.mjs';
 import * as configuration from './checks/config.toml.mjs';
 import * as storage from './checks/folder.gidd.mjs';
-import * as remoteName from './checks/config.repo.remote.name.mjs';
-import * as remoteUrl from './checks/config.repo.remote.url.mjs';
-import * as remoteAccount from './checks/config.repo.remote.account.mjs';
-import * as userMode from './checks/config.git.user.mode.mjs';
-import * as userName from './checks/config.git.user.name.mjs';
-import * as userEmail from './checks/config.git.user.email.mjs';
-import * as credentialMode from './checks/config.git.credential.mode.mjs';
-import * as spec from './checks/config.spec.current.mjs';
-import * as onlineAccount from './checks/config.repo.remote.account..online.mjs';
-import * as onlineRemote from './checks/config.repo.remote.url..online.mjs';
+import * as remote from './checks/folder.git.remote.mjs';
+import * as taskRemote from './checks/folder.gidd.remote.mjs';
+import * as flow from './checks/folder.gidd.flow.mjs';
+import * as language from './checks/config.ui.language.mjs';
+import * as onlineAccount from './checks/tool.gh.account..online.mjs';
+import * as onlineRemote from './checks/folder.git.remote..online.mjs';
 
 // Each entry owns one ID and returns a diagnostic (or null when inapplicable).
 // Add implementations here; references/doctor.toml enables them by stable ID.
@@ -26,7 +22,7 @@ import * as onlineRemote from './checks/config.repo.remote.url..online.mjs';
 export const registry = Object.freeze([
   platform, runtime, git, gh,
   worktree, identity, storage,
-  configuration, remoteName, remoteUrl, remoteAccount,
-  userMode, userName, userEmail, credentialMode, spec,
+  configuration, language, remote, taskRemote,
+  flow,
   onlineAccount, onlineRemote,
 ]);

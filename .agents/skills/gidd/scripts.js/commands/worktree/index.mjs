@@ -1,14 +1,19 @@
-import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmdirSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { basename, dirname, join, resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { boundTools, boundExecutor } from '../../shared/bindings.mjs';
 import { plainPath, toolsRoot } from '../../shared/storage.mjs';
 import { noninteractiveEnvironment } from '../../shared/noninteractive.mjs';
 import { withSignals } from '../../shared/signals.mjs';
-import { remoteAddress } from '../../shared/config.mjs';
+import { validRemoteBinding } from '../../shared/remote-binding.mjs';
 import { cleanupWorktree, validCleanupRecord } from './cleanup.mjs';
+import { validLocalMerge } from '../../shared/local-delivery.mjs';
+import { readTasks } from '../../shared/task-records.mjs';
 import { parseList } from '../../shared/git-worktrees.mjs';
-import { acquireStorageLock, locateStorage, initializeStorage, registryLocation, storedWorktree } from '../../shared/managed-storage.mjs';
+import { branchDetails } from '../../shared/workspace-branch.mjs';
+import { inspectWorkspace, workspaceState } from '../../shared/workspace-state.mjs';
+import { acquireStorageLock, locateStorage, initializeStorage, registryLocation, readRegistry, updateRegistry } from '../../shared/managed-storage.mjs';
 export { parseList } from '../../shared/git-worktrees.mjs';
 
 const schema = 'gidd.worktree/v1';
@@ -22,11 +27,9 @@ const key = path => canonical(path).toLowerCase();
 const fail = reason => { throw new Error(reason); };
 const argument = value => typeof value === 'string' && value.length > 0 && !value.startsWith('-') && !/[\x00-\x20\x7f]/.test(value);
 
-export function validWorkflowContext(value) {
+export function validDeliveryContext(value) {
   return value && ['direct-commit', 'direct-merge', 'pr-merge'].includes(value.mode) &&
-    Object.keys(value).every(field => ['mode', 'remote', 'identity'].includes(field)) &&
-    typeof value.remote === 'string' && /^[a-z0-9][a-z0-9._/-]*$/i.test(value.remote) &&
-    typeof value.identity === 'string' && remoteAddress(value.identity)?.identity === value.identity;
+    Object.keys(value).every(field => ['mode', 'remote'].includes(field)) && validRemoteBinding(value.remote);
 }
 
 export function parseWorktreeArguments(route, args) {
@@ -37,40 +40,43 @@ export function parseWorktreeArguments(route, args) {
   fail('invalid_arguments');
 }
 
-export function readRecords(directory, pool) {
-  plainPath(directory);
-  if (!existsSync(directory)) return [];
-  return readdirSync(directory).filter(name => name.endsWith('.json')).sort().map(name => readRecord(directory, name, pool));
+export function readRecords(file, pool) {
+  plainPath(file);
+  if (!existsSync(file)) return [];
+  const registry = readRegistry(file);
+  return Object.keys(registry.worktrees).sort().map(id => readRecord(file, id, pool, registry));
 }
 
-export function readRecord(directory, name, pool) {
-  const path = join(directory, name);
-  plainPath(path);
-  const stat = lstatSync(path);
-  if (!stat.isFile() || stat.size > 4096) fail('worktree_record_invalid');
-  let record;
-  try { record = JSON.parse(readFileSync(path, 'utf8')); } catch { fail('worktree_record_invalid'); }
-  if (!record || record.schema !== schema || !idPattern.test(record.id) || name !== record.id + '.json' ||
-      Object.keys(record).some(field => !['schema', 'id', 'issue', 'ready_head', 'branch', 'target_branch', 'start_commit', 'cleanup', 'workflow'].includes(field)) ||
+function validRecord(record, name, previous = false) {
+  if (!record || record.schema !== schema || !idPattern.test(record.id) || name !== record.id ||
+      Object.keys(record).some(field => !['schema', 'id', 'issue', 'ready_head', 'branch', 'target_branch', 'start_commit', 'cleanup', 'delivery', 'preparation', 'local_merge'].includes(field)) ||
       (!Number.isSafeInteger(record.issue) || record.issue <= 0) ||
-      (!validWorkflowContext(record.workflow) || record.workflow.mode === 'direct-commit') ||
+      (!validDeliveryContext(record.delivery) || record.delivery.mode === 'direct-commit') ||
       (record.cleanup !== undefined && !validCleanupRecord(record.cleanup)) ||
+      (record.local_merge !== undefined && (record.delivery.mode !== 'direct-merge' || record.preparation || !validLocalMerge(record.local_merge))) ||
       (record.ready_head !== undefined && record.cleanup?.head !== record.ready_head) ||
-      (![0, 3].includes(['branch', 'target_branch', 'start_commit'].filter(field => record[field] !== undefined).length)) ||
+      ['branch', 'target_branch', 'start_commit'].some(field => record[field] === undefined) ||
       (record.cleanup !== undefined && record.start_commit === undefined) ||
       ['branch', 'target_branch'].some(field => record[field] !== undefined && (!argument(record[field]) || record[field].startsWith('refs/'))) ||
-      ['ready_head', 'start_commit'].some(field => record[field] !== undefined && !oidPattern.test(record[field]))) fail('worktree_record_invalid');
+      ['ready_head', 'start_commit'].some(field => record[field] !== undefined && !oidPattern.test(record[field]))) return false;
+  const preparation = record.preparation;
+  if (preparation !== undefined && (previous || record.ready_head || record.cleanup || !preparation || record.branch === record.target_branch ||
+      Object.keys(preparation).some(field => !['branch', 'target_branch', 'start_commit', 'previous'].includes(field)) ||
+      ['branch', 'target_branch', 'start_commit'].some(field => preparation[field] !== record[field] || record[field] === undefined) ||
+      (preparation.previous !== undefined && (!validRecord(preparation.previous, name, true) || !preparation.previous.ready_head)))) return false;
+  return true;
+}
+
+export function readRecord(file, name, pool, registry = readRegistry(file)) {
+  const record = registry.worktrees[name];
+  if (!validRecord(record, name)) fail('worktree_record_invalid');
   const checkout = join(pool, record.id);
   plainPath(checkout);
   return { ...record, path: checkout };
 }
 
-function saveRecord(directory, record) {
-  const path = join(directory, record.id + '.json'), temporary = path + '.' + randomUUID() + '.tmp';
-  plainPath(path);
-  const fd = openSync(temporary, 'wx');
-  try { writeFileSync(fd, JSON.stringify(storedWorktree(record)) + '\n'); fsyncSync(fd); } finally { closeSync(fd); }
-  try { renameSync(temporary, path); } finally { if (existsSync(temporary)) unlinkSync(temporary); }
+function saveRecord(file, record) {
+  updateRegistry(file, record.id, record);
 }
 
 function ensurePool(pool) {
@@ -96,7 +102,8 @@ export async function worktreeCommand(repository, options, { execute, signal, st
   try {
   if (options.action === 'acquire') {
     if (!Number.isSafeInteger(options.issue) || options.issue <= 0) fail('invalid_arguments');
-    if (!validWorkflowContext(options.workflow) || options.workflow.mode === 'direct-commit') fail('workflow_context_invalid');
+    if (options.defer_commit !== undefined && typeof options.defer_commit !== 'boolean') fail('invalid_arguments');
+    if (!validDeliveryContext(options.delivery) || options.delivery.mode === 'direct-commit') fail('delivery_context_invalid');
     if (options.base === undefined) fail('worktree_base_required');
   }
   const bindings = boundTools(toolsRoot(), ['git']);
@@ -118,7 +125,7 @@ export async function worktreeCommand(repository, options, { execute, signal, st
   if (!main?.path || main.bare) fail('worktree_main_unavailable');
   // Protect the entry checkout even when the entry itself is a registered
   // dedicated worktree, rather than relying only on pool-path validation.
-  if (options.action === 'remove' && options.path !== undefined && key(options.path) === key(repository))
+  if (['remove', 'abort'].includes(options.action) && options.path !== undefined && key(options.path) === key(repository))
     fail('worktree_target_repository_protected');
   let storage = await locateStorage(repository, git);
   if (!['list', 'show'].includes(options.action)) {
@@ -126,11 +133,10 @@ export async function worktreeCommand(repository, options, { execute, signal, st
     storage = await locateStorage(repository, git);
   }
   const pool = storage.path;
-  const stateRoot = storage.state, directory = registryLocation(storage), lockPath = storage.lock;
-  plainPath(stateRoot);
+  const directory = registryLocation(storage), lockPath = storage.lock;
   const report = fields => ({ schema, status: 'ready', target_repository: repository, ...fields });
   function selectRecord(records, path) {
-    // Workflow resolves the Issue first and passes its exact registered path.
+    // Task commands resolve the Issue first and pass its registered path.
     if (typeof path !== 'string' || !path) fail('invalid_arguments');
     const matches = records.filter(item => key(item.path) === key(resolve(path)));
     if (!matches.length) fail('worktree_unknown_selector');
@@ -138,25 +144,9 @@ export async function worktreeCommand(repository, options, { execute, signal, st
     return matches[0];
   }
 
-  async function inspect(row, includeIgnored = false) {
-    if (!row || !existsSync(row.path)) return 'worktree_missing';
-    try { plainPath(row.path); } catch { return 'worktree_reparse_path'; }
-    if (row.bare || row.locked || row.prunable) return 'worktree_unavailable';
-    if (key(await git(row.path, ['rev-parse', '--show-toplevel'])) !== key(row.path) ||
-        key(await git(row.path, ['rev-parse', '--path-format=absolute', '--git-common-dir'])) !== key(common)) return 'worktree_repository_mismatch';
-    const gitDir = await git(row.path, ['rev-parse', '--absolute-git-dir']);
-    plainPath(gitDir);
-    const operations = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer', 'BISECT_START', 'index.lock', 'HEAD.lock'];
-    if (operations.some(name => existsSync(join(gitDir, name)))) return 'worktree_operation_in_progress';
-    // status can hide edits behind assume-unchanged/skip-worktree flags. Do not
-    // switch or remove such a checkout based on an apparently clean status.
-    const index = await git(row.path, ['ls-files', '-v', '-z']);
-    if (index.split('\0').some(entry => /^[a-zS] /.test(entry))) return 'worktree_index_flags';
-    if (await git(row.path, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none'])) return 'worktree_dirty';
-    // Release/reuse preserves ignored caches. Removal must not erase them.
-    if (includeIgnored && await git(row.path, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'])) return 'worktree_ignored_files';
-    return null;
-  }
+  const inspect = (row, includeIgnored = false) => inspectWorkspace(row, {
+    git, common, same: (a, b) => key(a) === key(b), includeIgnored,
+  });
 
   async function readyReason(record, row, includeIgnored = false) {
     if (!record.ready_head) return 'worktree_not_released';
@@ -167,21 +157,28 @@ export async function worktreeCommand(repository, options, { execute, signal, st
   if (['list', 'show'].includes(options.action)) {
     const records = readRecords(directory, pool);
     const locked = !storageLease && existsSync(lockPath);
-    const metadata = record => ({ issue: record?.issue, workflow: record?.workflow ?? null, recorded_branch: record?.branch ?? null,
+    const metadata = record => ({ issue: record?.issue, delivery: record?.delivery ?? null, recorded_branch: record?.branch ?? null,
       target_branch: record?.target_branch ?? null, start_commit: record?.start_commit ?? null });
     async function describe(row, record) {
-      if (!row) return { id: record.id, path: record.path, ...metadata(record), state: 'needs_check', reason: 'worktree_missing' };
-      let state = 'unmanaged', reason;
+      if (!row) return { id: record.id, path: record.path, ...metadata(record), state: 'needs_check',
+        reason: record.preparation ? 'worktree_preparation_pending' : 'worktree_missing' };
+      let reason;
+      const branchMismatch = record?.branch && !record.ready_head && row.branch !== record.branch &&
+        !(record.cleanup && row.detached && row.head === record.cleanup.head);
       if (record) {
         try {
-          reason = locked ? 'worktree_registry_locked' : !record.branch ? 'worktree_delivery_metadata_missing' :
-            record.ready_head ? await readyReason(record, row) : record.cleanup ? 'worktree_cleanup_pending' :
-            record.branch && row.branch !== record.branch ? 'worktree_branch_mismatch' :
+          reason = locked ? 'worktree_registry_locked' : record.preparation ? 'worktree_preparation_pending' : !record.branch ? 'worktree_delivery_metadata_missing' :
+            record.ready_head ? await readyReason(record, row) : branchMismatch ? 'worktree_branch_mismatch' :
+            record.cleanup ? 'worktree_cleanup_pending' :
             (await inspect(row)) || (row.detached ? 'worktree_detached_unreleased' : null);
         } catch { reason = 'worktree_unreadable'; }
-        state = reason && !(reason === 'worktree_dirty' && !record.ready_head && row.branch) ? 'needs_check' : record.ready_head ? 'available' : 'unreleased';
       }
-      return { ...(record ? { id: record.id } : {}), ...row, ...metadata(record), state, ...(reason ? { reason } : {}) };
+      const state = workspaceState({ managed: !!record, released: !!record?.ready_head, reason });
+      return { ...(record ? { id: record.id } : {}), ...row, ...metadata(record), state, ...(reason ? { reason } : {}),
+        ...(['worktree_branch_mismatch', 'worktree_delivery_metadata_missing'].includes(reason)
+          ? { details: branchDetails(record.branch, row.branch) }
+          : reason === 'worktree_state_changed' && record.ready_head && row.branch
+            ? { details: branchDetails(null, row.branch) } : {}) };
     }
     if (options.action === 'show') {
       const record = selectRecord(records, options.path);
@@ -202,6 +199,21 @@ export async function worktreeCommand(repository, options, { execute, signal, st
   // The storage lease covers this invocation, including bounded PR I/O.
   plainPath(directory);
     const records = readRecords(directory, pool), current = await rows();
+    const localHead = async branch => {
+      const ref = 'refs/heads/' + branch;
+      const refs = await git(repository, ['for-each-ref', '--format=%(refname) %(objectname) %(symref)', ref]);
+      const line = refs.split('\n').find(value => value.startsWith(ref + ' '));
+      if (!line) return null;
+      const [head, symbolic] = line.slice(ref.length + 1).split(' ');
+      if (symbolic) fail('worktree_branch_changed');
+      return head;
+    };
+    async function checkPreparationBranch(record, entries) {
+      const head = await localHead(record.branch);
+      if (head !== null && head !== record.start_commit) fail('worktree_branch_changed');
+      if (entries.some(row => row.branch === record.branch && key(row.path) !== key(record.path))) fail('worktree_branch_checked_out_elsewhere');
+      return head;
+    }
     if (options.action === 'acquire') {
       const base = options.base;
       // Validate full refs rather than accepting revision expressions or the
@@ -211,63 +223,141 @@ export async function worktreeCommand(repository, options, { execute, signal, st
         await git(repository, ['check-ref-format', 'refs/heads/' + name]);
       }
       const branches = (await git(repository, ['for-each-ref', '--format=%(refname)', 'refs/heads/'])).split('\n');
-      if (branches.some(ref => ref.toLowerCase() === ('refs/heads/' + options.branch).toLowerCase())) fail('worktree_branch_exists');
-      if (records.some(item => item.cleanup && !item.ready_head && item.branch?.toLowerCase() === options.branch.toLowerCase())) fail('worktree_cleanup_pending');
-      if (!branches.includes('refs/heads/' + base)) fail('worktree_base_missing');
-      const start = await git(repository, ['rev-parse', '--verify', 'refs/heads/' + base + '^{commit}']);
-      // Workspace preparation has already synchronized and verified this tip.
-      // Do not silently allocate from a native concurrent branch update.
-      if (options.expected_start !== undefined && options.expected_start !== start) fail('workflow_target_changed');
-      initializeStorage(storage);
-      mkdirSync(directory, { recursive: true });
-      let record;
-      for (const candidate of records) {
-        const row = current.find(item => key(item.path) === key(candidate.path));
-        if (!await readyReason(candidate, row)) { record = candidate; break; }
+      const pending = records.filter(item => item.preparation && item.issue === options.issue);
+      if (pending.length > 1) fail('worktree_selector_ambiguous');
+      let record = pending[0] ?? records.find(item => !item.ready_head && !item.cleanup && item.issue === options.issue && item.branch === options.branch);
+      let start;
+      if (record) {
+        if (record.branch !== options.branch || record.target_branch !== base || !isDeepStrictEqual(record.delivery, options.delivery) ||
+            (options.expected_start !== undefined && options.expected_start !== record.start_commit)) fail('worktree_preparation_mismatch');
+        start = record.start_commit;
+      } else {
+        if (branches.some(ref => ref.toLowerCase() === ('refs/heads/' + options.branch).toLowerCase())) fail('worktree_branch_exists');
+        if (records.some(item => item.cleanup && !item.ready_head && item.branch?.toLowerCase() === options.branch.toLowerCase())) fail('worktree_cleanup_pending');
+        if (!branches.includes('refs/heads/' + base)) fail('worktree_base_missing');
+        start = await git(repository, ['rev-parse', '--verify', 'refs/heads/' + base + '^{commit}']);
+        // Save the verified tip once; retries never switch to a newer target.
+        if (options.expected_start !== undefined && options.expected_start !== start) fail('delivery_target_changed');
+        initializeStorage(storage);
+        // Resource release can finish before the referring task is removed.
+        const referenced = new Set(readTasks(storage).map(task => task.workspace));
+        for (const candidate of records) {
+          if (referenced.has(candidate.id)) continue;
+          const row = current.find(item => key(item.path) === key(candidate.path));
+          if (!await readyReason(candidate, row)) { record = candidate; break; }
+        }
+        let previous;
+        if (record) { const { path, ...saved } = record; previous = saved; }
+        else {
+          const id = 'gidd-wt-' + randomUUID();
+          record = { schema, id, path: join(pool, id) };
+          plainPath(record.path);
+          if (existsSync(record.path)) fail('worktree_path_exists');
+        }
+        ensurePool(pool);
+        delete record.ready_head;
+        delete record.cleanup;
+        delete record.local_merge;
+        Object.assign(record, { delivery: options.delivery, issue: options.issue, branch: options.branch,
+          target_branch: base, start_commit: start,
+          preparation: { branch: options.branch, target_branch: base, start_commit: start, ...(previous ? { previous } : {}) } });
+        saveRecord(directory, record); // Revoke availability and save recovery evidence before Git.
       }
-      const reused = !!record;
-      if (!record) {
-        const id = 'gidd-wt-' + randomUUID();
-        record = { schema, id, path: join(pool, id) };
-        plainPath(record.path);
-        if (existsSync(record.path)) fail('worktree_path_exists');
+      const existing = current.find(item => key(item.path) === key(record.path));
+      const branchHead = await checkPreparationBranch(record, current);
+      if (existing?.branch === record.branch && existing.head === start) {
+        const reason = await inspect(existing);
+        if (reason) fail(reason);
+      } else {
+        if (!record.preparation) fail('worktree_state_changed');
+        const previous = record.preparation.previous;
+        if (previous) {
+          const reason = await readyReason(previous, existing);
+          if (reason) fail(reason);
+          await git(record.path, ['checkout', '--no-overwrite-ignore', '--no-recurse-submodules',
+            ...(branchHead === null ? ['--no-track', '-b', record.branch, start] : [record.branch]), '--']);
+        } else {
+          if (existing || existsSync(record.path)) fail('worktree_state_changed');
+          await git(repository, ['-c', 'worktree.useRelativePaths=false', 'worktree', 'add',
+            ...(branchHead === null ? ['--no-track', '-b', record.branch] : []), '--', record.path, branchHead === null ? start : record.branch]);
+        }
       }
-      ensurePool(pool);
-      delete record.ready_head;
-      // A failed allocation must not describe the previous use as the new one.
-      delete record.branch;
-      delete record.target_branch;
-      delete record.start_commit;
-      delete record.cleanup;
-      record.workflow = options.workflow;
-      record.issue = options.issue;
-      saveRecord(directory, record); // revoke availability BEFORE touching Git
-      if (reused) await git(record.path, ['checkout', '--no-overwrite-ignore', '--no-recurse-submodules', '--no-track', '-b', options.branch, start, '--']);
-      else await git(repository, ['-c', 'worktree.useRelativePaths=false', 'worktree', 'add', '--no-track', '-b', options.branch, '--', record.path, start]);
       const row = (await rows()).find(item => key(item.path) === key(record.path));
-      if (!row || row.branch !== options.branch || row.head !== start) fail('worktree_state_changed');
+      if (!row || row.branch !== record.branch || row.head !== start) fail('worktree_state_changed');
       const reason = await inspect(row);
       if (reason) fail(reason);
-      Object.assign(record, { branch: options.branch, target_branch: base, start_commit: start });
+      if (await checkPreparationBranch(record, await rows()) !== start) fail('worktree_state_changed');
+      if (!options.defer_commit) {
+        delete record.preparation;
+        saveRecord(directory, record);
+      }
+      return report({ id: record.id, path: record.path, branch: row.branch, target_branch: base, start_commit: start, state: 'assigned' });
+    }
+    if (options.action === 'commit') {
+      const record = selectRecord(records, options.path);
+      if (!Number.isSafeInteger(options.issue) || options.issue <= 0) fail('invalid_arguments');
+      if (record.issue !== options.issue || record.ready_head || record.cleanup || !record.branch) fail('worktree_preparation_mismatch');
+      for (const branch of [record.branch, record.target_branch]) await git(repository, ['check-ref-format', 'refs/heads/' + branch]);
+      const row = current.find(item => key(item.path) === key(record.path));
+      if (!row || row.branch !== record.branch || row.head !== record.start_commit) fail('worktree_state_changed');
+      const reason = await inspect(row);
+      if (reason) fail(reason);
+      if (await checkPreparationBranch(record, await rows()) !== record.start_commit) fail('worktree_state_changed');
+      delete record.preparation;
       saveRecord(directory, record);
-      return report({ id: record.id, path: record.path, branch: row.branch, target_branch: base, start_commit: start });
+      return report({ id: record.id, path: record.path, branch: record.branch, target_branch: record.target_branch,
+        start_commit: record.start_commit, state: 'assigned' });
+    }
+    if (options.action === 'abort') {
+      const record = selectRecord(records, options.path), preparation = record.preparation;
+      if (!preparation) fail('worktree_preparation_missing');
+      for (const branch of [record.branch, record.target_branch]) await git(repository, ['check-ref-format', 'refs/heads/' + branch]);
+      await checkPreparationBranch(record, current);
+      const row = current.find(item => key(item.path) === key(record.path)), previous = preparation.previous;
+      if (previous) {
+        if (!row || !(row.branch === record.branch && row.head === record.start_commit ||
+            row.detached && row.head === previous.ready_head)) fail('worktree_state_changed');
+        const reason = await inspect(row);
+        if (reason) fail(reason);
+        if (!row.detached) await git(record.path, ['checkout', '--detach', '--no-overwrite-ignore', '--no-recurse-submodules', previous.ready_head, '--']);
+        const restored = (await rows()).find(item => key(item.path) === key(record.path));
+        const changed = await readyReason({ ...previous, path: record.path }, restored);
+        if (changed) fail(changed);
+      } else if (row) {
+        if (row.branch !== record.branch || row.head !== record.start_commit) fail('worktree_state_changed');
+        const reason = await inspect(row, true);
+        if (reason) fail(reason);
+        await git(repository, ['worktree', 'remove', '--', record.path]);
+      } else if (existsSync(record.path)) {
+        // Only an empty, unregistered new directory can be discarded.
+        if (!lstatSync(record.path).isDirectory()) fail('worktree_state_changed');
+        try { rmdirSync(record.path); } catch { fail('worktree_state_changed'); }
+      }
+      const after = await rows(), head = await checkPreparationBranch(record, after);
+      if (after.some(item => item.branch === record.branch)) fail('worktree_branch_checked_out_elsewhere');
+      if (head !== null) await git(repository, ['update-ref', '--no-deref', '-d', 'refs/heads/' + record.branch, record.start_commit]);
+      if (previous) saveRecord(directory, previous);
+      else updateRegistry(directory, record.id, undefined);
+      return report({ id: record.id, path: record.path, aborted: true, state: previous ? 'available' : 'removed' });
     }
     if (options.action === 'cleanup') {
       const record = selectRecord(records, options.path);
+      if (record.preparation) fail('worktree_preparation_pending');
       return await cleanupWorktree({ repository, record, git, rows, inspect, key, report,
-        save: () => saveRecord(directory, record), execute, signal });
+        save: () => saveRecord(directory, record), execute, signal, account: options.github_account });
     }
     if (options.action === 'remove') {
       const record = selectRecord(records, options.path);
       const row = current.find(item => key(item.path) === key(record.path));
       const reason = await readyReason(record, row, true);
-      if (reason) fail(reason);
+      if (reason) throw Object.assign(new Error(reason), reason === 'worktree_state_changed' && row?.branch ? {
+        details: { path: record.path, ...branchDetails(null, row.branch) },
+      } : {});
+      if (readTasks(storage).some(task => task.workspace === record.id)) fail('task_cleanup_pending');
       // Exact managed path, common repository, release HEAD and files were
       // checked above. Let Git enforce its own removal constraints; never force.
-      delete record.ready_head;
-      saveRecord(directory, record);
       await git(repository, ['worktree', 'remove', '--', record.path]);
-      unlinkSync(join(directory, record.id + '.json'));
+      updateRegistry(directory, record.id, undefined);
       return report({ id: record.id, path: record.path, removed: true });
     }
     fail('invalid_arguments');

@@ -1,6 +1,7 @@
 {
   "name": "Development task (English)",
   "description": "Record the task's requirements, acceptance checklist (including verification methods and results), and completion status.",
+  "title": "[gidd] ",
   "body": [
     {
       "type": "textarea",
@@ -30,7 +31,7 @@
       "id": "completion",
       "attributes": {
         "label": "Completion confirmation",
-        "value": "- [ ] All requirements of this task have passed acceptance, and delivery is complete under the selected mode."
+        "value": "- [ ] All requirements of this task have passed acceptance, and delivery is complete under the selected workflow."
       },
       "validations": {
         "required": false

@@ -1,80 +1,51 @@
 ---
 name: gidd
-description: 可便携化设置-提供 node、bun、git 和 gh(GitHub CLI)；操作本地仓库/Github平台/issue/PR...；基于 GIDD（GitHub Issue Driven Development）提供更安全可控的开发流程。目前限 Windows
+description: 基于 Git Worktree、GitHub Issue 为要求可审计（过程留痕）、外包式（先立验收契约再开发）、多任务并行、流水线式协作的开发，提供任务登记、工作区管理/交付等工具，自带 git、gh（GitHub CLI）、bun/node 准备；适用于 Git/GitHub 操作-如 clone、Issue、PR 或用户提及 gidd 时。
 license: MIT
 ---
 
-## 一、仅借用共享工具
+## 准备
 
-检查 `~/.agents/skills.tools/gidd/` 是否存在，及其中是否有：
+`gidd.cmd` 和 `tools.ensure.cmd` 位于技能安装目录，通过安装路径调用。下文用 `gidd` 简写 `gidd.cmd`。`gidd help` 和 `tools.ensure.cmd help` 提供命令用法。
 
-```text
-bun.link.cmd    #bun  包装，参数会原样转发给 bun  去执行
-node.link.cmd   #node 包装，参数会原样转发给 node 去执行
-git.link.cmd    #git  包装…
-gh.link.cmd     #gh   包装…
-```
+`gidd doctor --offline` 检查本地环境；`tools.ensure.cmd` 准备或修复 Git、gh 和 JS 运行时。GIDD 缺少运行时入口时会自动准备基础工具，可能下载资源。
 
-如果已存在 `<你需要的命令>.link.cmd`，便可以自行使用。
+`gidd git`、`gidd gh`、`gidd bun` 和 `gidd node` 调用已准备的工具，转发参数、输入输出和退出码，保留当前目录。
 
-否则在本技能的安装目录，按需执行：
+GIDD 沿用 Git 的远端配置，优先使用 `for.swaw.gidd` 远端。`gidd gh.auth` 通过交互登录，为当前仓库选择 GitHub 账号。
 
-```text
-gidd.pre.ensure.cmd --tools-only=bun
-gidd.pre.ensure.cmd --tools-only=node
-gidd.pre.ensure.cmd --tools-only=git
-gidd.pre.ensure.cmd --tools-only=gh
-```
+## 工作流程
 
-它会视情况是否需要下载/设置便携版，然后生成对应命令的包装。
+工作流程由交付模式和授权方案组成。每种交付模式提供多种授权方案。
 
-命令概览：`gidd.pre.ensure.cmd --help`
+- `gidd flow.deliveries`：列出交付模式，包括直接提交、直接合并和 PR 合并。
+- `gidd flow.list 00`：列出 `00` 号交付模式下的授权方案。
+- `gidd flow 00/05`：查看 `00` 号交付模式与 `05` 号授权方案组成的工作流程。
+- `gidd flow.issue 00/05`：查看该工作流程的 Issue 模板。
+- `gidd flow.history`：查看工作流程选用记录。
 
-## 二、GIDD 使用步骤
+授权方案指定哪些步骤自动执行、哪些步骤需要确认。它用于生成 Agent 执行提示；GIDD 命令本身不会弹出步骤授权确认。配置说明见 [工作流程配置](flows/README.md)。
 
-> 仅需 node、bun、git 或 gh 时，按上面第一节操作即可；
-> 有意启用 GIDD 时，才需按本节或下面的第三节操作
+## 任务与工作区
 
-1. 确认 `<目标仓库根>/.agents/skills/gidd/gidd.link.cmd` 是否已存在（若不存在表示仓库还未经配置，请跳到“三、GIDD 启用步骤”）
-2. 在 `<目标仓库根>` 下调用 `./.agents/skills/gidd/gidd.link.cmd doctor --offline` 查看诊断（`gidd.link.cmd` 会检查自身所归属的仓库，勿跨仓库混用）；可用 `--lang zh|en` 指定语言，否则依次取 `GIDD_LANG`、系统语言。检查开关和双语诊断提示见 [doctor.toml](references/doctor.toml)，禁用或未声明的检查不代表通过
-3. 按诊断的提示进行配置或修复（有些必须要人类协助）并再次运行诊断，直至其退出码为 `0`，执行 `gidd.link.cmd spec.current`，便可按其输出的指引开展工作了
-4. `gidd.link.cmd` 若损坏，执行 `gidd.pre.ensure.cmd --repo <仓库路径>` 可重新创建
+`gidd issue --file <文件> --flow <工作流程>` 从 Markdown 创建 Issue、登记任务并准备工作区。`gidd <Issue编号> --flow <工作流程>` 登记已有 Issue，并准备或恢复工作区。
 
-`config.toml` 和生成的 `gidd.link.cmd` 是本机文件，由初始化生成的 `.gitignore` 忽略。开发流程以 Issue 为入口；workflow 命令通过 Issue 编号定位本地工作区；首次准备按当前规范和目标仓库当前分支确定交付上下文，worktree 命令按目录查询和移除本机资源。本地数据目录固定为 `<目标仓库>.gidd/`，关联 worktree 共用；目录检查及维护见 [本地数据目录](references/data.md)。
+两个命令均返回任务工作区路径。直接提交模式使用目标仓库目录；直接合并和 PR 合并模式领用专用工作树。
 
-## 三、GIDD 启用步骤
+- `gidd <Issue编号>`：查看任务和工作区状态。
+- `gidd <Issue编号>.flow`：查看任务保存的工作流程。
+- `gidd <Issue编号>.flow.set <工作流程>`：修改任务的工作流程。
+- 任务交付：编号命令提供推送、合并、目标分支同步、关闭 Issue 和清理功能。
+- 工作树管理：`gidd worktree.list`、`gidd worktree.show <目录>` 和 `gidd worktree.remove <目录>` 提供查询和移除已释放工作区的功能。
+- 输出语言：`gidd lang.set zh|en` 设置全局默认语言。
 
-仓库需明确配置后，GIDD 才会启用；仅安装技能不会插手仓库的开发流程。
+## 仓库与账号
 
-1. `<目标仓库根>/.agents/skills/gidd/gidd.link.cmd` 不存在时，需征询用户“是否启用 GIDD”，若否，则终止本流程
-2. 执行 `gidd.pre.ensure.cmd --repo <仓库路径>`，它会准备 JS运行时、git、gh，创建仓库的 `gidd.link.cmd`，并自动调用初始化，创建基础配置和本地数据目录。初始化失败时按原因修复，再运行 `gidd.link init` 重试；随后按“二、GIDD 使用步骤”完成其余配置
-3. 命令概览：`gidd.link.cmd --help`
+`gidd gh.auth` 的配置保存在 `<目标仓库>.gidd/gh/`。任务命令使用登记时保存的账号；`gidd gh` 使用当前目录对应配置中的当前账号，保留显式的 `GH_CONFIG_DIR` 和令牌环境变量，`--repo` 不改变配置目录。Git 使用原有身份与凭据。
 
-## 四、处理外部 Issue/PR
+## 详细帮助
 
-多半是用户要处理其它 GitHub 用户提交的 Issue/PR
-
-若对应仓库已有本地镜像，可用 `<本地仓库根>/.agents/skills/gidd/gidd.link.cmd`（此时不必死守 `gidd.link.cmd spec.current`，自行依情况处理）：
-
-```text
-gidd.link .gh <gh 原生参数>   #按配置提供环境：账号-token/GH_HOST/GH_REPO/Git(优先级< 参数指定)后,转发 gh
-gidd.link .git <git 原生参数> #按配置提供环境：身份/HTTPS-凭据助手(优先级>.git/config < 参数)后,转发 git
-```
-
-或用 `~/.agents/skills.tools/gidd/` 中的工具（自行确认权限和组装账号、身份等环境参数）
-
-仓库的 `.git` / `.gh` 沿用入口配置，仅允许从入口仓库及 `workflow.workspace` 登记的关联 worktree（含普通子目录）调用。显式目标参数按原生语义处理，由调用者确认操作范围；指定其他仓库仍沿用原入口的身份和凭据设置。
-
-包装禁用常见交互：提供消息、文件和必要参数；编辑器或凭据询问会失败，正常管道输入保留。仅 `.gh.auth` 发起设备授权。可用 `GIDD_EXEC_TIMEOUT_MS` 限制转发命令时长（毫秒，默认不限时，超时退出 124）；自定义程序的边界见 [执行说明](execution.md)。共享工具的 `.link.cmd` 不应用这些仓库包装策略。
-
-若需克隆，得确定放置位置，视情况是否要询问人类用户
-
-## 五、处理更广泛的 GitHub 平台事务
-
-对指定的在线仓库提 Issue/PR？帮用户自己检查/设置 GitHub？……是用户自己的仓库？或是需要先 fork？……
-
-请自行依情况处理；若需克隆，得确定放置位置，视情况是否要询问人类用户
-
-## 六、停用
-
-参考 [停用说明](references/disable.md)。
+- [命令与参数](references/gidd.help.zh-CN.md)：任务、交付和工具命令。
+- [工具准备参数](references/tools.ensure.help.zh-CN.md)：准备、检查和修复工具。
+- [本地数据目录](references/data.md)：任务记录、工作树、恢复与清理。
+- [卸载与清理](references/disable.md)：技能、共享工具和本地数据的移除说明。

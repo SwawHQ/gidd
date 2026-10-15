@@ -40,7 +40,7 @@ try {
         $Argument = ''; $Extra = @()
     }
     if ($Command -eq '.setup') {
-        if ($Argument -and $Argument -notin @('bun','node')) { throw 'Use dev.cmd .setup bun/node for development runtimes; use gidd.pre.ensure.cmd --repo <repository-path> for Git/gh.' }
+        if ($Argument -and $Argument -notin @('bun','node')) { throw 'Use dev.cmd .setup bun/node for development runtimes; use tools.ensure.cmd git/gh for Git/gh.' }
     }
     if ($Extra.Count -and $Command -notin @('bun','node')) { throw 'Unexpected arguments. Use dev.cmd .help.' }
     if ($Command -in @('.help','--help','-h','/?')) {
@@ -54,7 +54,8 @@ try {
             }
         }
         if (-not $language) {
-            $locale = @($env:LC_ALL,$env:LC_MESSAGES,$env:LANG,[Globalization.CultureInfo]::CurrentUICulture.Name) | Where-Object { $_ } | Select-Object -First 1
+            # Use the same regional locale as JavaScript Intl.
+            $locale = [Globalization.CultureInfo]::CurrentCulture.Name
             $language = if ($locale -match '^zh(?:$|[-_])') { 'zh-CN' } else { 'en' }
         }
         [Console]::WriteLine([IO.File]::ReadAllText((Join-Path $PSScriptRoot "help/$language.txt")))
@@ -63,7 +64,7 @@ try {
     if ($Command -notin @('.info','.setup','.test','.test-bun','.test-node','.test-live','bun','node')) { throw 'Unknown command. Use dev.cmd .help.' }
     if ($Command -eq '.info' -and $Argument) { throw '.info takes no arguments.' }
     if ($Command -eq '.test-live' -and $Argument) { throw '.test-live takes no arguments.' }
-    if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev','config','github','entry','spec','worktree','workflow','data','init')) { throw 'Unknown test suite.' }
+    if ($Command -in @('.test','.test-bun','.test-node') -and $Argument -and $Argument -notin @('all','doctor','setup','process','dev','skill','config','github','entry','flow','worktree','gh','issue','issue-task','data','init')) { throw 'Unknown test suite.' }
     foreach ($file in @('lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','doctor/platform.ps1')) { . (Join-Path $codeRoot $file) }
     if ((Get-DoctorPlatformCheck).status -ne 'ready') { throw 'unsupported_platform' }
     $storage = Resolve-GiddToolStorage
