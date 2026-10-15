@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { cpSync, realpathSync, renameSync, rmdirSync, symlinkSync } from 'node:fs';
 import { readFlowHistory, flowStorage, recordFlowUse } from '../.agents/skills/gidd/scripts.js/shared/flow-history.mjs';
 import { run as inspectFlowHistory } from '../.agents/skills/gidd/scripts.js/commands/doctor/checks/folder.gidd.flow.mjs';
@@ -530,6 +531,62 @@ test('task prompts retain approval points after another selection and preset edi
     assert.equal(result.exitCode, 0);
     assert.match(result.markdown, /\| commit \| ask \|/);
     assert.match(flowCommand(target, options('flow', [ask]), s.root).markdown, /\| commit \| auto \|/);
+  } finally { f.dispose(); }
+});
+
+test('saved task flows and doctor outlive changed, invalid or deleted authorization presets', async () => {
+  const f = fixture();
+  try {
+    const skill = join(f.root, 'skill'), target = join(f.root, 'target');
+    copySkill(skill);
+    const root = join(skill, 'flows'), preset = join(root, ask + '.toml');
+    const original = readFileSync(preset, 'utf8'), saved = flowSnapshot(loadFlow(ask, root));
+    mkdirSync(join(target, '.git'), { recursive: true });
+    initializeDataFixture(target);
+    const storage = flowStorage(target), state = join(storage.path, '14/state.json');
+    write(state, JSON.stringify({ ...newTask(14, { mode, remote: {
+      fetch: { repository: 'https://github.com/test/repo', branch: 'main' },
+      push: { repository: 'https://github.com/test/repo' },
+    } }, 'main'), flow: saved, github_account: 'tester' }));
+    const { run: inspectSavedFlow } = await import(pathToFileURL(join(skill,
+      'scripts.js/commands/doctor/checks/folder.gidd.flow.mjs')).href);
+    const context = { run: async id => {
+      assert.equal(id, 'folder.gidd');
+      return { status: 'ready', details: { path: storage.path } };
+    } };
+    const changed = original.replace(/^commit\s*=\s*"ask"/m, 'commit = "auto"');
+    for (const [text, reason] of [[changed, undefined], ['[authorization', 'flow_toml_invalid'],
+      [null, 'flow_resources_missing']]) {
+      if (text === null) rmSync(preset); else write(preset, text);
+      const before = snapshot(f.root), result = issueTaskFlowCommand(target, options('14.flow'), root);
+      assert.equal(result.exitCode, 0, JSON.stringify(result.report));
+      assert.match(result.markdown, /\| commit \| ask \|/);
+      assert.equal((await inspectSavedFlow(context)).status, 'ready');
+      const current = flowCommand(target, options('flow', [ask]), root);
+      if (reason) assert.equal(current.report.details.code, reason);
+      else assert.match(current.markdown, /\| commit \| auto \|/);
+      assert.deepEqual(snapshot(f.root), before);
+    }
+    const prompt = issueTaskFlowCommand(target, options('14.flow'), root).markdown;
+    assert.ok(prompt.includes(state));
+    assert.ok(!prompt.includes('gidd flow.issue'));
+    const description = join(root, directory, 'description.toml'), definition = readFlowToml(description);
+    definition.authorization_schema.commit = ['auto'];
+    write(description, stringify(definition));
+    assert.match(issueTaskFlowCommand(target, options('14.flow'), root).markdown, /\| commit \| ask \|/);
+    assert.equal((await inspectSavedFlow(context)).status, 'ready');
+    write(description, '[');
+    assert.equal(issueTaskFlowCommand(target, options('14.flow'), root).report.details.code, 'flow_toml_invalid');
+    assert.equal((await inspectSavedFlow(context)).reason, 'flow_toml_invalid');
+    write(description, stringify(definition));
+    write(join(root, '../references/steps/06.commit.toml'), '[');
+    assert.equal(issueTaskFlowCommand(target, options('14.flow'), root).report.details.code, 'flow_toml_invalid');
+    assert.equal((await inspectSavedFlow(context)).reason, 'flow_toml_invalid');
+    const invalid = JSON.parse(readFileSync(state, 'utf8'));
+    invalid.flow.authorization.commit = 'not_applicable';
+    write(state, JSON.stringify(invalid));
+    assert.equal(issueTaskFlowCommand(target, options('14.flow'), root).report.details.code, 'task_invalid');
+    assert.equal((await inspectSavedFlow(context)).reason, 'task_invalid');
   } finally { f.dispose(); }
 });
 

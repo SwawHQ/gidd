@@ -58,7 +58,7 @@ export function renderFlow(repository, flow, lang) {
   const stepReference = step => flow.stepReferences.find(item => item.step === step)?.[lang];
   const lines = [
     ...(repository ? [`${zh ? '适用范围' : 'Scope'}: ${inlineCode(repository)}  `] : []),
-    `${zh ? '授权方案来源' : 'Authorization preset source'}: ${inlineCode(flow.path)}  `,
+    `${zh ? '授权来源' : 'Authorization source'}: ${inlineCode(flow.path)}  `,
     `${zh ? '交付模式来源' : 'Delivery mode source'}: ${inlineCode(definition.path)}`, '',
     `# ${flow.selector}`, '', definition[lang].description.trim(), '',
     zh ? '## 流程与授权' : '## Flow and authorization', '',
@@ -70,7 +70,8 @@ export function renderFlow(repository, flow, lang) {
     ...authorizationKeys.map(key => `| ${key} | ${authorization[key]} |`), '',
     zh ? '验收未通过时返回开发和验收。推送受阻时进入 push_error；修复涉及的修改、提交和推送重新经过对应环节及授权。' : 'Failed acceptance returns to development and acceptance. A blocked push enters push_error; changes, commits and pushes required by a repair pass through their respective stages and authorization.', '',
   ];
-  lines.push(zh ? 'Issue 模板：' : 'Issue template:', '', inlineCode(`gidd flow.issue ${flow.selector} --lang ${zh ? 'zh' : 'en'}`), '');
+  // A saved task can outlive its original preset.
+  if (flow.name) lines.push(zh ? 'Issue 模板：' : 'Issue template:', '', inlineCode(`gidd flow.issue ${flow.selector} --lang ${zh ? 'zh' : 'en'}`), '');
   if (stepReference('common')?.body.trim()) lines.push(zh ? '## 工具与资源' : '## Tools and resources', '', stepReference('common').body.trim(), '');
   for (const step of definition.steps) {
     const text = stepReference(step);

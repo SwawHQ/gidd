@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
-import { readTask } from '../../shared/task-records.mjs';
+import { readTask, taskPath } from '../../shared/task-records.mjs';
 import { flowStorage } from '../../shared/flow-history.mjs';
-import { loadFlow, flowRoot } from '../../shared/flows.mjs';
+import { loadSavedFlow, flowRoot } from '../../shared/flows.mjs';
 import { resolveLanguage } from '../../shared/language.mjs';
 import { boundExecutor, boundTools } from '../../shared/bindings.mjs';
 import { locateStorage } from '../../shared/managed-storage.mjs';
@@ -13,11 +13,9 @@ export function issueTaskFlowCommand(repository, options, root = flowRoot) {
   const lang = resolveLanguage(options.lang, 'unsupported_help_language', repository);
   let selector;
   try {
-    const saved = readTask(flowStorage(repository), options.issue).flow;
+    const storage = flowStorage(repository), saved = readTask(storage, options.issue).flow;
     selector = saved.selector;
-    const flow = loadFlow(selector, root);
-    if (saved.mode !== flow.mode) throw new Error('task_flow_changed');
-    flow.authorization = saved.authorization;
+    const flow = loadSavedFlow(saved, taskPath(storage, options.issue), root);
     const notice = lang === 'zh-CN'
       ? `任务：Issue #${options.issue}。以下确认点使用任务保存的记录。\n\n`
       : `Task: Issue #${options.issue}. Approval points below use the saved task record.\n\n`;

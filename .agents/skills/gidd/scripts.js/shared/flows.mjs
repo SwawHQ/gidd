@@ -4,7 +4,7 @@ import { skillPath } from './paths.mjs';
 import { plainPath } from './storage.mjs';
 import { fields, nonemptyText, flowLanguages, validateIssueForms } from './flow-data.mjs';
 import { readFlowToml, readFlowResource, flowIssueTemplatePath, flowFailure } from './flow-resources.mjs';
-import { authorizationKeys, deliveryModeNames, deliveryModeDirectoryPattern, deliveryModePlan, parseFlowSelector, presetNamePattern, stepFiles } from './flow-definition.mjs';
+import { authorizationKeys, deliveryModeNames, deliveryModeDirectoryPattern, deliveryModePlan, parseFlowSelector, presetNamePattern, stepFiles, validFlowSnapshot } from './flow-definition.mjs';
 import { diagnostic } from './diagnostics.mjs';
 
 export const flowRoot = skillPath('flows/');
@@ -137,7 +137,17 @@ function loadStepReference(step, mode, root) {
 }
 
 export function loadFlow(selector, root = flowRoot, catalog) {
-  const flow = readFlow(selector, root, catalog), { definition } = flow;
+  return loadFlowResources(readFlow(selector, root, catalog), root);
+}
+
+export function loadSavedFlow(saved, path, root = flowRoot) {
+  if (!validFlowSnapshot(saved)) fail('task_invalid', path);
+  const definition = loadDeliveryMode(saved.mode, root);
+  return loadFlowResources({ ...saved, path, definition }, root);
+}
+
+function loadFlowResources(flow, root) {
+  const { definition } = flow;
   flow.issueForms = loadIssueForms(flow, root);
   flow.stepReferences = ['common', ...definition.steps, ...definition.errors].map(step => loadStepReference(step, flow.mode, root)).filter(Boolean);
   const size = flow.stepReferences.reduce((total, item) => total + flowLanguages.reduce((sum, lang) => sum + Buffer.byteLength(item[lang].body), 0), 0);
