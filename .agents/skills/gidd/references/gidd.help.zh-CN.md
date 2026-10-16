@@ -11,6 +11,7 @@ GIDD（Windows x64 / PowerShell 5.1）
   gidd policy.history                                   #查看授权方案选用记录；-v 显示时间
   gidd policy.issue 00/00                               #打印指定授权方案的 Issue 模板
   gidd gh.auth                                          #交互登录并选择本仓库的 GitHub 账号
+  gidd gh.auth.git                                      #让本仓库 Git 的 HTTPS 操作使用 gh 授权
   gidd issue --file <文件> --policy <授权方案>          #从 Markdown 创建 Issue、登记任务并准备工作区
   gidd <Issue编号> --policy <授权方案>                  #登记已有 Issue 并准备或恢复工作区
   gidd <Issue编号>                                      #查看任务和工作区的本地状态
@@ -31,3 +32,9 @@ GIDD（Windows x64 / PowerShell 5.1）
   gidd bun [参数...]                                    #运行已准备的 Bun
   gidd node [参数...]                                   #运行已准备的 Node.js
   gidd git remote add for.swaw.gidd <url>               #为 GIDD 添加专用远端
+
+当前仓库设置（在仓库目录执行）：
+  HTTPS 授权与提交署名分别设置。以下清理命令以 github.com 为例。
+  gidd git config --local user.name "<姓名>"            #设置本仓库的提交姓名
+  gidd git config --local user.email "<邮箱>"           #设置本仓库的提交邮箱
+  gidd git config --local --unset-all credential.https://github.com.helper  #清理本仓库的 GitHub 凭据助手

@@ -11,6 +11,7 @@ GIDD (Windows x64 / PowerShell 5.1)
   gidd policy.history                                       #Show authorization policy selections; -v adds times
   gidd policy.issue 00/00                                   #Print the authorization policy's Issue template
   gidd gh.auth                                              #Log in and select this repository's GitHub account (interactive)
+  gidd gh.auth.git                                          #Use gh credentials for this repository's Git HTTPS operations
   gidd issue --file <file> --policy <policy>                #Create an Issue and task from Markdown; prepare its workspace
   gidd <issue-number> --policy <policy>                     #Register an existing Issue; prepare or resume its workspace
   gidd <issue-number>                                       #Show local task and workspace state
@@ -31,3 +32,9 @@ GIDD (Windows x64 / PowerShell 5.1)
   gidd bun [args...]                                        #Run the prepared Bun
   gidd node [args...]                                       #Run the prepared Node.js
   gidd git remote add for.swaw.gidd <url>                   #Add a dedicated GIDD remote
+
+Current repository setup (run in the repository directory):
+  Set HTTPS credentials and commit identity separately. The cleanup example uses github.com.
+  gidd git config --local user.name "<name>"                #Set this repository's commit author name
+  gidd git config --local user.email "<email>"              #Set this repository's commit author email
+  gidd git config --local --unset-all credential.https://github.com.helper  #Remove this repository's GitHub credential helpers

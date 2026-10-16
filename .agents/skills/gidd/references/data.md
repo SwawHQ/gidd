@@ -59,6 +59,10 @@ Each line in `policy-history.jsonl` stores the time (`at`) and full authorizatio
 
 Task account records contain only login names. `gh.auth` creates `gh/` for repository-specific gh configuration; task cleanup retains it. gh manages credentials, which are not written to task records.
 
+登录后可执行 `gidd gh.auth.git`，让本仓库 Git 的 HTTPS 操作使用该仓库的 gh 授权。它替换所选推送远端主机的仓库级凭据助手，关联工作树共用主仓库的账号配置。全局 Git 配置和提交署名保持原值；SSH 远端仍使用 SSH 授权。
+
+After login, run `gidd gh.auth.git` to use this repository's gh credentials for Git HTTPS operations. It replaces the repository-level credential helpers for the selected push remote's host. Linked worktrees share the main repository's account configuration. Global Git configuration and commit identity retain their values. SSH remotes continue to use SSH authentication.
+
 创建或登记 Issue 时，命令将标题和正文副本保存为 `<Issue编号>/issue.md`。重复准备会保留已有副本；本地副本与 GitHub Issue 不会自动同步。通过 `--file` 提供的草稿由调用者管理，创建命令不会修改或删除它。
 
 Creating or registering an Issue saves its title and body to `<Issue编号>/issue.md`. Repeated preparation retains the existing copy. The local copy and GitHub Issue do not synchronize automatically. The caller manages the draft supplied with `--file`; the creation command does not modify or delete it.

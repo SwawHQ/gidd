@@ -107,6 +107,7 @@ export async function main(args, { boundRepository } = {}) {
       account_token_unavailable: 'Run gidd gh.auth to authorize the delivery account for this repository.',
       gh_auth_required: 'Run gidd gh.auth to choose and authorize the delivery account for this repository.',
       gh_login_failed: 'GitHub login did not complete. Retry gidd gh.auth when ready.',
+      git_config_locked: 'Another Git operation holds the repository configuration lock. Let it finish, then retry.',
       unexpected_account: 'The current credentials belong to a different account from the task record. Use the recorded account credentials before retrying.',
       issue_ambiguous: 'Multiple workspace records match this Issue. Inspect local records before continuing.',
       task_workspace_changed: 'The task and workspace records disagree. Inspect local records before continuing.',
