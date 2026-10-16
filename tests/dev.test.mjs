@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { cpSync, statSync } from 'node:fs';
-import { toolsRoot, adapter, assert, compile, dirname, existsSync, fixture, join, json, mkdirSync, ok, readFileSync, readdirSync, repo, run, snapshot, stub, write } from './support/helpers.mjs';
+import { toolsRoot, adapter, assert, compile, dirname, existsSync, fixture, join, json, mkdirSync, nodeExecutable, ok, readFileSync, readdirSync, repo, run, snapshot, stub, support, write } from './support/helpers.mjs';
 
 test('PowerShell sources are ASCII and parse without BOM', { timeout: 120000 }, () => {
   const f=fixture();
@@ -26,7 +26,7 @@ test('test command executes every suite and rejects failures or premature zero e
     write(join(f.root,'dev/node-test.cjs'),readFileSync(join(repo,'dev/node-test.cjs'),'utf8'));
     for (const name of ['test-process.mjs', 'test-process.cs', 'compile-test-process.ps1'])
       write(join(f.root, 'dev', name), readFileSync(join(repo, 'dev', name), 'utf8'));
-    const suites = ['doctor','setup','process','dev','skill','config','remotes','github','execution','entry','repository-entry','flow','worktree','repository-auth','issues','gh','issue','issue-task','data','init'];
+    const suites = ['doctor','setup','process','dev','skill','config','remotes','github','execution','entry','repository-entry','policy','worktree','repository-auth','issues','gh','issue','issue-task','issue-task-create','issue-task-prepare','issue-task-delivery','issue-task-merge','data','init'];
     for (const suite of suites) {
       const marker=join(f.root,`${suite}.ran`);
       write(join(f.root,`tests/${suite}.test.mjs`),
@@ -34,7 +34,7 @@ test('test command executes every suite and rejects failures or premature zero e
     }
     const result=run(process.execPath,[runner,'.test']);
     assert.equal(result.status,1,'A failing suite must fail the command');
-    assert.match(result.stdout,/Suite summary: 18 passed, 2 failed/);
+    assert.match(result.stdout,/Suite summary: 22 passed, 2 failed/);
     assert.match(result.stderr,/Test worker did not complete: tests\/entry.test.mjs \(exit 0\)/);
     assert.match(result.stdout,/FAIL tests\/setup.test.mjs \(\d+\.\d+s\)/);
     assert.match(result.stdout,/Rerun \(PowerShell\): .*\.test-(bun|node) setup/);
@@ -44,11 +44,19 @@ test('test command executes every suite and rejects failures or premature zero e
     const selected=ok(run(process.execPath,[runner,'.test','doctor']));
     assert.match(selected.stdout,/Suite summary: 1 passed, 0 failed/);
     assert.doesNotMatch(selected.stdout,/Rerun \(PowerShell\):/);
+    const tasks = ok(run(process.execPath, [runner, '.test', 'issue-task']));
+    assert.match(tasks.stdout, /Suite summary: 5 passed, 0 failed/);
+    for (const suffix of ['', '-create', '-prepare', '-delivery', '-merge']) assert.match(tasks.stdout, new RegExp(`PASS tests/issue-task${suffix}\\.test\\.mjs`));
+    write(join(f.root, 'tests/issue-task-merge.test.mjs'), "import {test} from 'node:test'; test('unfinished', () => process.exit(0));");
+    const unfinished = run(process.execPath, [runner, '.test', 'issue-task']);
+    assert.equal(unfinished.status, 1);
+    assert.match(unfinished.stdout, /Suite summary: 4 passed, 1 failed/);
+    assert.match(unfinished.stdout, /Rerun \(PowerShell\): .*\.test-(bun|node) issue-task\r?\n/);
     assert.notEqual(run(process.execPath,[runner,'.test','unknown']).status,0);
     assert.notEqual(run(process.execPath,[runner,'.test-live',f.root]).status,0);
-    const locked = join(f.root, 'suite-child'), executable = compile(f.root, 'fixture-worker.cs');
+    const locked = join(f.root, 'suite-child'), executable = nodeExecutable(), script = join(support, 'fixture-worker.mjs');
     write(join(f.root, 'tests/doctor.test.mjs'),
-      `import {test} from 'node:test'; import {spawn} from 'node:child_process'; test('hang', () => { spawn(${JSON.stringify(executable)}, ['hold', ${JSON.stringify(locked)}], {stdio:'inherit'}); return new Promise(()=>{}); });`);
+      `import {test} from 'node:test'; import {spawn} from 'node:child_process'; test('hang', () => { spawn(${JSON.stringify(executable)}, [${JSON.stringify(script)}, 'hold', ${JSON.stringify(locked)}], {stdio:'inherit'}); return new Promise(()=>{}); });`);
     const timedOut = run(process.execPath, [runner, '.test', 'doctor'], { env: { GIDD_TEST_SUITE_TIMEOUT_MS: '1500' } });
     assert.equal(timedOut.status, 1);
     assert.match(timedOut.stderr, /Test command timed out/);

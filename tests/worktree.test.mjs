@@ -6,10 +6,30 @@ import { runCommand } from '../.agents/skills/gidd/scripts.js/shared/process.mjs
 import { workspaceReport } from '../.agents/skills/gidd/scripts.js/shared/workspace-report.mjs';
 import { acquireStorageLock } from '../.agents/skills/gidd/scripts.js/shared/managed-storage.mjs';
 import { saveTask } from '../.agents/skills/gidd/scripts.js/shared/task-records.mjs';
-import { flowSnapshot } from '../.agents/skills/gidd/scripts.js/shared/flow-definition.mjs';
-import { readFlow } from '../.agents/skills/gidd/scripts.js/shared/flows.mjs';
+import { worktreePaths } from '../.agents/skills/gidd/scripts.js/shared/git-worktrees.mjs';
+import { policySnapshot } from '../.agents/skills/gidd/scripts.js/shared/policy-definition.mjs';
+import { readPolicy } from '../.agents/skills/gidd/scripts.js/shared/policies.mjs';
 import { adapter, assert, bindFixture, compile, copySkill, dirname, existsSync, findGit, fixture, initializeDataFixture, join, json, mkdirSync, ok, readFileSync, run, snapshot, write, resourceText, writeResource } from './support/helpers.mjs';
 import { runRepositoryCommand } from './support/repository.mjs';
+
+test('worktree paths use one Git read and reject incomplete or ambiguous metadata', async () => {
+  const root = join(process.env.SystemRoot, 'repo with spaces'), gitDir = join(root, '.git');
+  const expected = { root, gitDir, common: gitDir };
+  let text = [root, gitDir, gitDir].join('\n'), calls = 0;
+  const git = async (path, args) => {
+    calls++;
+    assert.equal(path, root);
+    assert.deepEqual(args, ['rev-parse', '--show-toplevel', '--absolute-git-dir', '--path-format=absolute', '--git-common-dir']);
+    return text;
+  };
+  assert.deepEqual(await worktreePaths(git, root), expected);
+  assert.equal(calls, 1);
+  for (const invalid of ['', root + '\n' + gitDir, [root, '', gitDir].join('\n'),
+    [root, gitDir, 'relative'].join('\n'), [root, gitDir, gitDir, 'extra'].join('\n')]) {
+    text = invalid;
+    assert.equal(await worktreePaths(git, root), null);
+  }
+});
 
 const acquireOptions = (branch, base = 'main', issue = 1, mode = 'direct-merge') => ({ action: 'acquire', branch, base, issue,
   delivery: { mode, remote: { fetch: { repository: 'https://github.com/test/repo', branch: 'main' }, push: { repository: 'https://github.com/test/repo' } } } });
@@ -348,7 +368,7 @@ test('reuse retains a released workspace while a task still references it', asyn
     const first = await s.command('acquire', ['codex/first']);
     const storage = { path: s.state, initialized: true };
     const task = { schema: 'gidd.task/v1', issue: 1, target_branch: 'main',
-      delivery: acquireOptions('codex/first').delivery, flow: flowSnapshot(readFlow('01/00')),
+      delivery: acquireOptions('codex/first').delivery, policy: policySnapshot(readPolicy('01/00')),
       github_account: 'fixture', workspace: first.id };
     saveTask(storage, task);
     await s.command('cleanup', ['codex/first']);
@@ -1026,7 +1046,7 @@ test('repository entry selects tasks by Issue and inspects worktrees by director
     const env = { PATH: '', GIDD_ISSUE_FIXTURE: issueFile, GIDD_ISSUE_INPUT: inputFile, GIDD_TEST_GIT: s.git, GIDD_TEST_REMOTE: bare };
     const cli = (args, cwd = s.target) => {
       const result = runRepositoryCommand(s.target, args, { cwd, env, entry: join(skill, 'gidd.cmd') });
-      if (/^(?:worktree\.|[0-9]+(?:\.|$)|issue$|gh\.auth$)/.test(args[0]) && !args[0].endsWith('.flow')) {
+      if (/^(?:worktree\.|[0-9]+(?:\.|$)|issue$|gh\.auth$)/.test(args[0]) && !args[0].endsWith('.policy')) {
         const report = json(result);
         assert.equal(Object.hasOwn(report, 'reason'), false);
         if (report.status === 'error') {
@@ -1046,16 +1066,16 @@ test('repository entry selects tasks by Issue and inspects worktrees by director
     assert.deepEqual(json(ok(cli(['worktree.list']))).worktrees, []);
     assert.equal(json(cli(['worktree.remove', s.target])).details.code, 'worktree_target_repository_protected');
     const caller = join(s.root, 'caller'); s.native(['worktree', 'add', '-b', 'caller', caller, 'main']);
-    assert.equal(json(cli(['7', '--flow', '01/00'], caller)).details.code, 'execution_worktree_unregistered');
+    assert.equal(json(cli(['7', '--policy', '01/00'], caller)).details.code, 'execution_worktree_unregistered');
     const bodyFile = join(s.root, 'issue draft.md'), body = '需求与验收\r\n"quoted" $literal `code`\n';
     write(bodyFile, '# [gidd] 创建测试\n\n' + body);
     assert.equal(json(cli(['issue'])).details.code, 'invalid_arguments');
-    const created = json(ok(cli(['issue', '--file', bodyFile, '--flow', '01/00'])));
+    const created = json(ok(cli(['issue', '--file', bodyFile, '--policy', '01/00'])));
     assert.deepEqual(created.issue, { number: 7, url: 'https://github.com/test/repo/issues/7' });
     assert.equal(created.task, undefined); assert.equal(created.workspace.state, 'assigned');
     assert.deepEqual(JSON.parse(readFileSync(inputFile, 'utf8')), { title: '[gidd] 创建测试', body });
     assert.equal(readFileSync(bodyFile, 'utf8'), '# [gidd] 创建测试\n\n' + body);
-    const acquired = json(ok(cli(['7', '--flow', '01/00'])));
+    const acquired = json(ok(cli(['7', '--policy', '01/00'])));
     const acquiredId = readRecords(join(s.state, 'storage.json'), s.state).find(record => record.path === acquired.workspace.path).id;
     assert.equal(acquired.target.path, s.target);
     assert.equal(Object.hasOwn(acquired.target, 'repository'), false);
@@ -1072,7 +1092,7 @@ test('repository entry selects tasks by Issue and inspects worktrees by director
     assert.equal(resumed.workspace.head, acquired.workspace.start_commit);
     assert.equal(json(ok(cli(['7'], acquired.workspace.path))).workspace.path, acquired.workspace.path);
     assert.equal(s.readRecord(acquiredId), beforeResume);
-    const duplicate = json(cli(['7', '--flow', '01/00']));
+    const duplicate = json(cli(['7', '--policy', '01/00']));
     assert.equal(duplicate.status, 'success'); assert.equal(duplicate.workspace.path, acquired.workspace.path);
     const shown = json(ok(cli(['worktree.show', acquired.workspace.path])));
     assert.deepEqual(shown.workspace, resumed.workspace); assert.deepEqual(shown.issue, acquired.issue);
@@ -1110,12 +1130,12 @@ test('repository entry selects tasks by Issue and inspects worktrees by director
     ok(cli(['7.cleanup']));
     assert.equal(json(ok(cli(['worktree.remove', relative(s.target, acquired.workspace.path)]))).removed, true);
     define(8, 'direct-commit');
-    ok(cli(['8', '--flow', '00/00']));
+    ok(cli(['8', '--policy', '00/00']));
     const contextPath = join(s.state, '8/state.json'), beforeDuplicate = readFileSync(contextPath, 'utf8');
-    assert.equal(json(ok(cli(['8', '--flow', '00/00']))).workspace.path, s.target);
-    ok(cli(['8.flow.set', '00/04']));
-    assert.match(ok(cli(['8.flow', '--lang', 'zh'])).stdout, /\| commit \| ask \|/);
-    assert.equal(json(cli(['8.flow.set', '01/00'])).details.code, 'task_flow_mode_locked');
+    assert.equal(json(ok(cli(['8', '--policy', '00/00']))).workspace.path, s.target);
+    ok(cli(['8.policy.set', '00/04']));
+    assert.match(ok(cli(['8.policy', '--lang', 'zh'])).stdout, /\| commit \| ask \|/);
+    assert.equal(json(cli(['8.policy.set', '01/00'])).details.code, 'task_policy_mode_locked');
     assert.equal(JSON.parse(readFileSync(contextPath, 'utf8')).github_account, JSON.parse(beforeDuplicate).github_account);
     assert.equal(json(cli(['7.workspace'])).details.code, 'invalid_arguments');
     for (const route of ['workflow.gh.auth', 'workflow.issue', 'workflow.workspace', 'workflow.push', 'workflow.merge', 'workflow.target-sync', 'workflow.close-issue', 'workflow.cleanup'])

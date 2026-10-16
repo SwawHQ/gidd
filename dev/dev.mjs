@@ -7,7 +7,7 @@ import { disposeTestProcesses, startTestProcess, testProcessExecutable } from '.
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const [command, argument = '', ...extra] = process.argv.slice(2);
-const suites = ['doctor', 'setup', 'process', 'dev', 'skill', 'config', 'github', 'entry', 'flow', 'worktree', 'gh', 'issue', 'issue-task', 'data', 'init'];
+const suites = ['doctor', 'setup', 'process', 'dev', 'skill', 'config', 'github', 'entry', 'policy', 'worktree', 'gh', 'issue', 'issue-task', 'data', 'init'];
 if (process.platform !== 'win32') {
   console.error('Development tests currently require Windows. Other platforms are not yet verified.');
   process.exit(1);
@@ -15,7 +15,7 @@ if (process.platform !== 'win32') {
 if (extra.length || !['.test', '.test-live'].includes(command) ||
     (command === '.test-live' && argument) ||
     (command === '.test' && argument && argument !== 'all' && !suites.includes(argument))) {
-  console.error('Use dev.cmd .test [all|doctor|setup|process|dev|skill|config|github|entry|flow|worktree|gh|issue|issue-task|data|init] or .test-live.');
+  console.error('Use dev.cmd .test [all|doctor|setup|process|dev|skill|config|github|entry|policy|worktree|gh|issue|issue-task|data|init] or .test-live.');
   process.exit(1);
 }
 const files = command === '.test-live' ? ['tests/live.test.mjs'] :
@@ -24,7 +24,8 @@ const files = command === '.test-live' ? ['tests/live.test.mjs'] :
     ? ['tests/issues.test.mjs', 'tests/issue.test.mjs'] : suite === 'entry'
     ? ['tests/entry.test.mjs', 'tests/repository-entry.test.mjs'] : suite === 'github'
       ? ['tests/github.test.mjs', 'tests/execution.test.mjs'] : suite === 'config'
-      ? ['tests/config.test.mjs', 'tests/remotes.test.mjs'] : [`tests/${suite}.test.mjs`]);
+      ? ['tests/config.test.mjs', 'tests/remotes.test.mjs'] : suite === 'issue-task'
+      ? ['tests/issue-task.test.mjs', 'tests/issue-task-create.test.mjs', 'tests/issue-task-prepare.test.mjs', 'tests/issue-task-delivery.test.mjs', 'tests/issue-task-merge.test.mjs'] : [`tests/${suite}.test.mjs`]);
 console.log(`Runtime: ${process.versions.bun ? 'Bun ' + process.versions.bun : 'Node ' + process.versions.node}`);
 const started = performance.now();
 const results = [];
@@ -82,7 +83,7 @@ console.log(`\nSuite summary: ${results.length - failures.length} passed, ${fail
 const quote = value => `'${value.replaceAll("'", "''")}'`;
 for (const { file, seconds } of failures) {
   const rerun = command === '.test-live' ? '.test-live' :
-    `.test-${process.versions.bun ? 'bun' : 'node'} ${file.includes('repository-auth') ? 'gh' : file.includes('issues') ? 'issue' : file.includes('repository-entry') ? 'entry' : file.includes('execution.test') ? 'github' : file.includes('remotes.test') ? 'config' : file.split('/').at(-1).replace('.test.mjs', '')}`;
+    `.test-${process.versions.bun ? 'bun' : 'node'} ${file.includes('repository-auth') ? 'gh' : file.includes('issues') ? 'issue' : file.includes('repository-entry') ? 'entry' : file.includes('execution.test') ? 'github' : file.includes('remotes.test') ? 'config' : file.includes('issue-task') ? 'issue-task' : file.split('/').at(-1).replace('.test.mjs', '')}`;
   console.log(`FAIL ${file} (${seconds}s)\nRerun (PowerShell): & ${quote(fileURLToPath(new URL('../dev.cmd', import.meta.url)))} ${rerun}`);
 }
 process.exit(interrupted ? 130 : failures.length ? 1 : 0);

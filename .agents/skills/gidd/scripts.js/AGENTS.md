@@ -15,4 +15,4 @@ ID 后有 `..online`，表示会联网检查的实际状态（默认不要求联
 
 ## 命令模块
 
-`commands/gh/` 处理 `gidd gh.*`；`commands/issue/` 处理 `gidd issue`；`commands/issue-task/` 处理 `gidd <Issue编号>` 及其子命令，包括 `.flow` 和 `.flow.set`。各模块维护自己的参数解析和执行入口，入口文件只分流命令。共用的仓库检查和任务登记检查放在 `shared/`，不通过另一个命令入口调用。
+`commands/gh/` 处理 `gidd gh.*`；`commands/issue/` 处理 `gidd issue`；`commands/issue-task/` 处理 `gidd <Issue编号>` 及其子命令，包括 `.policy` 和 `.policy.set`。各模块维护自己的参数解析和执行入口，入口文件只分流命令。共用的仓库检查和任务登记检查放在 `shared/`，不通过另一个命令入口调用。

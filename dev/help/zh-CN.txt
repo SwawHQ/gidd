@@ -1,21 +1,21 @@
 GIDD 仓库开发（Windows x64 / Windows PowerShell 5.1）
 
-  dev.cmd .help [zh|en]          #显示帮助。
-  dev.cmd .info                  #报告 Bun 和 Node 状态。
-  dev.cmd .setup bun             #准备 Bun，复用已有工具或下载稳定版。
-  dev.cmd .setup node            #准备 Node，复用已有工具或下载 LTS。
-  dev.cmd .setup                 #准备 Bun 和 Node。
-  dev.cmd .test [测试组]         #用 Bun 和 Node 运行离线测试。
-  dev.cmd .test-bun [测试组]     #用 Bun 运行离线测试。
-  dev.cmd .test-node [测试组]    #用 Node 运行离线测试。
-  dev.cmd .test-live             #验证官方下载、安装和复用。
-  dev.cmd bun [参数...]          #运行共享目录中的 Bun。
-  dev.cmd node [参数...]         #运行共享目录中的 Node。
-  dev.cmd sys bun [参数...]      #运行 PATH 中的 Bun。
-  dev.cmd sys node [参数...]     #运行 PATH 中的 Node。
+  dev.cmd .help [zh|en]        #显示帮助。
+  dev.cmd .info                #报告 Bun 和 Node 状态。
+  dev.cmd .setup bun           #准备 Bun，复用已有工具或下载稳定版。
+  dev.cmd .setup node          #准备 Node，复用已有工具或下载 LTS。
+  dev.cmd .setup               #准备 Bun 和 Node。
+  dev.cmd .test [测试组]       #用 Bun 和 Node 运行离线测试。
+  dev.cmd .test-bun [测试组]   #用 Bun 运行离线测试。
+  dev.cmd .test-node [测试组]  #用 Node 运行离线测试。
+  dev.cmd .test-live           #验证官方下载、安装和复用。
+  dev.cmd bun [参数...]        #运行共享目录中的 Bun。
+  dev.cmd node [参数...]       #运行共享目录中的 Node。
+  dev.cmd sys bun [参数...]    #运行 PATH 中的 Bun。
+  dev.cmd sys node [参数...]   #运行 PATH 中的 Node。
 
 测试组：all（默认）, doctor, setup, process, dev, skill, config,
-github, entry, flow, worktree, gh, issue, issue-task, data, init.
+github, entry, policy, worktree, gh, issue, issue-task, data, init.
 
 无参数显示帮助。用 .help zh 或 .help en 选择语言。
 .setup 和 .test-live 可以下载工具。.test 不安装工具。

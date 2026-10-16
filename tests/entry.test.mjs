@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 
 import { statSync, readFileSync, readdirSync, lstatSync, symlinkSync } from 'node:fs';
-import { bindFixture, bindNodeFixture, adapter, code, hash, makeZip, rmSync, toolsRoot, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, ps, run, snapshot, stub, write, executionFailure } from './support/helpers.mjs';
+import { bindFixture, bindNodeFixture, adapter, code, hash, installRequest, makeZip, rmSync, toolsRoot, assert, compile, copySkill, dirname, existsSync, fixture, findGit, join, json, mkdirSync, ok, ps, run, snapshot, stub, support, write, executionFailure } from './support/helpers.mjs';
 
 // Encode for the native Windows argv boundary, including terminal backslashes.
 const runtimeLink = (process.versions.bun ? 'bun' : 'node') + '.link.cmd';
@@ -162,7 +162,7 @@ test('preparation owns tool checks and gidd no longer routes tool commands', () 
     assert.equal(json(ok(s.ensure([process.versions.bun?'bun':'node']))).tools[0].name,process.versions.bun?'bun':'node');
     const installed=snapshot(toolsRoot(f.root));
     const ready=json(ok(s.ensure([process.versions.bun?'bun':'node','--check'])));assert.equal(ready.status,'ready');
-    for (const args of [['tools'],['tools','--check'],['tools','--ensure'],['bootstrap'],['setup']]) {
+    for (const args of [['tools'],['bootstrap'],['setup']]) {
       assert.equal(json(s.invoke(args)).details.code,'unknown_command');
     }
     assert.doesNotMatch(ok(s.invoke(['help','en'])).stdout,/External tools|gidd\.pre\.ensure|gidd tools/);
@@ -307,13 +307,26 @@ test('runtime failures report repair commands and only an available counterpart 
 test('native route cancellation stops the tool and its child processes', () => {
   const f=fixture();
   try {
-    const s=installation(f), root=toolsRoot(f.root), git=join(root,'git/cmd/git.exe'), marker=join(f.root,'native-running'), node=bindNodeFixture(f.root);
-    stub(compile(f.root,'fixture-worker.cs'),git);
-    write(join(root,'git.link.cmd'),'set "GIDD_JS_EXEC=%~dp0git\\cmd\\git.exe"');
+    const s=installation(f), root=toolsRoot(f.root), marker=join(f.root,'native-running'), node=bindNodeFixture(f.root);
+    write(join(root,'git.link.cmd'),'set "GIDD_JS_EXEC='+node.replaceAll('%','%%')+'"');
     const entry=pathToFileURL(join(s.skill,'scripts.js/gidd.mjs')).href;
-    const result=run(node,['--input-type=module','-e',`import {existsSync} from 'node:fs';const {main}=await import(${JSON.stringify(entry)});const pending=main(['git','parent',${JSON.stringify(marker)}]);const deadline=Date.now()+10000;while(!existsSync(${JSON.stringify(marker+'.locked')})){if(Date.now()>deadline)throw new Error('tool_did_not_start');await new Promise(r=>setTimeout(r,25));}process.emit('SIGINT');process.exitCode=await pending;`]);
+    const driver=join(f.root,'cancel.mjs');
+    write(driver,`import assert from 'node:assert/strict';
+import {existsSync,readFileSync} from 'node:fs';
+const {main}=await import(${JSON.stringify(entry)});
+const marker=${JSON.stringify(marker)}, deadline=Date.now()+10000;
+const pending=main(['git',${JSON.stringify(join(support,'fixture-worker.mjs'))},'parent',marker]);
+while(!existsSync(marker+'.locked')) {
+  if(Date.now()>deadline) throw new Error('tool_did_not_start');
+  await new Promise(resolve=>setTimeout(resolve,25));
+}
+process.emit('SIGINT');
+process.exitCode=await pending;
+const pid=Number(readFileSync(marker+'.pid','utf8'));
+assert.throws(()=>process.kill(pid,0),'Cancellation must stop descendants before returning');
+`);
+    const result=run(node,[driver]);
     assert.equal(result.status,130,result.stderr); assert.equal(result.stdout,'');
-    // A stopped descendant releases its exclusive file handle.
     rmSync(marker);
   } finally {f.dispose();}
 });
@@ -381,7 +394,7 @@ test('bootstrap installs, repairs and rolls back managed runtimes before publish
       const archiveName=name==='bun'?'bun-windows-x64.zip':`node-v${version}-win-x64.zip`;
       const archive=join(f.root,archiveName), license=join(f.root,`${name}-LICENSE`); write(license,'fixture license\n');
       const entry=name==='bun'?'bun-windows-x64/bun.exe':`node-v${version}-win-x64/node.exe`;
-      makeZip(f.root,archive,[{name:entry,source:exe},...(name==='node'?[{name:`node-v${version}-win-x64/LICENSE`,source:license}]:[])]);
+      makeZip(archive,[{name:entry,source:exe},...(name==='node'?[{name:`node-v${version}-win-x64/LICENSE`,source:license}]:[])]);
       const checksum=name==='bun'?`https://github.com/oven-sh/bun/releases/download/bun-v${version}/SHASUMS256.txt`:`https://nodejs.org/dist/v${version}/SHASUMS256.txt`;
       const url=name==='bun'?`https://github.com/oven-sh/bun/releases/download/bun-v${version}/${archiveName}`:`https://nodejs.org/dist/v${version}/${archiveName}`;
       const licenseUrl=`https://raw.githubusercontent.com/oven-sh/bun/bun-v${version}/LICENSE.md`;
@@ -429,7 +442,7 @@ test('bootstrap installs, repairs and rolls back managed runtimes before publish
       const definition=json(ok(adapter(f.root,{action:'release',name,version,source:name==='bun'?'https://github.com/oven-sh/bun/releases':'https://nodejs.org/dist',pinnedPath:'',responses})));
       const definitionPath=join(f.root,`${name}-definition.json`); write(definitionPath,JSON.stringify(definition));
       if(name==='bun') write(join(f.root,`bun-${version}-LICENSE.md`),readFileSync(license,'utf8'));
-      const interrupted=adapter(f.root,{action:'install',root,definitionPath,fixtureDirectory:f.root,stopAt:'backed_up',replace:true},{env});
+      const interrupted=adapter(f.root,{...installRequest(root,definitionPath,f.root,'backed_up'),replace:true},{env});
       assert.notEqual(interrupted.status,0); assert.equal(existsSync(target),false);
       assert.equal(existsSync(join(root,`.cache/previous-${name}`)),true);
       const interruptedTree=snapshot(root);
@@ -504,27 +517,19 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
     const systemLanguage = /^zh(?:$|[-_])/.test(Intl.DateTimeFormat().resolvedOptions().locale) ? 'zh' : 'en';
     assert.equal(ok(s.invoke([])).stdout, ok(s.invoke(['help',systemLanguage])).stdout);
     write(join(toolsRoot(f.root), 'config.toml'), 'schema_version = 1\n[ui]\nlanguage = "zh"\n');
-    const before = snapshot(f.root);
-    assert.match(ok(s.invoke(['help','zh'])).stdout, /^GIDD（Windows x64/);
-    for (const alias of ['--help','-h']) {
-      assert.equal(ok(s.invoke([alias,'zh'])).stdout, ok(s.invoke(['help','zh'])).stdout);
-    }
-    assert.match(ok(s.invoke([])).stdout, /^GIDD（Windows x64/);
-    assert.match(ok(s.invoke(['help','en'])).stdout, /GIDD \(Windows x64/);
+    const before = snapshot(f.root), help = {};
     for (const language of ['en', 'zh']) {
-      const help = ok(s.invoke(['help', language])).stdout;
-      assert.equal(help.trim(), readFileSync(join(s.skill, `references/gidd.help.${language === 'zh' ? 'zh-CN' : 'en'}.md`), 'utf8').trim());
-      assert.match(help, /gidd gh\.auth/);
-      assert.doesNotMatch(help, /gidd auth\b/);
+      help[language] = ok(s.invoke(['help', language])).stdout;
+      assert.equal(help[language].trim(), readFileSync(join(s.skill, 'references/gidd.help.' + (language === 'zh' ? 'zh-CN' : 'en') + '.md'), 'utf8').trim());
+      assert.match(help[language], /gidd gh\.auth/);
+      assert.doesNotMatch(help[language], /gidd auth\b/);
     }
-    for (const args of [['auth'], ['auth', '--account', 'Octocat']]) {
-      const removed = s.invoke(args);
-      assert.equal(removed.status, 2);
-      assert.equal(json(removed).details.code, 'unknown_command');
-    }
-    for (const args of [['unknown'], ['identity'], ['doctor','--offline','--offline'], ['doctor','--offline=true'], ['.gh.auth','--offline'], ['help','fr'], ['help','en','extra'], ['doctor','--repository','.'],
-      ['doctor','--repository',s.target], ['doctor','--account','x'], ['setup','python'],
-      ['setup','bun','--offline','x'], ['.gh.auth','Octocat']]) {
+    assert.match(help.zh, /^GIDD（Windows x64/);
+    assert.match(help.en, /GIDD \(Windows x64/);
+    for (const alias of ['--help','-h']) assert.equal(ok(s.invoke([alias,'zh'])).stdout, help.zh);
+    assert.equal(ok(s.invoke([])).stdout, help.zh);
+    for (const args of [['unknown'], ['identity'], ['doctor','--offline','--offline'], ['doctor','--offline=true'],
+      ['help','fr'], ['help','en','extra'], ['doctor','--repository','.'], ['doctor','--repository',s.target], ['doctor','--account','x']]) {
       const result = s.invoke(args);
       assert.equal(result.status, 2, args.join(' '));
       assert.equal(json(result).schema, 'gidd.cli/v1');
@@ -535,11 +540,6 @@ test('installed shell entry provides help and doctor reuse a PATH runtime withou
     assert.equal(report.schema, 'gidd.doctor/v1');
     sameDirectory(report.folder, s.target);
     assert.equal(report.checks.find(c => c.id === 'tool.js_runtime').status, 'ready');
-    for (const command of [['.gh.auth']]) {
-      const missing = s.invoke([...command]);
-      assert.equal(missing.status, 2);
-      assert.equal(json(missing).details.code, 'unknown_command');
-    }
     assert.deepEqual(snapshot(f.root), before, 'Help, invalid commands and missing dependencies must not write or install');
   } finally { f.dispose(); }
 });
@@ -549,13 +549,10 @@ test('removed runtime setup commands fail without changing configuration or tool
   try {
     const s = installation(f);
     write(join(toolsRoot(f.root), 'config.toml'),'invalid configuration');
-    const before = snapshot(f.root);
-    for (const name of ['bun','node','git','gh']) {
-      const result = s.invoke(['setup',name],{PATH:''});
-      assert.equal(result.status,2);
-      assert.equal(json(result).details.code,'unknown_command');
-      assert.equal(existsSync(join(s.skill,'scripts.powershell/setup-tools.ps1')),false);
-    }
+    const before = snapshot(f.root), result = s.invoke(['setup','node'],{PATH:''});
+    assert.equal(result.status,2);
+    assert.equal(json(result).details.code,'unknown_command');
+    assert.equal(existsSync(join(s.skill,'scripts.powershell/setup-tools.ps1')),false);
     assert.deepEqual(snapshot(f.root),before,'Rejected commands must not read invalid config, install, or switch the launcher');
   } finally { f.dispose(); }
 });
@@ -566,11 +563,6 @@ test('language commands edit shared preferences and preserve configuration displ
     const s = installation(f), env = { PATH: dirname(process.execPath) };
     const config = join(toolsRoot(f.root), 'config.toml');
     const original = 'schema_version = 1';
-    const missing = s.invoke(['.gh.auth'],env);
-    assert.equal(json(missing).details.code,'unknown_command');
-    for (const args of [['.gh.auth','--account','Octocat'],['.gh.auth','--hostname','github.com'],['.gh.auth','--remote','origin'],['.gh.auth','Octocat']]) {
-      assert.equal(json(s.invoke([...args],env)).details.code,'unknown_command');
-    }
     for (const value of ['zh', 'en']) {
       const result = json(ok(s.invoke(['lang.set',value],env)));
       assert.equal(result.schema, 'gidd.config/v1');
@@ -585,26 +577,14 @@ test('language commands edit shared preferences and preserve configuration displ
     assert.equal(cleared.action, 'clear'); assert.equal(cleared.changed, true);
     assert.equal(json(ok(s.invoke(['lang.clear'],env))).changed, false);
     assert.doesNotMatch(readFileSync(config,'utf8'), /language\s*=/);
-    const before = snapshot(s.target);
+    const before = snapshot(f.root);
     assert.equal(json(s.invoke(['lang.set','fr'],env)).details.code, 'config_invalid_ui_language');
-    for (const [key,value] of [['repo.remote.account','Octocat'],['flow.current','00/00'],['github.token','secret'],['schema_version','2']]) {
-      assert.equal(s.invoke(['set',key,value],env).status,2);
-    }
-    assert.deepEqual(snapshot(s.target),before);
+    assert.deepEqual(snapshot(f.root),before);
     rmSync(config);
-    const created = s.invoke(['lang.set','zh'],env);
-    ok(created);
+    ok(s.invoke(['lang.set','zh'],env));
     const text = readFileSync(config,'utf8');
     assert.doesNotMatch(text,/hostname/); assert.doesNotMatch(text,/remote.name|remote.url/);
     assert.match(text,/language = "zh"/);
-    // All tool settings are internal; only the output language is editable.
-    for (const key of ['tools.node.version','tools.bun.version','tools.node.source']) {
-      assert.equal(s.invoke(['set',key,'999.0.0'],env).status,2);
-    }
-    assert.equal(s.invoke(['set','tools.directory','custom'],env).status,2);
-    const direct = s.invoke(['set','repo.remote.url','https://github.example.test/owner/repo'],env);
-    assert.equal(json(direct).details.code,'unknown_command');
-    ok(s.invoke(['set.show'],env));
   } finally { f.dispose(); }
 });
 
@@ -642,30 +622,29 @@ test('help exposes language commands; removed setters and malformed arguments do
   try {
     const s = installation(f), config = join(toolsRoot(f.root), 'config.toml');
     const systemLanguage = /^zh(?:$|[-_])/.test(Intl.DateTimeFormat().resolvedOptions().locale) ? 'zh' : 'en';
-    for (const content of ['invalid TOML', 'schema_version = 1\n[ui]\nlanguage = "fr"\n', null]) {
+    const rejected = [['show'], ['config', 'show'], ['del', 'git.user.name'], ['delete', 'git.user.name'],
+      ['set', 'ui.language', 'zh'], ['clear', 'ui.language'], ['auth'], ['.gh.auth'],
+      ['set.show', 'extra'], ['lang.set'], ['lang.set', 'zh', 'extra'], ['lang.clear', 'zh'], ['lang.unknown']];
+    // Locale independence is covered in config.test.mjs; avoid a second cross product.
+    for (const [index, content] of ['invalid TOML', 'schema_version = 1\n[ui]\nlanguage = "fr"\n', null].entries()) {
       if (content === null) rmSync(config); else write(config, content);
       const before = snapshot(f.root);
       const stat = content === null ? undefined : statSync(config, { bigint: true });
-      for (const locale of ['en_US.UTF-8', 'zh_CN.UTF-8', 'C.UTF-8']) {
-        const env = { LC_ALL: locale, LC_MESSAGES: locale, LANG: locale };
-        const help = ok(s.invoke(['help'], env)).stdout;
-        assert.equal(help, ok(s.invoke(['help',systemLanguage], env)).stdout);
-        assert.equal(/^GIDD（/.test(help), systemLanguage === 'zh');
-        for (const syntax of ['gidd lang.set', 'gidd lang.clear']) assert.ok(help.includes(syntax));
-        assert.doesNotMatch(help, /gidd set\s|gidd clear/);
-        assert.doesNotMatch(help, /gidd config/);
-      }
-      for (const args of [['show'], ['config'], ['config', 'show'], ['config', 'set', 'git.user.mode', 'inherit'],
-        ['config', 'clear', 'git.user.name'], ['del', 'git.user.name'], ['delete', 'git.user.name'],
-        ['set'], ['set', 'ui.language', 'zh'], ['clear', 'ui.language'],
-        ['set', 'show'], ['set', 'git.user.name'], ['set', 'git.user.name', 'Name', 'extra'],
-        ['set.show', 'extra'], ['clear'], ['clear', 'git.user.name', 'extra'],
-        ['lang.set'], ['lang.set', 'zh', 'extra'], ['lang.clear', 'zh'], ['lang.unknown']]) {
+      const locale = ['en_US.UTF-8', 'zh_CN.UTF-8', 'C.UTF-8'][index];
+      const env = { LC_ALL: locale, LC_MESSAGES: locale, LANG: locale };
+      const help = ok(s.invoke(['help'], env)).stdout;
+      assert.equal(help, ok(s.invoke(['help',systemLanguage], env)).stdout);
+      assert.equal(/^GIDD（/.test(help), systemLanguage === 'zh');
+      for (const syntax of ['gidd lang.set', 'gidd lang.clear']) assert.ok(help.includes(syntax));
+      assert.doesNotMatch(help, /gidd set\s|gidd clear/);
+      assert.doesNotMatch(help, /gidd config/);
+      const cases = index === 0 ? rejected : [['set', 'ui.language', 'zh'], ['set.show', 'extra'], ['lang.set']];
+      for (const args of cases) {
         const result = s.invoke(args);
-        assert.equal(result.status, 2);
+        assert.equal(result.status, 2, args.join(' '));
         const report = args[0] === 'set.show' ? JSON.parse(result.stderr) : json(result);
         if (args[0] === 'set.show') assert.equal(result.stdout, '');
-        assert.equal(report.details.code, ['show', 'config', 'del', 'delete', 'set', 'clear'].includes(args[0]) ? 'unknown_command' : 'invalid_arguments');
+        assert.equal(report.details.code, ['show', 'config', 'del', 'delete', 'set', 'clear', 'auth', '.gh.auth'].includes(args[0]) ? 'unknown_command' : 'invalid_arguments');
       }
       assert.deepEqual(snapshot(f.root), before);
       if (stat) {

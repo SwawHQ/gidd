@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { runCommand } from '../.agents/skills/gidd/scripts.js/shared/process.mjs';
-import { adapter, assert, compile, existsSync, fixture, join, ok, readFileSync, repo, write } from './support/helpers.mjs';
+import { assert, existsSync, fixture, join, nodeExecutable, readFileSync, repo, support, until, write } from './support/helpers.mjs';
 
 test('JS execution requires binary paths and preserves literal arguments without a shell', async () => {
   const f=fixture();
@@ -37,17 +37,22 @@ test('process adapter bounds hangs and output, redacts failures and isolates rep
 test('GitHub subprocess deadline also covers pipes inherited by descendants', { timeout: 15000 }, async () => {
   const f = fixture(), pidFiles = [];
   try {
-    const exe = compile(f.root, 'pipe-parent.cs');
+    const exe = nodeExecutable(), script = join(support, 'pipe-parent.mjs');
     for (const delay of [0, 200]) {
       const pid = join(f.root, `${delay}.pid`); pidFiles.push(pid);
       const started = performance.now();
-      const result = await runCommand(exe, [String(delay), pid], { cwd: f.root, timeoutMs: 500 });
+      const result = await runCommand(exe, [script, String(delay), pid], { cwd: f.root, timeoutMs: 500 });
       assert.equal(result.reason, 'process_timeout');
       assert.equal(result.text, '');
       assert.ok(performance.now() - started < 1500, 'Child-held pipes must not extend the deadline');
     }
   } finally {
-    ok(adapter(f.root, { action: 'terminate-pipe-children', pids: pidFiles.filter(existsSync).map(file => Number(readFileSync(file, 'utf8'))) }));
+    for (const path of pidFiles.filter(existsSync)) {
+      const pid = Number(readFileSync(path, 'utf8'));
+      try { process.kill(pid); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+      await until(() => { try { process.kill(pid, 0); return false; } catch { return true; } });
+    }
+    // Windows can release the process's directory handle just after termination.
     await new Promise(resolve => setTimeout(resolve, 100));
     f.dispose();
   }

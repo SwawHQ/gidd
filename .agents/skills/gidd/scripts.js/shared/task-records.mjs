@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { atomicWrite, initializeStorage, readJson } from './managed-storage.mjs';
 import { plainPath } from './storage.mjs';
 import { validRemoteBinding } from './remote-binding.mjs';
-import { validFlowSnapshot } from './flow-definition.mjs';
+import { validPolicySnapshot } from './policy-definition.mjs';
 
 const fail = () => { throw new Error('task_invalid'); };
 const number = value => /^[1-9][0-9]*$/.test(String(value)) && Number.isSafeInteger(Number(value));
@@ -42,7 +42,7 @@ export function readDraft(path) {
 export const saveIssue = (storage, issue, text) => atomicWrite(issuePath(storage, issue), text);
 export function validTask(record) {
   return record?.schema === 'gidd.task/v1' &&
-    Object.keys(record).every(key => ['schema', 'target_branch', 'delivery', 'issue', 'workspace', 'start_commit', 'flow', 'github_account', 'registration', 'preparation'].includes(key)) &&
+    Object.keys(record).every(key => ['schema', 'target_branch', 'delivery', 'issue', 'workspace', 'start_commit', 'policy', 'github_account', 'registration', 'preparation'].includes(key)) &&
     (record.registration === undefined || record.registration && Object.keys(record.registration).length === 2 &&
       uuid(record.registration.id) && typeof record.registration.complete === 'boolean') &&
     (record.preparation === undefined || record.preparation &&
@@ -50,7 +50,7 @@ export function validTask(record) {
       oid(record.preparation.start_commit) && oid(record.preparation.previous_commit) &&
       (record.preparation.reference === undefined || typeof record.preparation.reference === 'string' && record.preparation.reference.startsWith('refs/gidd/delivery/') &&
         uuid(record.preparation.reference.slice('refs/gidd/delivery/'.length)))) &&
-    validFlowSnapshot(record.flow) && record.flow.mode === record.delivery?.mode &&
+    validPolicySnapshot(record.policy) && record.policy.mode === record.delivery?.mode &&
     typeof record.github_account === 'string' && /^[a-z0-9][a-z0-9-]{0,99}$/i.test(record.github_account) &&
     typeof record.target_branch === 'string' && !!record.target_branch &&
     !/^[-/.]|[\x00-\x20\x7f\\:]/.test(record.target_branch) && !record.target_branch.startsWith('refs/') &&

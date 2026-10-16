@@ -1,3 +1,12 @@
+import { isAbsolute } from 'node:path';
+
+export async function worktreePaths(git, path) {
+  const text = await git(path, ['rev-parse', '--show-toplevel', '--absolute-git-dir', '--path-format=absolute', '--git-common-dir']);
+  const [root, gitDir, common, ...extra] = text.split(/\r?\n/);
+  if (extra.length || ![root, gitDir, common].every(value => value && isAbsolute(value))) return null;
+  return { root, gitDir, common };
+}
+
 export function parseList(text) {
   return text.split('\0\0').filter(Boolean).map(block => {
     const row = {};

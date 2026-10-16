@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { plainPath } from './storage.mjs';
+import { worktreePaths } from './git-worktrees.mjs';
 
 // State describes management and checkout health, independent of delivery mode.
 // Ordinary edits are expected while a workspace remains assigned to its task.
@@ -14,9 +15,9 @@ export async function inspectWorkspace(row, { git, common, same, includeIgnored 
   if (!row || !existsSync(row.path)) return 'worktree_missing';
   try { plainPath(row.path); } catch { return 'worktree_reparse_path'; }
   if (row.bare || row.locked || row.prunable) return 'worktree_unavailable';
-  if (!same(await git(row.path, ['rev-parse', '--show-toplevel']), row.path) ||
-      !same(await git(row.path, ['rev-parse', '--path-format=absolute', '--git-common-dir']), common)) return 'worktree_repository_mismatch';
-  const gitDir = await git(row.path, ['rev-parse', '--absolute-git-dir']);
+  const paths = await worktreePaths(git, row.path);
+  if (!paths || !same(paths.root, row.path) || !same(paths.common, common)) return 'worktree_repository_mismatch';
+  const gitDir = paths.gitDir;
   plainPath(gitDir);
   const operations = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer', 'BISECT_START', 'index.lock', 'HEAD.lock'];
   if (operations.some(name => existsSync(join(gitDir, name)))) return 'worktree_operation_in_progress';

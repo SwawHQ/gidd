@@ -60,11 +60,11 @@ test('user config keeps language preferences and rejects unsupported fields or c
     const path = join(f.root, '.agents/skills.tools/gidd/config.toml');
     write(path, configText);
     assert.deepEqual(readConfiguration(f.root).ui, { language: 'zh' });
-    for (const key of ['flow.current', 'repo.remote.account', 'git.user.mode','git.user.name','git.user.email','git.credential.mode','repo.remote.name','repo.remote.url','github.account','repo.hostname','repo.remote.url.account','tools.node.source','tools.gh.version','bootstrap.runtime']) {
+    for (const key of ['policy.current', 'flow.current', 'repo.remote.account', 'git.user.mode','git.user.name','git.user.email','git.credential.mode','repo.remote.name','repo.remote.url','github.account','repo.hostname','repo.remote.url.account','tools.node.source','tools.gh.version','bootstrap.runtime']) {
       assert.throws(() => configure(f.root, 'set', key, 'value'), /config_unknown_key/);
       assert.equal(readFileSync(path,'utf8'), configText);
     }
-    for (const table of ['repo', 'flow', 'git', 'github', 'github.auth', 'tools', 'tools.gh', 'bootstrap', 'custom']) {
+    for (const table of ['repo', 'policy', 'flow', 'git', 'github', 'github.auth', 'tools', 'tools.gh', 'bootstrap', 'custom']) {
       const text = 'schema_version = 1\n[' + table + ']\n';
       write(path, text);
       const unsupported = { message: 'config_unsupported_syntax_or_field:2' };
@@ -196,7 +196,7 @@ test('clear rejects invalid requests, unsafe paths and broken files without chan
   } finally { f.dispose(); }
 });
 
-test('native tool policy ignores absent, malformed and hostile user preferences', () => {
+test('native tool preparation ignores absent, malformed and hostile user preferences', () => {
   const f=fixture();
   try {
     const path=join(f.root,'.agents/skills.tools/gidd/config.toml');

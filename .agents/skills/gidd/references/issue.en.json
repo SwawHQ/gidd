@@ -31,7 +31,7 @@
       "id": "completion",
       "attributes": {
         "label": "Completion confirmation",
-        "value": "- [ ] All requirements of this task have passed acceptance, and delivery is complete under the selected workflow."
+        "value": "- [ ] All requirements of this task have passed acceptance, and delivery is complete under the selected authorization policy."
       },
       "validations": {
         "required": false

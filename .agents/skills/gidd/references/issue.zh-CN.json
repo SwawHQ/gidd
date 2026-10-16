@@ -31,7 +31,7 @@
       "id": "completion",
       "attributes": {
         "label": "完成确认",
-        "value": "- [ ] 本任务的全部需求已通过验收，并按所选工作流程完成交付。"
+        "value": "- [ ] 本任务的全部需求已通过验收，并按所选授权方案完成交付。"
       },
       "validations": {
         "required": false

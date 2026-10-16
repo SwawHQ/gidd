@@ -2,8 +2,9 @@ import { existsSync, realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { boundExecutor } from './bindings.mjs';
 import { plainPath, repositoryRoot } from './storage.mjs';
-import { parseList, readRecords } from '../commands/worktree/index.mjs';
+import { readRecords } from '../commands/worktree/index.mjs';
 import { locateStorage, registryLocation } from './managed-storage.mjs';
+import { worktreePaths } from './git-worktrees.mjs';
 
 const canonical = path => existsSync(path) ? realpathSync.native(path) :
   dirname(resolve(path)) === resolve(path) ? resolve(path) : join(canonical(dirname(resolve(path))), basename(path));
@@ -16,14 +17,15 @@ export async function executionScope(repository, { bindings, env, signal, cwd = 
   const fail = reason => { throw Object.assign(new Error(reason), { executionScope: { ...details } }); };
   const invoke = boundExecutor(bindings);
   async function probe(directory) {
-    const result = await invoke(bindings.git.path, ['rev-parse', '--show-toplevel',
-      '--absolute-git-dir', '--path-format=absolute', '--git-common-dir'], { cwd: directory, env, signal });
-    if (!result.ok) fail(signal?.aborted ? 'cancelled' : 'execution_not_worktree');
-    const [root, gitDir, common, ...extra] = result.text.split(/\r?\n/);
-    if (!root || !gitDir || !common || extra.length) fail('execution_not_worktree');
-    try { for (const path of [directory, root, gitDir, common]) plainPath(path); }
+    const paths = await worktreePaths(async (path, args) => {
+      const result = await invoke(bindings.git.path, args, { cwd: path, env, signal });
+      if (!result.ok) fail(signal?.aborted ? 'cancelled' : 'execution_not_worktree');
+      return result.text;
+    }, directory);
+    if (!paths) fail('execution_not_worktree');
+    try { for (const path of [directory, paths.root, paths.gitDir, paths.common]) plainPath(path); }
     catch { fail('execution_reparse_path'); }
-    return { root, gitDir, common };
+    return paths;
   }
   const entry = await probe(repository);
   if (!same(entry.root, repository)) fail('repository_root_mismatch');
@@ -33,19 +35,18 @@ export async function executionScope(repository, { bindings, env, signal, cwd = 
     if (!result.ok) fail('execution_registry_unavailable');
     return result.text;
   };
-  const storage = await locateStorage(repository, storageGit, { required: false });
   async function allowed(directory) {
     details.execution_directory = directory;
     details.detected_repository = null;
-    const actual = await probe(directory);
+    try { plainPath(directory); } catch { fail('execution_reparse_path'); }
+    const actual = same(directory, repository) ? entry : await probe(directory);
     details.detected_repository = actual.root;
     if (!same(repositoryRoot(directory), actual.root)) fail('execution_location_mismatch');
     if (!same(actual.common, entry.common)) fail('execution_repository_mismatch');
     if (same(actual.root, entry.root)) return actual;
     if (!rows) {
-      const result = await invoke(bindings.git.path, ['-C', repository, 'worktree', 'list', '--porcelain', '-z'], { env, signal });
-      if (!result.ok) fail('execution_registry_unavailable');
-      rows = parseList(result.text);
+      const storage = await locateStorage(repository, storageGit, { required: false });
+      rows = storage.rows;
       const main = rows[0];
       if (!main?.path || main.bare) fail('execution_registry_unavailable');
       try { records = readRecords(registryLocation(storage), storage.path); }

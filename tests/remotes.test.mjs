@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import { resolveRemoteBinding, verifyRemoteBinding, remoteIdentity, validRemoteBinding } from '../.agents/skills/gidd/scripts.js/shared/remote-binding.mjs';
 import { runCommand } from '../.agents/skills/gidd/scripts.js/shared/process.mjs';
-import { assert, fixture, findGit, join, ok, run, readFileSync } from './support/helpers.mjs';
+import { repositoryConnection } from '../.agents/skills/gidd/scripts.js/shared/repository-remote.mjs';
+import { assert, bindFixture, fixture, findGit, join, ok, run, readFileSync } from './support/helpers.mjs';
 
 function setup() {
   const f = fixture(), exe = findGit();
@@ -16,6 +17,27 @@ function setup() {
   const resolve = () => resolveRemoteBinding(git, f.root, 'main');
   return { ...f, exe, env, native, git, resolve };
 }
+
+test('Git connections avoid an immediate duplicate read and refresh transports before use', async () => {
+  const s = setup(), calls = [];
+  try {
+    bindFixture(s.root, { git: findGit() });
+    const execute = (exe, args, options) => {
+      calls.push(args);
+      return runCommand(exe, args, { ...options, env: { ...options.env, GIT_CONFIG_GLOBAL: 'NUL', GIT_CONFIG_NOSYSTEM: '1' } });
+    };
+    const connection = await repositoryConnection(s.root, { execute, branch: 'main' });
+    const reads = () => calls.filter(args => args.includes('config') && args.includes('--null')).length;
+    assert.equal(reads(), 1);
+    s.native(['config', 'remote.origin.pushurl', 'git@github.com:upstream/repo.git']);
+    await connection.verifyRemote();
+    assert.equal(reads(), 2);
+    assert.equal(connection.remote.push.url, 'git@github.com:upstream/repo.git');
+    s.native(['config', 'remote.origin.pushurl', 'https://github.com/other/repo.git']);
+    await assert.rejects(connection.verifyRemote(), /delivery_remote_changed/);
+    assert.equal(reads(), 3);
+  } finally { s.dispose(); }
+});
 
 test('remote selection follows target branch precedence and Git URL rewriting', async () => {
   const s = setup();

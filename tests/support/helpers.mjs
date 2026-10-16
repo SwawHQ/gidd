@@ -11,7 +11,8 @@ import { disposeTestProcesses, runTestProcess, startTestProcess } from '../../de
 // An exit code of zero alone does not prove that a test worker reached its end.
 // In particular, Node on this Windows host can terminate during native fixtures.
 after(async () => {
-  await disposeTestProcesses();
+  try { await disposeFixtures(); }
+  finally { await disposeTestProcesses(); }
   if (process.env.GIDD_TEST_COMPLETION) writeFileSync(process.env.GIDD_TEST_COMPLETION, 'completed');
 });
 
@@ -24,9 +25,13 @@ export function copySkill(destination) {
 }
 const windowsRoot = process.env.SystemRoot || process.env.SYSTEMROOT || 'C:\\Windows';
 const sharedNode = join(process.env.USERPROFILE, '.agents/skills.tools/gidd/node/node.exe');
-export function bindNodeFixture(home) {
-  const node = !process.versions.bun ? process.execPath : existsSync(sharedNode) ? sharedNode :
+let node;
+export function nodeExecutable() {
+  return node ??= !process.versions.bun ? process.execPath : existsSync(sharedNode) ? sharedNode :
     ok(run(join(windowsRoot, 'System32/where.exe'), ['node.exe'])).stdout.trim().split(/\r?\n/)[0];
+}
+export function bindNodeFixture(home) {
+  const node = nodeExecutable();
   const root = toolsRoot(home);
   stub(node, join(root, 'node/node.exe'));
   write(join(root, 'node.link.cmd'), '@echo off\r\nsetlocal DisableDelayedExpansion\r\nset "GIDD_JS_EXEC=%~dp0node\\node.exe"\r\n"%GIDD_JS_EXEC%" %*\r\nexit /b %ERRORLEVEL%\r\n');
@@ -69,10 +74,15 @@ export function ps(script, args = [], options = {}) {
   return run(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, ...args], options);
 }
 const fixtures = new Map();
-afterEach(() => {
+async function disposeFixtures() {
   // Setup can fail before the caller reaches its try/finally.
-  for (const fixture of [...fixtures.values()].reverse()) fixture.dispose();
-});
+  const failures = [];
+  for (const fixture of [...fixtures.values()].reverse()) {
+    try { await fixture.dispose(); } catch (error) { failures.push(error); }
+  }
+  if (failures.length) throw new AggregateError(failures, 'Test fixture cleanup failed');
+}
+afterEach(disposeFixtures);
 export function fixture() {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'gidd-js-')));
   // Disable Bun's own cache writes when testing read-only GIDD operations.
@@ -83,24 +93,33 @@ export function fixture() {
   // Tests run serially within each worker; every subprocess gets this private home.
   Object.assign(process.env, isolated);
   const workers = new Set();
-  const resource = { root, workers, dispose() {
+  let restored = false;
+  const resource = { root, workers, closed: false, dispose() {
+    if (!fixtures.has(root)) return;
+    resource.closed = true;
+    const failures = [];
     // Stop owned workers before restoring their profile or deleting their files.
-    for (const worker of workers) worker.stopSync();
-    fixtures.delete(root);
-    for (const [key, value] of Object.entries(previous)) {
-      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    for (const worker of workers) {
+      try { worker.stopSync(); } catch (error) { failures.push(error); }
     }
+    if (!restored) {
+      restored = true;
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+    }
+    if (failures.length) throw new AggregateError(failures, 'Test workers did not stop');
     const full = resolve(root);
     assert.ok(full.startsWith(realpathSync.native(tmpdir()) + sep) && /^gidd-js-/.test(full.slice(full.lastIndexOf(sep) + 1)));
     // fs.rm removes junctions/symlinks themselves, without traversing their targets.
     // Doctor can own a sibling data directory with the same test-owned name.
-    const failures = [];
     for (const path of [full, full + '.gidd']) {
       assert.ok(path.startsWith(realpathSync.native(tmpdir()) + sep));
       try { rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
       catch (cause) { failures.push(new Error(`Test cleanup failed: ${path} (${cause.code || cause.message})`, { cause })); }
     }
     if (failures.length) throw new AggregateError(failures, failures.map(error => error.message).join('\n'));
+    fixtures.delete(root);
   } };
   fixtures.set(root, resource);
   return resource;
@@ -112,9 +131,25 @@ export function initializeDataFixture(repository) {
   initializeStorage(inspectStorage({ main: repository, common: join(repository, '.git'), path }));
 }
 export function hash(path) { return createHash('sha256').update(readFileSync(path)).digest('hex'); }
+const shellModules = {
+  default: ['lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1','lib/_configuration.ps1','setup-tools/_filesystem.ps1','setup-tools/download.ps1','setup-tools/releases.ps1','setup-tools/install.ps1','lib/_bootstrap.ps1','lib/_report.ps1','setup-tools/prepare.ps1'],
+  syntax: [],
+  process: ['lib/_process.ps1'],
+  validate: ['lib/_managed.ps1'],
+  configuration: ['lib/_managed.ps1','lib/_configuration.ps1'],
+  runtime: ['lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1'],
+  find: ['lib/_process.ps1','lib/_managed.ps1','lib/_tools.ps1'],
+  release: ['lib/_configuration.ps1','setup-tools/download.ps1','setup-tools/releases.ps1'],
+  'read-release': ['setup-tools/download.ps1','setup-tools/releases.ps1'],
+  extract: ['lib/_managed.ps1','setup-tools/download.ps1'],
+  install: ['lib/_process.ps1','lib/_managed.ps1','setup-tools/_filesystem.ps1','setup-tools/download.ps1','setup-tools/install.ps1'],
+  stage: ['lib/_managed.ps1','setup-tools/_filesystem.ps1'],
+  guide: ['lib/_managed.ps1','setup-tools/_filesystem.ps1'],
+};
 export function request(root, requestData) {
+  assert.ok(fixtures.has(root) && !fixtures.get(root).closed, 'Test fixture is closed');
   const path = join(root, `${randomUUID()}.request.json`);
-  write(path, JSON.stringify({ codeRoot: code, ...requestData }));
+  write(path, JSON.stringify({ codeRoot: code, modules: shellModules[requestData.action] ?? shellModules.default, ...requestData }));
   return path;
 }
 export function adapter(root, requestData, options) {
@@ -134,20 +169,29 @@ export function bindFixture(home, tools) {
 export function diagnosis(target, options) { return run(process.execPath, [join(support,'doctor.mjs'),target],options); }
 export function startAdapter(root, requestData, options = {}) {
   const path = request(root, requestData);
-  const worker = startTestProcess(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(support, 'windows.ps1'), '-RequestPath', path],
-    { cwd: repo, timeout: options.timeout ?? 15000, env: environment(options.env), stdio: ['ignore', 'pipe', 'pipe'] });
-  const { child } = worker, workers = fixtures.get(root)?.workers;
-  workers?.add(worker);
-  let stdout = '', stderr = '';
-  child.stdout.on('data', chunk => { stdout += chunk; });
-  child.stderr.on('data', chunk => { stderr += chunk; });
-  const result = worker.result.then(value => ({ ...value, stdout, stderr })).finally(() => {
-    workers?.delete(worker);
+  const worker = startFixture(root, shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(support, 'windows.ps1'), '-RequestPath', path], { cwd: repo, ...options });
+  const result = worker.result.finally(() => {
     rmSync(path, { force: true, maxRetries: 5, retryDelay: 100 });
     rmSync(path + '.locked', { force: true, maxRetries: 5, retryDelay: 100 });
   });
   result.catch(() => {});
-  return { child, result, stop: async () => { worker.stop(); return await result; }, marker: path + '.locked' };
+  return { ...worker, result, stop: async () => { await worker.stop(); return await result; }, marker: path + '.locked' };
+}
+export function startFixture(root, executable, args, options = {}) {
+  const fixture = fixtures.get(root);
+  assert.ok(fixture && !fixture.closed, 'Test fixture is closed');
+  const worker = startTestProcess(executable, args,
+    { ...options, cwd: options.cwd ?? root, timeout: options.timeout ?? 15000, env: environment(options.env), stdio: ['ignore', 'pipe', 'pipe'] });
+  const { child } = worker, { workers } = fixture;
+  workers.add(worker);
+  let stdout = '', stderr = '';
+  child.stdout.on('data', chunk => { stdout += chunk; });
+  child.stderr.on('data', chunk => { stderr += chunk; });
+  const result = worker.result.then(value => ({ ...value, stdout, stderr })).finally(() => {
+    workers.delete(worker);
+  });
+  result.catch(() => {});
+  return { child, result, stop: async () => { worker.stop(); return await result; } };
 }
 export async function until(predicate, timeout = 10000) {
   const start = Date.now();
@@ -156,9 +200,14 @@ export async function until(predicate, timeout = 10000) {
     await new Promise(resolve => setTimeout(resolve, 25));
   }
 }
+const compiled = new Map();
 export function compile(root, source = 'tool.cs') {
+  assert.ok(fixtures.has(root) && !fixtures.get(root).closed, 'Test fixture is closed');
   const exe = join(root, source.replace('.cs', '.exe'));
-  ok(adapter(root, { action: 'compile', source: join(support, source), destination: exe }));
+  if (!compiled.has(source)) {
+    ok(ps(join(repo, 'dev/compile-test-process.ps1'), [join(support, source), exe]));
+    compiled.set(source, readFileSync(exe));
+  } else writeFileSync(exe, compiled.get(source));
   return exe;
 }
 export function stub(source, destination, mode, managed = false) {
@@ -183,14 +232,24 @@ export function snapshot(root) {
   }
   visit(root); return entries;
 }
+let git;
 export function findGit() {
+  if (git) return git;
   const result = ok(run(join(windowsRoot, 'System32/where.exe'), ['git.exe']));
-  return result.stdout.trim().split(/\r?\n/)[0];
+  return git = result.stdout.trim().split(/\r?\n/)[0];
 }
 export function installRequest(root, definitionPath, fixtureDirectory = '', stopAt = '') {
-  return { action: 'install', root, definitionPath, fixtureDirectory, stopAt };
+  const downloads = {};
+  if (fixtureDirectory) {
+    const definition = JSON.parse(readFileSync(definitionPath, 'utf8'));
+    downloads[definition.url] = join(fixtureDirectory, definition.archive);
+    for (const file of definition.supplements ?? []) {
+      downloads[file.url] = join(fixtureDirectory, `${definition.name}-${definition.version}-${file.name}`);
+    }
+  }
+  return { action: 'install', root, definitionPath, downloads, stopAt };
 }
-export function makeZip(root, destination, entries) { ok(adapter(root, { action: 'zip', destination, entries })); }
+export { makeZip } from './zip.mjs';
 export { assert, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, join, dirname, lstatSync };
 
 // Resource entries now share the owning repository manifest.

@@ -1,40 +1,42 @@
 ---
 name: gidd
-description: 基于 Git Worktree、GitHub Issue 为要求可审计（过程留痕）、外包式（先立验收契约再开发）、多任务并行、流水线式协作的开发，提供任务登记、工作区管理/交付等工具，自带 git、gh（GitHub CLI）、bun/node 准备；适用于 Git/GitHub 操作-如 clone、Issue、PR 或用户提及 gidd 时。
+description: 基于 Git Worktree、GitHub Issue 为要求可审计（过程留痕）、外包式（先立验收契约再开发）、多任务并行、流水线式协作的开发，提供任务登记、工作区管理/交付等工具，自带 git、gh（GitHub CLI）、bun/node 准备；适用于 Git/GitHub 操作-如 clone、Issue、PR 或 gidd 被提及时。
 license: MIT
 ---
 
 ## 准备
 
-`gidd.cmd` 和 `tools.ensure.cmd` 位于技能安装目录，通过安装路径调用。下文用 `gidd` 简写 `gidd.cmd`。`gidd help` 和 `tools.ensure.cmd help` 提供命令用法。
+技能安装目录应存在`gidd.cmd`和`tools.ensure.cmd`命令入口，可以`path/to/gidd/gidd help`、`path/to/gidd/tools.ensure help`查看用法。
 
-`gidd doctor --offline` 检查本地环境；`tools.ensure.cmd` 准备或修复 Git、gh 和 JS 运行时。GIDD 缺少运行时入口时会自动准备基础工具，可能下载资源。
+使用前先执行一次`gidd doctor --offline`确认环境ok，初次执行会自动准备 git、gh、bun/node（可能下载资源），要手动准备或修复时请使用`tools.ensure.cmd`。
 
-`gidd git`、`gidd gh`、`gidd bun` 和 `gidd node` 调用已准备的工具，转发参数、输入输出和退出码，保留当前目录。
+gidd 的相关子命令会沿用 git 设置，只是若存在名为 for.swaw.gidd 的远端会优先应用；gh 账号，则需在仓库中执行一次`gidd gh.auth`请求单独指定授权（需要交互）
 
-GIDD 沿用 Git 的远端配置，优先使用 `for.swaw.gidd` 远端。`gidd gh.auth` 通过交互登录，为当前仓库选择 GitHub 账号。
 
-## 工作流程
 
-工作流程由交付模式和授权方案组成。每种交付模式提供多种授权方案。
+## 授权方案
 
-- `gidd flow.deliveries`：列出交付模式，包括直接提交、直接合并和 PR 合并。
-- `gidd flow.list 00`：列出 `00` 号交付模式下的授权方案。
-- `gidd flow 00/05`：查看 `00` 号交付模式与 `05` 号授权方案组成的工作流程。
-- `gidd flow.issue 00/05`：查看该工作流程的 Issue 模板。
-- `gidd flow.history`：查看工作流程选用记录。
+Git/GitHub 功能繁多，gidd 预设了一些授权方案（包含`交付模式`和`步骤授权`），以帮助简化与用户的对齐。
 
-授权方案指定哪些步骤自动执行、哪些步骤需要确认。它用于生成 Agent 执行提示；GIDD 命令本身不会弹出步骤授权确认。配置说明见 [工作流程配置](flows/README.md)。
+授权方案按交付模式分组。
+
+- `gidd policy.deliveries`：列出交付模式，例如`00.direct-commit`。
+- `gidd policy.list 00`：列出 `00` 号交付模式下的授权方案。
+- `gidd policy 00/05`：查看`00`号交付模式下的`05`号授权方案。
+- `gidd policy.issue 00/05`：查看该授权方案的 Issue 模板。
+- `gidd policy.history`：查看授权方案选用记录。
+
+授权方案指定哪些步骤自动执行、哪些步骤需要确认。它用于生成 Agent 执行提示；GIDD 命令本身不会弹出步骤授权确认。配置说明见 [授权方案配置](policies/README.md)。
 
 ## 任务与工作区
 
-`gidd issue --file <文件> --flow <工作流程>` 从 Markdown 创建 Issue、登记任务并准备工作区。`gidd <Issue编号> --flow <工作流程>` 登记已有 Issue，并准备或恢复工作区。
+`gidd issue --file <文件> --policy <授权方案>` 从 Markdown 创建 Issue、登记任务并准备工作区。`gidd <Issue编号> --policy <授权方案>` 登记已有 Issue，并准备或恢复工作区。
 
 两个命令均返回任务工作区路径。直接提交模式使用目标仓库目录；直接合并和 PR 合并模式领用专用工作树。
 
 - `gidd <Issue编号>`：查看任务和工作区状态。
-- `gidd <Issue编号>.flow`：查看任务保存的工作流程。
-- `gidd <Issue编号>.flow.set <工作流程>`：修改任务的工作流程。
+- `gidd <Issue编号>.policy`：查看任务保存的授权方案。
+- `gidd <Issue编号>.policy.set <授权方案>`：修改任务的授权方案。
 - 任务交付：编号命令提供推送、合并、目标分支同步、关闭 Issue 和清理功能。
 - 工作树管理：`gidd worktree.list`、`gidd worktree.show <目录>` 和 `gidd worktree.remove <目录>` 提供查询和移除已释放工作区的功能。
 - 输出语言：`gidd lang.set zh|en` 设置全局默认语言。

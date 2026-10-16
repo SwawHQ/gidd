@@ -2,7 +2,7 @@ import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readF
 import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { configurationPath, parseConfiguration, stringPattern } from './storage.mjs';
-import { flowSelectionHint, flowCatalogHint } from './flows.mjs';
+import { policySelectionHint, policyCatalogHint } from './policies.mjs';
 import { validateUiLanguage } from './language.mjs';
 
 const initialConfiguration = 'schema_version = 1\n';
@@ -103,10 +103,10 @@ export function configurationHint(reason) {
   if (reason.startsWith('remote_')) return 'Inspect Git remotes and target branch settings. Use for.swaw.gidd to select a dedicated remote with one fetch URL and at most one push URL.';
   if (reason === 'delivery_remote_changed') return 'Inspect the recorded source repository, fetch branch and delivery repository with doctor, then resolve the Git configuration change. The task binding is retained.';
   if (reason === 'config_invalid_ui_language') return 'Use gidd lang.set zh or gidd lang.set en; use gidd lang.clear to follow the system language.';
-  if (['flow_selector_invalid', 'flow_number_missing', 'flow_mode_missing'].includes(reason)) return flowSelectionHint;
-  if (reason === 'flow_number_ambiguous') return 'This number matches multiple presets. Use the full preset name, for example 00/00.auto.';
-  if (reason === 'flow_mode_id_conflict' || reason === 'flow_mode_name_conflict') return 'Run gidd flow.deliveries to locate conflicting mode directories; their IDs and mode names must be unique.';
-  if (reason.startsWith('flow_')) return flowCatalogHint;
+  if (['policy_selector_invalid', 'policy_number_missing', 'policy_mode_missing'].includes(reason)) return policySelectionHint;
+  if (reason === 'policy_number_ambiguous') return 'This number matches multiple presets. Use the full preset name, for example 00/00.auto.';
+  if (reason === 'policy_mode_id_conflict' || reason === 'policy_mode_name_conflict') return 'Run gidd policy.deliveries to locate conflicting mode directories; their IDs and mode names must be unique.';
+  if (reason.startsWith('policy_')) return policyCatalogHint;
   if (reason === 'config_missing') return 'Set optional language preferences with gidd lang.set zh or gidd lang.set en.';
   if (reason.startsWith('config_')) return 'Use the error code to check the requested settings and config.toml, then rerun the command.';
   return '';

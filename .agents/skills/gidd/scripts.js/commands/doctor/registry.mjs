@@ -8,7 +8,7 @@ import * as configuration from './checks/config.toml.mjs';
 import * as storage from './checks/folder.gidd.mjs';
 import * as remote from './checks/folder.git.remote.mjs';
 import * as taskRemote from './checks/folder.gidd.remote.mjs';
-import * as flow from './checks/folder.gidd.flow.mjs';
+import * as policy from './checks/folder.gidd.policy.mjs';
 import * as language from './checks/config.ui.language.mjs';
 import * as onlineAccount from './checks/tool.gh.account..online.mjs';
 import * as onlineRemote from './checks/folder.git.remote..online.mjs';
@@ -23,6 +23,6 @@ export const registry = Object.freeze([
   platform, runtime, git, gh,
   worktree, identity, storage,
   configuration, language, remote, taskRemote,
-  flow,
+  policy,
   onlineAccount, onlineRemote,
 ]);

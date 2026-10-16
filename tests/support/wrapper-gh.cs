@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Text;
-using System.Diagnostics;
 public static class WrapperGh {
     static string Env(string key) { return Environment.GetEnvironmentVariable(key) ?? ""; }
     static void Emit(string key, string value) { Console.WriteLine(key + "=" + Convert.ToBase64String(Encoding.UTF8.GetBytes(value))); }
@@ -35,28 +34,12 @@ public static class WrapperGh {
                 if (Env(key) != "") return 96;
             int userFlag = Array.IndexOf(args, "--user");
             string user = userFlag >= 0 ? args[userFlag + 1] : "Octocat";
-            if (user == "missing") { Console.Error.WriteLine("PRIVATE_TOKEN"); return 1; }
-            Console.WriteLine("fixture-" + (user == "mismatch" ? "other" : user)); return 0;
+            Console.WriteLine("fixture-" + user); return 0;
         }
         string token = Env("GH_TOKEN") + Env("GH_ENTERPRISE_TOKEN");
         if (args.Length > 0 && args[0] == "api" && Array.IndexOf(args, "user") >= 0) {
             if (!token.StartsWith("fixture-")) return 97;
             Console.WriteLine(token.Substring(8)); return 0;
-        }
-        if (args.Length > 1 && args[0] == "auth" && args[1] == "git-credential") {
-            Console.In.ReadToEnd();
-            Console.WriteLine("username=x-access-token\npassword=" + token + "\n"); return 0;
-        }
-        if (args.Length > 0 && args[0] == "child-git") {
-            var start = new ProcessStartInfo("git.exe", "config --get user.name");
-            start.UseShellExecute = false;
-            using (var child = Process.Start(start)) { child.WaitForExit(); return child.ExitCode; }
-        }
-        if (args.Length > 0 && args[0] == "noninteractive-environment") {
-            Console.WriteLine("{\"GH_PROMPT_DISABLED\":\"" + Env("GH_PROMPT_DISABLED") + "\",\"GCM_INTERACTIVE\":\"" + Env("GCM_INTERACTIVE") +
-                "\",\"GIT_PAGER\":\"" + Env("GIT_PAGER") + "\",\"GH_EDITOR\":\"" + Env("GH_EDITOR").Replace("\\", "\\\\").Replace("\"", "\\\"") +
-                "\",\"GIT_EDITOR\":\"" + Env("GIT_EDITOR").Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"}");
-            return 0;
         }
         if (args.Length > 0 && args[0] == "api" && args[args.Length - 1].Contains("/issues/") && Env("GIDD_ISSUE_FIXTURE") != "") {
             Console.Write(File.ReadAllText(Env("GIDD_ISSUE_FIXTURE"))); return 0;

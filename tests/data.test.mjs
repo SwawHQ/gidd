@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { renameSync, symlinkSync, unlinkSync } from 'node:fs';
 import { initializeRepository } from '../.agents/skills/gidd/scripts.js/shared/repository-data.mjs';
+import { inspectData } from '../.agents/skills/gidd/scripts.js/shared/data-inspection.mjs';
+import { locateStorage } from '../.agents/skills/gidd/scripts.js/shared/managed-storage.mjs';
 import { doctor } from '../.agents/skills/gidd/scripts.js/commands/doctor/index.mjs';
 import { worktreeCommand } from '../.agents/skills/gidd/scripts.js/commands/worktree/index.mjs';
 import { main } from '../.agents/skills/gidd/scripts.js/gidd.mjs';
@@ -9,8 +11,8 @@ import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/shared/sto
 import { runCommand } from '../.agents/skills/gidd/scripts.js/shared/process.mjs';
 import { newCreatePending, saveCreatePending, createPendingPath } from '../.agents/skills/gidd/scripts.js/shared/create-pending.mjs';
 import { readDraft } from '../.agents/skills/gidd/scripts.js/shared/task-records.mjs';
-import { readFlow } from '../.agents/skills/gidd/scripts.js/shared/flows.mjs';
-import { flowSnapshot } from '../.agents/skills/gidd/scripts.js/shared/flow-definition.mjs';
+import { readPolicy } from '../.agents/skills/gidd/scripts.js/shared/policies.mjs';
+import { policySnapshot } from '../.agents/skills/gidd/scripts.js/shared/policy-definition.mjs';
 import { assert, bindFixture, existsSync, findGit, fixture, join, mkdirSync, ok, readFileSync, run, snapshot, write, writeResource } from './support/helpers.mjs';
 
 function installation() {
@@ -34,6 +36,28 @@ function installation() {
 
 const hasIssue = (report, reason, path) => report.details.issues.some(item => item.code === reason && (!path || item.path === path));
 
+test('data inspection reads each worktree path once and rejects incomplete metadata', async () => {
+  const s = installation();
+  try {
+    await s.init(); const workspace = await s.acquire('codex/paths');
+    const native = async (path, args) => s.native(args, path);
+    const storage = await locateStorage(s.target, native), calls = [];
+    let incomplete = false;
+    const git = async (path, args) => {
+      calls.push({ path, args });
+      return incomplete ? workspace.path : native(path, args);
+    };
+    const before = snapshot(s.root);
+    assert.deepEqual((await inspectData(storage, git)).issues, []);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].path, workspace.path);
+    incomplete = true;
+    const report = await inspectData(storage, git);
+    assert.ok(report.issues.some(item => item.code === 'worktree_repository_mismatch' && item.path === workspace.path));
+    assert.deepEqual(snapshot(s.root), before);
+  } finally { s.dispose(); }
+});
+
 test('doctor reports a durable allocation intent without treating its uncreated checkout as missing', async () => {
   const s = installation();
   try {
@@ -56,11 +80,11 @@ test('doctor distinguishes pending Issue creation, uncertain remote outcome and 
   const s = installation();
   try {
     await s.init();
-    const storage = { path: s.data }, source = join(s.root, 'draft.md'), flow = flowSnapshot(readFlow('00/00'));
+    const storage = { path: s.data }, source = join(s.root, 'draft.md'), policy = policySnapshot(readPolicy('00/00'));
     write(source, '# Create\nAcceptance');
     const pending = newCreatePending(source, readDraft(source).sha256, '00/00', {
-      schema: 'gidd.task/v1', target_branch: 'main', flow, github_account: 'tester',
-      delivery: { mode: flow.mode, remote: { fetch: { repository: 'https://github.com/test/repo', branch: 'main' },
+      schema: 'gidd.task/v1', target_branch: 'main', policy, github_account: 'tester',
+      delivery: { mode: policy.mode, remote: { fetch: { repository: 'https://github.com/test/repo', branch: 'main' },
         push: { repository: 'https://github.com/test/repo' } } },
     });
     for (const phase of ['planned', 'creating', 'created', 'ready']) {
@@ -81,10 +105,10 @@ test('doctor reports incomplete task registration and target preparation without
   const s = installation();
   try {
     await s.init();
-    const flow = flowSnapshot(readFlow('00/00')), start = s.native(['rev-parse', 'main']), path = join(s.data, '42/state.json');
-    const task = { schema: 'gidd.task/v1', issue: 42, target_branch: 'main', flow, github_account: 'tester',
+    const policy = policySnapshot(readPolicy('00/00')), start = s.native(['rev-parse', 'main']), path = join(s.data, '42/state.json');
+    const task = { schema: 'gidd.task/v1', issue: 42, target_branch: 'main', policy, github_account: 'tester',
       registration: { id: randomUUID(), complete: false }, preparation: { start_commit: start, previous_commit: start },
-      delivery: { mode: flow.mode, remote: { fetch: { repository: 'https://github.com/test/repo', branch: 'main' },
+      delivery: { mode: policy.mode, remote: { fetch: { repository: 'https://github.com/test/repo', branch: 'main' },
         push: { repository: 'https://github.com/test/repo' } } },
     };
     write(path, JSON.stringify(task));

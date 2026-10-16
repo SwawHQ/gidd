@@ -29,7 +29,7 @@ test('internal initialization preserves configuration, records and resources on 
     const first = await s.initialize();
     assert.equal(first.path, s.data); assert.equal(realpathSync.native(first.main), s.repository);
     const settings = readConfiguration(s.repository);
-    for (const key of ['repo', 'flow', 'git']) assert.equal(Object.hasOwn(settings, key), false);
+    for (const key of ['repo', 'policy', 'git']) assert.equal(Object.hasOwn(settings, key), false);
     assert.deepEqual(settings.ui, {});
     const owner = readFileSync(join(s.data, 'storage.json'));
     assert.equal(existsSync(s.config), false, 'Data initialization does not create user preferences');
@@ -55,11 +55,11 @@ test('doctor and invalid first task requests leave data absent without a setup c
     assert.equal(item.severity, 'info');
     assert.equal((await s.invoke(['worktree.list'])).report.details.code, 'data_missing');
     assert.deepEqual(snapshot(s.root), before);
-    for (const args of [['1', '--flow'], ['1.workspace', '--flow', '00/00']])
+    for (const args of [['1', '--policy'], ['1.workspace', '--policy', '00/00']])
       assert.equal((await s.invoke(args)).report.details.code, 'invalid_arguments');
     assert.deepEqual(snapshot(s.root), before);
     await s.initialize();
-    assert.equal(existsSync(join(s.data, 'flow-history.jsonl')), false);
+    assert.equal(existsSync(join(s.data, 'policy-history.jsonl')), false);
     const after = (await s.invoke(['doctor', '--offline'])).report;
     assert.equal(after.checks.find(row => row.id === 'folder.gidd').status, 'ready');
   } finally { s.dispose(); }

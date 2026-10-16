@@ -3,6 +3,7 @@ import { basename, join, resolve } from 'node:path';
 import { plainPath } from './storage.mjs';
 import { inspectStorage, registryLocation, samePath, readRegistry } from './managed-storage.mjs';
 import { idPattern, readRecord } from '../commands/worktree/index.mjs';
+import { worktreePaths } from './git-worktrees.mjs';
 import { branchDetails } from './workspace-branch.mjs';
 import { readTask } from './task-records.mjs';
 import { createPendingPath, readCreatePending } from './create-pending.mjs';
@@ -92,9 +93,8 @@ export async function inspectData(storage, git, { initializing = false } = {}) {
       item.exists = existsSync(item.path);
       if (!item.exists) { if (!record?.preparation) issue('worktree_missing', item.path); continue; }
       if (!lstatSync(item.path).isDirectory()) { issue('worktree_not_directory', item.path); continue; }
-      const top = await git(item.path, ['rev-parse', '--show-toplevel']);
-      const common = await git(item.path, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
-      if (!samePath(top, item.path) || !samePath(common, storage.common))
+      const paths = await worktreePaths(git, item.path);
+      if (!paths || !samePath(paths.root, item.path) || !samePath(paths.common, storage.common))
         issue('worktree_repository_mismatch', item.path);
     } catch (error) { issue(reasonOf(error), item.path); continue; }
     if (!record || !item.registered || record.preparation) continue;

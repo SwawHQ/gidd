@@ -6,9 +6,9 @@ import { plainPath } from './storage.mjs';
 import { parseList, worktreeCommand, readRecords } from '../commands/worktree/index.mjs';
 import { prConnection } from './pull-requests.mjs';
 import { closeIssue, readIssue } from './issues.mjs';
-import { readFlow } from './flows.mjs';
-import { flowSnapshot, sameFlowSnapshot } from './flow-definition.mjs';
-import { readFlowHistory, recordFlowUse } from './flow-history.mjs';
+import { readPolicy } from './policies.mjs';
+import { policySnapshot, samePolicySnapshot } from './policy-definition.mjs';
+import { readPolicyHistory, recordPolicyUse } from './policy-history.mjs';
 import { requireWorkingBranch } from './workspace-branch.mjs';
 import { inspectWorkspace, workspaceState } from './workspace-state.mjs';
 import { registryLocation, updateRegistry } from './managed-storage.mjs';
@@ -18,6 +18,7 @@ import { readTask, readTasks, saveTask, removeTask, taskPath, prepareTaskStorage
 import { repositoryCommandContext, sameRepositoryPath as same } from './repository-command.mjs';
 import { prepareTaskRegistration, completeTaskRegistration } from './task-registration.mjs';
 import { readCreatePending, saveCreatePending } from './create-pending.mjs';
+import { worktreePaths } from './git-worktrees.mjs';
 
 const schema = 'gidd.task-command/v1';
 const oid = value => typeof value === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value);
@@ -31,7 +32,8 @@ export async function executeTaskOperation(repository, options, { execute, signa
   const { bindings, invoke, env, git, storage, ensureData } = commandContext;
   lease = commandContext.lease;
   const rows = async () => parseList(await git(repository, ['worktree', 'list', '--porcelain', '-z']));
-  const common = await git(repository, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+  // Supplied contexts can span GitHub requests; refresh their repository path.
+  const common = suppliedContext ? await git(repository, ['rev-parse', '--path-format=absolute', '--git-common-dir']) : storage.common;
   const report = fields => ({ schema, status: 'ready', target_repository: repository, issue: options.issue, ...fields });
   const worktree = action => worktreeCommand(repository, action, { execute, signal, storageLease: lease });
   const inspect = row => inspectWorkspace(row, { git, common, same });
@@ -49,7 +51,7 @@ export async function executeTaskOperation(repository, options, { execute, signa
   const ancestor = async (from, to) => (await invoke(bindings.git.path,
     ['-C', repository, 'merge-base', '--is-ancestor', from, to], { env, signal })).ok;
   const matchRemote = record => verifyRemoteBinding(git, repository, record);
-  const taskReport = task => report({ issue: task.issue, target_branch: task.target_branch, delivery: task.delivery, flow: task.flow, github_account: task.github_account });
+  const taskReport = task => report({ issue: task.issue, target_branch: task.target_branch, delivery: task.delivery, policy: task.policy, github_account: task.github_account });
   if (options.action === 'workspace' && !existsSync(taskPath(storage, options.issue))) {
     const registration = await prepareTaskRegistration(repository, options, commandContext);
     task = registration.task;
@@ -65,7 +67,7 @@ export async function executeTaskOperation(repository, options, { execute, signa
       task = completeTaskRegistration(storage, task, '# ' + issue.title + '\n\n' + issue.body);
     } catch (error) {
       error.workspace = { issue: task.issue, target_repository: repository, target_branch: task.target_branch,
-        delivery: task.delivery, flow: task.flow, github_account: task.github_account };
+        delivery: task.delivery, policy: task.policy, github_account: task.github_account };
       throw error;
     }
   }
@@ -83,26 +85,26 @@ export async function executeTaskOperation(repository, options, { execute, signa
   }
   const dedicatedTasks = () => readRecords(registryLocation(storage), storage.path).filter(record =>
     record.issue === task.issue && (!record.ready_head || record.id === task.workspace));
-  if (options.action === 'flow.set') {
+  if (options.action === 'policy.set') {
     if (task.registration?.complete === false) fail('task_registration_pending');
-    const flow = flowSnapshot(readFlow(options.flow));
+    const policy = policySnapshot(readPolicy(options.policy));
     const dedicated = dedicatedTasks();
-    if ((task.workspace || task.preparation || dedicated.length) && flow.mode !== task.delivery.mode) fail('task_flow_mode_locked');
+    if ((task.workspace || task.preparation || dedicated.length) && policy.mode !== task.delivery.mode) fail('task_policy_mode_locked');
     if (task.preparation || dedicated.some(record => record.preparation)) fail('worktree_preparation_pending');
     if (dedicated.some(record => record.cleanup)) fail('task_cleanup_pending');
     await matchRemote(task);
     if (task.workspace || dedicated.length) await context();
-    if (sameFlowSnapshot(flow, task.flow)) return taskReport(task);
-    readFlowHistory(storage);
+    if (samePolicySnapshot(policy, task.policy)) return taskReport(task);
+    readPolicyHistory(storage);
     const previous = { ...task, delivery: { ...task.delivery } };
-    task = { ...task, flow, delivery: { ...task.delivery, mode: flow.mode } };
+    task = { ...task, policy, delivery: { ...task.delivery, mode: policy.mode } };
     saveTask(storage, task);
-    try { recordFlowUse(storage, flow); }
+    try { recordPolicyUse(storage, policy); }
     catch (error) { saveTask(storage, previous); throw error; }
     return taskReport(task);
   }
-  if (options.action === 'workspace' && options.flow && options.flow !== task.flow.selector &&
-      readFlow(options.flow).selector !== task.flow.selector) fail('task_flow_changed');
+  if (options.action === 'workspace' && options.policy && options.policy !== task.policy.selector &&
+      readPolicy(options.policy).selector !== task.policy.selector) fail('task_policy_changed');
   const pending = dedicatedTasks().filter(record => record.preparation);
   if (pending.length > 1) fail('issue_ambiguous');
   if (pending.length && (pending[0].target_branch !== task.target_branch || pending[0].delivery.mode !== task.delivery.mode ||
@@ -141,7 +143,7 @@ export async function executeTaskOperation(repository, options, { execute, signa
     const aborted = pending.length ? await worktree({ action: 'abort', path: pending[0].path }) : {};
     await finishPreparation();
     return { ...taskReport(task), ...aborted, preparation_aborted: true, registration_removed: false,
-      next: task.issue + ' --flow ' + task.flow.selector };
+      next: task.issue + ' --policy ' + task.policy.selector };
   }
   if (pending.length && options.action === 'workspace') {
     await matchRemote(task);
@@ -153,14 +155,14 @@ export async function executeTaskOperation(repository, options, { execute, signa
     saveTask(storage, task);
     const committed = await worktree({ action: 'commit', path: created.path, issue: task.issue });
     await finishPreparation();
-    return { ...committed, ...report({ delivery: task.delivery, flow: task.flow, github_account: task.github_account }) };
+    return { ...committed, ...report({ delivery: task.delivery, policy: task.policy, github_account: task.github_account }) };
   }
   if (options.action === 'cleanup' && task.preparation && task.workspace && !pending.length) await finishPreparation();
   if (pending.length || task.preparation && options.action !== 'workspace') {
     if (options.action !== 'status') fail('worktree_preparation_pending');
     await matchRemote(task);
     return { ...taskReport(task), state: 'needs_check', reason: 'worktree_preparation_pending',
-      next: task.issue + ' --flow ' + task.flow.selector };
+      next: task.issue + ' --policy ' + task.policy.selector };
   }
   // An Issue can be registered without ever allocating a workspace. Retire
   // that local plan even when the caller changed the remote in the meantime.
@@ -196,7 +198,7 @@ export async function executeTaskOperation(repository, options, { execute, signa
     // interruption. Only the persisted cleanup commit permits that checkout.
     if (!record.ready_head && !(record.cleanup && result.git?.detached && result.git.head === record.cleanup.head))
       requireWorkingBranch(record, result.git);
-    return { ...record, flow: task.flow, github_account: task.github_account,
+    return { ...record, policy: task.policy, github_account: task.github_account,
       state: result.worktree.state, git: result.git, reason: result.worktree.reason, details: result.worktree.details };
   }
   const remoteHead = async (connection, branch, direction = 'push') => {
@@ -251,9 +253,10 @@ export async function executeTaskOperation(repository, options, { execute, signa
   }
   async function cleanTarget(row, stagedTree) {
     plainPath(row.path);
-    if (row.bare || row.locked || row.prunable || !same(await git(row.path, ['rev-parse', '--show-toplevel']), row.path) ||
-        !same(await git(row.path, ['rev-parse', '--path-format=absolute', '--git-common-dir']), common)) fail('delivery_target_unavailable');
-    const directory = await git(row.path, ['rev-parse', '--absolute-git-dir']);
+    if (row.bare || row.locked || row.prunable) fail('delivery_target_unavailable');
+    const paths = await worktreePaths(git, row.path);
+    if (!paths || !same(paths.root, row.path) || !same(paths.common, common)) fail('delivery_target_unavailable');
+    const directory = paths.gitDir;
     plainPath(directory);
     if (['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer', 'BISECT_START', 'index.lock', 'HEAD.lock']
       .some(name => existsSync(join(directory, name)))) fail('delivery_target_busy');
@@ -287,7 +290,7 @@ export async function executeTaskOperation(repository, options, { execute, signa
     const starting = options.action === 'workspace' && !task.workspace && !dedicatedTasks().length;
     await matchRemote(task);
     if (options.action === 'status' && !task.workspace && !dedicatedTasks().length)
-      return { ...taskReport(task), state: 'not_prepared', next: task.issue + ' --flow ' + task.flow.selector };
+      return { ...taskReport(task), state: 'not_prepared', next: task.issue + ' --policy ' + task.policy.selector };
     const current = starting ? null : await context();
     if (options.action === 'workspace' && !starting && !task.workspace) {
       task.workspace = current.id;
@@ -351,7 +354,7 @@ export async function executeTaskOperation(repository, options, { execute, signa
         await finishPreparation();
         const record = { issue: task.issue, delivery, target_branch: base, start_commit: start };
         const reason = await inspect((await rows()).find(row => same(row.path, repository)));
-        return report({ ...record, schema, flow: task.flow, github_account: task.github_account, path: repository, branch: null, state: workspaceState({ reason }),
+        return report({ ...record, schema, policy: task.policy, github_account: task.github_account, path: repository, branch: null, state: workspaceState({ reason }),
           ...(reason ? { reason } : {}) });
       }
       const created = await worktree({ action: 'acquire', issue: options.issue, branch, base, delivery, expected_start: start, defer_commit: true });
@@ -359,7 +362,7 @@ export async function executeTaskOperation(repository, options, { execute, signa
       saveTask(storage, task);
       const committed = await worktree({ action: 'commit', path: created.path, issue: task.issue });
       await finishPreparation();
-      return { ...committed, ...report({ delivery, flow: task.flow, github_account: task.github_account }) };
+      return { ...committed, ...report({ delivery, policy: task.policy, github_account: task.github_account }) };
     }
     const summary = { issue: current.issue, path: current.path, branch: current.branch, target_branch: current.target_branch,
       start_commit: current.start_commit, delivery: current.delivery, state: current.state,
@@ -368,7 +371,7 @@ export async function executeTaskOperation(repository, options, { execute, signa
     // The short invocation lock is unrelated to workspace availability.
     if (['workspace', 'status'].includes(options.action)) {
       if (options.action === 'workspace') completeCreation();
-      return report({ ...summary, flow: task.flow, github_account: task.github_account, state: current.state, git: current.git,
+      return report({ ...summary, policy: task.policy, github_account: task.github_account, state: current.state, git: current.git,
         ...(current.reason ? { reason: current.reason } : {}) });
     }
     const saveMerge = merge => {
@@ -569,8 +572,8 @@ export async function executeTaskOperation(repository, options, { execute, signa
   } catch (error) {
     if (options.action === 'workspace' && task?.issue) error.workspace = {
       issue: task.issue, target_repository: repository, target_branch: task.target_branch,
-      delivery: task.delivery, flow: task.flow, github_account: task.github_account,
-      retry: task.issue + ' --flow ' + task.flow.selector, ...error.workspace,
+      delivery: task.delivery, policy: task.policy, github_account: task.github_account,
+      retry: task.issue + ' --policy ' + task.policy.selector, ...error.workspace,
     };
     throw error;
   } finally { if (!suppliedContext) lease?.release(); }

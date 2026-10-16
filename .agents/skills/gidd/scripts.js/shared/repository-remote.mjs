@@ -43,6 +43,6 @@ export async function repositoryConnection(repository, { execute, signal, github
     Object.assign(remote, actual);
     Object.assign(target, remoteTarget(actual, target.account));
   };
-  await verifyRemote();
+  if (github) await verifyRemote();
   return { target, remote, git, verifyRemote, call };
 }

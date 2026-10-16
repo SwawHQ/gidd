@@ -14,7 +14,7 @@ export function parseIssueArguments(route, args) {
   const result = { action: 'create' }, rest = [...args];
   while (rest.length) {
     const flag = rest.shift(), value = rest.shift();
-    if (!['--flow', '--file'].includes(flag) || typeof value !== 'string' || !value.trim() ||
+    if (!['--policy', '--file'].includes(flag) || typeof value !== 'string' || !value.trim() ||
         value.startsWith('-') || /[\x00-\x1f\x7f]/.test(value) || Object.hasOwn(result, flag.slice(2))) throw new Error('invalid_arguments');
     result[flag.slice(2)] = value;
   }
@@ -31,7 +31,7 @@ export async function issueCommand(repository, options, { execute, signal, cwd =
     // Read the complete body before authentication or remote writes.
     const source = resolve(cwd, options.file), draft = readDraft(source), sha256 = draft.sha256;
     let pending = readCreatePending(storage), tasks;
-    if (pending && !sameCreationRequest(pending, source, sha256, options.flow)) {
+    if (pending && !sameCreationRequest(pending, source, sha256, options.policy)) {
       if (pending.phase === 'created') {
         let saved;
         try { saved = readTask(storage, pending.task.issue); }
@@ -61,7 +61,7 @@ export async function issueCommand(repository, options, { execute, signal, cwd =
       const connection = await repositoryConnection(repository, { execute, signal, github: true, record: task });
       task.github_account = connection.target.account;
       if (!pending) {
-        pending = newCreatePending(source, sha256, options.flow, task);
+        pending = newCreatePending(source, sha256, options.policy, task);
         saveCreatePending(storage, pending);
       }
       const issue = await createIssue(connection, draft.title, draft.body, { beforeWrite: () => {
@@ -80,9 +80,9 @@ export async function issueCommand(repository, options, { execute, signal, cwd =
   } catch (error) {
     if (task) error.workspace = { ...error.workspace,
       issue: task.issue, target_repository: repository, target_branch: task.target_branch,
-      delivery: task.delivery, flow: task.flow, github_account: task.github_account,
+      delivery: task.delivery, policy: task.policy, github_account: task.github_account,
       ...(task.issue ? { issue_created: true,
-        ...(error.message === 'issue_registered' ? {} : { retry: task.issue + ' --flow ' + task.flow.selector }) } : {}) };
+        ...(error.message === 'issue_registered' ? {} : { retry: task.issue + ' --policy ' + task.policy.selector }) } : {}) };
     throw error;
   } finally { lease.release(); }
 }

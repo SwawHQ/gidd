@@ -1,21 +1,21 @@
 GIDD repository development (Windows x64 / Windows PowerShell 5.1)
 
-  dev.cmd .help [en|zh]          #Show help.
-  dev.cmd .info                  #Report Bun and Node status.
-  dev.cmd .setup bun             #Reuse Bun or download stable Bun.
-  dev.cmd .setup node            #Reuse Node or download Node LTS.
-  dev.cmd .setup                 #Prepare Bun and Node.
-  dev.cmd .test [suite]          #Run offline tests with Bun and Node.
-  dev.cmd .test-bun [suite]      #Run offline tests with Bun.
-  dev.cmd .test-node [suite]     #Run offline tests with Node.
-  dev.cmd .test-live             #Test official downloads, install and reuse.
-  dev.cmd bun [args...]          #Run Bun from shared storage.
-  dev.cmd node [args...]         #Run Node from shared storage.
-  dev.cmd sys bun [args...]      #Run Bun from PATH.
-  dev.cmd sys node [args...]     #Run Node from PATH.
+  dev.cmd .help [en|zh]       #Show help.
+  dev.cmd .info               #Report Bun and Node status.
+  dev.cmd .setup bun          #Reuse Bun or download stable Bun.
+  dev.cmd .setup node         #Reuse Node or download Node LTS.
+  dev.cmd .setup              #Prepare Bun and Node.
+  dev.cmd .test [suite]       #Run offline tests with Bun and Node.
+  dev.cmd .test-bun [suite]   #Run offline tests with Bun.
+  dev.cmd .test-node [suite]  #Run offline tests with Node.
+  dev.cmd .test-live          #Test official downloads, install and reuse.
+  dev.cmd bun [args...]       #Run Bun from shared storage.
+  dev.cmd node [args...]      #Run Node from shared storage.
+  dev.cmd sys bun [args...]   #Run Bun from PATH.
+  dev.cmd sys node [args...]  #Run Node from PATH.
 
 Suites: all (default), doctor, setup, process, dev, skill, config,
-github, entry, flow, worktree, gh, issue, issue-task, data, init.
+github, entry, policy, worktree, gh, issue, issue-task, data, init.
 
 No arguments show help. Use .help en or .help zh to select a language.
 .setup and .test-live can download tools. .test does not install tools.

@@ -32,7 +32,7 @@ export async function authorizeRepositoryGitHub(target, { storage, env = process
   login = runAttachedCommand, cwd, signal } = {}) {
   const selectedEnv = repositoryGitHubEnvironment(storage, target, env);
   mkdirSync(selectedEnv.GH_CONFIG_DIR, { recursive: true });
-  // The browser/device flow needs no terminal prompts. Disabling them also
+  // The browser/device login needs no terminal prompts. Disabling them also
   // prevents gh from offering to change Git credential helpers or SSH keys.
   // Login progress goes to stderr; stdout remains the task command JSON report.
   const status = await login(target.gh, ['auth', 'login', '--hostname', target.hostname, '--web', '--skip-ssh-key'],

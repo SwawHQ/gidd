@@ -118,11 +118,7 @@ export async function worktreeCommand(repository, options, { execute, signal, st
   plainPath(repository);
   const top = await git(repository, ['rev-parse', '--show-toplevel']);
   if (key(top) !== key(repository)) fail('repository_root_mismatch');
-  const common = await git(repository, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
-  plainPath(common);
   const rows = () => git(repository, ['worktree', 'list', '--porcelain', '-z']).then(parseList);
-  const initial = await rows(), main = initial[0];
-  if (!main?.path || main.bare) fail('worktree_main_unavailable');
   // Protect the entry checkout even when the entry itself is a registered
   // dedicated worktree, rather than relying only on pool-path validation.
   if (['remove', 'abort'].includes(options.action) && options.path !== undefined && key(options.path) === key(repository))
@@ -132,6 +128,7 @@ export async function worktreeCommand(repository, options, { execute, signal, st
     lease = acquireStorageLock(storage, storageLease);
     storage = await locateStorage(repository, git);
   }
+  const common = storage.common, initial = storage.rows;
   const pool = storage.path;
   const directory = registryLocation(storage), lockPath = storage.lock;
   const report = fields => ({ schema, status: 'ready', target_repository: repository, ...fields });

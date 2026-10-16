@@ -75,19 +75,19 @@ args = ["lang.set","<zh|en>"]
 executable = "link"
 args = ["lang.clear"]
 
-[commands."flow_deliveries"]
+[commands."policy_deliveries"]
 executable = "link"
-args = ["flow.deliveries"]
+args = ["policy.deliveries"]
 
-[commands."flow_list"]
+[commands."policy_list"]
 executable = "link"
-args = ["flow.list","<mode-id>"]
+args = ["policy.list","<mode-id>"]
 required_inputs = ["mode-id"]
 
-[commands."flow_read"]
+[commands."policy_read"]
 executable = "link"
-args = ["flow","<mode-id>/<name>"]
-required_inputs = ["flow"]
+args = ["policy","<mode-id>/<name>"]
+required_inputs = ["policy"]
 
 [checks."tool.platform"]
 enabled = true
@@ -159,44 +159,44 @@ hint.zh-CN = "固定数据目录不存在或为空。登录账号或登记 Issue
 
 
 
-[checks."folder.gidd.flow"]
+[checks."folder.gidd.policy"]
 enabled = true
-hint.en = "Inspect details.path and details.field; repair the task flow, mode description.toml, step guidance or Issue template, then rerun doctor."
-hint.zh-CN = "请查看 details.path 和 details.field，修复任务工作流程、交付模式 description.toml 或其依赖的环节经验及 Issue 模板，然后重新运行 doctor。"
+hint.en = "Inspect details.path and details.field; repair the task authorization policy, mode description.toml, step guidance or Issue template, then rerun doctor."
+hint.zh-CN = "请查看 details.path 和 details.field，修复任务授权方案、交付模式 description.toml 或其依赖的环节经验及 Issue 模板，然后重新运行 doctor。"
 
-[checks."folder.gidd.flow".reasons."flow_mode_id_conflict"]
+[checks."folder.gidd.policy".reasons."policy_mode_id_conflict"]
 hint.en = "Mode directory prefixes must be unique. Rename the conflicting directories listed in details.conflicts, then rerun doctor."
 hint.zh-CN = "交付模式目录的编号前缀必须唯一。请重命名 details.conflicts 列出的冲突目录，然后重新运行 doctor。"
 
-[checks."folder.gidd.flow".reasons."flow_mode_name_conflict"]
+[checks."folder.gidd.policy".reasons."policy_mode_name_conflict"]
 hint.en = "A delivery mode must have exactly one directory. Resolve the duplicate mode names in details.conflicts, then rerun doctor."
 hint.zh-CN = "同一种交付模式只能对应一个目录。请处理 details.conflicts 列出的重复交付模式目录，然后重新运行 doctor。"
 
-[checks."folder.gidd.flow".reasons."flow_mode_directory_invalid"]
+[checks."folder.gidd.policy".reasons."policy_mode_directory_invalid"]
 hint.en = "Use a two-digit prefix and supported mode name for each mode directory, such as 00.direct-commit."
 hint.zh-CN = "交付模式目录使用两位数字前缀及受支持的交付模式名，例如 00.direct-commit。"
 
-[checks."folder.gidd.flow".reasons."flow_mode_missing"]
-hint.en = "Run gidd flow.deliveries to find the current directory IDs, then select an existing delivery mode and authorization preset."
-hint.zh-CN = "请运行 gidd flow.deliveries 查看当前目录编号，再选择已有的交付模式和授权方案。"
-commands = ["flow_deliveries","flow_list","flow_read"]
+[checks."folder.gidd.policy".reasons."policy_mode_missing"]
+hint.en = "Run gidd policy.deliveries to find the current directory IDs, then select an authorization policy for an existing delivery mode."
+hint.zh-CN = "请运行 gidd policy.deliveries 查看当前目录编号，再选择已有的交付模式和授权方案。"
+commands = ["policy_deliveries","policy_list","policy_read"]
 
-[checks."folder.gidd.flow".reasons."flow_number_missing"]
-hint.en = "Run gidd flow.list <mode-id> and select a preset number or complete name shown there."
-hint.zh-CN = "请运行 gidd flow.list <mode-id>，选择列表中存在的授权方案编号或完整名称。"
-commands = ["flow_list","flow_read"]
+[checks."folder.gidd.policy".reasons."policy_number_missing"]
+hint.en = "Run gidd policy.list <mode-id> and select an authorization policy number or complete name shown there."
+hint.zh-CN = "请运行 gidd policy.list <mode-id>，选择列表中存在的授权方案编号或完整名称。"
+commands = ["policy_list","policy_read"]
 
-[checks."folder.gidd.flow".reasons."flow_number_ambiguous"]
-hint.en = "Multiple presets have this number. Give them unique prefixes or select a complete preset name."
+[checks."folder.gidd.policy".reasons."policy_number_ambiguous"]
+hint.en = "Multiple authorization policies have this number. Give them unique prefixes or select a complete authorization policy name."
 hint.zh-CN = "多份授权方案使用了同一编号。请将授权方案前缀改为唯一编号，或用完整授权方案名明确选择。"
 
-[checks."folder.gidd.flow".reasons."flow_history_invalid"]
-hint.en = "Inspect flow-history.jsonl in the local data directory and correct its reported structure. Task records remain separate."
-hint.zh-CN = "请检查本地数据目录中的 flow-history.jsonl，修正记录格式。任务记录独立保存。"
+[checks."folder.gidd.policy".reasons."policy_history_invalid"]
+hint.en = "Inspect policy-history.jsonl in the local data directory and correct its reported structure. Task records remain separate."
+hint.zh-CN = "请检查本地数据目录中的 policy-history.jsonl，修正记录格式。任务记录独立保存。"
 
-[checks."folder.gidd.flow".reasons."flow_language_unavailable"]
-hint.en = "The selected flow has no complete language. Complete its mode description and titles for existing guidance, or choose an available flow."
-hint.zh-CN = "所选工作流程尚无完整可用的语言。请补齐交付模式简介及已有正文的标题，或选择可用的工作流程。"
+[checks."folder.gidd.policy".reasons."policy_language_unavailable"]
+hint.en = "The selected authorization policy has no complete language. Complete its mode description and titles for existing guidance, or choose an available authorization policy."
+hint.zh-CN = "所选授权方案尚无完整可用的语言。请补齐交付模式简介及已有正文的标题，或选择可用的授权方案。"
 
 [checks."tool.gh.account..online"]
 enabled = true

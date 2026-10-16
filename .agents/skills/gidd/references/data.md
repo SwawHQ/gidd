@@ -10,7 +10,7 @@ GIDD stores local data at `<repository>.gidd/`. For example, a target repository
 <目标仓库>.gidd/
 ├─ gh/                    #仓库专用的 gh 配置
 ├─ create-pending.json    #当前 Issue 创建请求及恢复记录
-├─ flow-history.jsonl     #任务工作流程使用历史
+├─ policy-history.jsonl   #任务授权方案使用历史
 ├─ storage.json           #目录归属和可复用工作树的资源记录
 ├─ <Issue编号>/
 │  ├─ state.json          #任务约定及工作区关联
@@ -19,17 +19,17 @@ GIDD stores local data at `<repository>.gidd/`. For example, a target repository
 └─ gidd-wt-<UUID>/        #专用工作树
 ```
 
-`issue --file <文件> --flow <工作流程>` 创建 Issue、登记任务并准备工作区；`<Issue编号> --flow <工作流程>` 登记已有 Issue 并准备或继续准备工作区。登记时创建 `<Issue编号>/state.json`，准备时补充工作区记录。所有交付模式都使用这份记录。后续命令按 Issue 编号读取已保存的工作流程与确认点、账号、交付模式、分支、起始提交点和仓库约定，不从 Issue 正文或当前工作流程重新确定这些信息。
+`issue --file <文件> --policy <授权方案>` 创建 Issue、登记任务并准备工作区；`<Issue编号> --policy <授权方案>` 登记已有 Issue 并准备或继续准备工作区。登记时创建 `<Issue编号>/state.json`，准备时补充工作区记录。所有交付模式都使用这份记录。后续命令按 Issue 编号读取已保存的授权方案与确认点、账号、交付模式、分支、起始提交点和仓库约定，不从 Issue 正文或当前授权方案重新确定这些信息。
 
-`issue --file <file> --flow <flow>` creates an Issue, registers its task and prepares its workspace. `<Issue编号> --flow <flow>` registers an existing Issue and prepares or resumes its workspace. Registration creates `<Issue编号>/state.json`; preparation adds the workspace record. All delivery modes use this record. Later commands use the Issue number to read the saved flow and approval points, account, delivery mode, branches, starting commit and repository bindings, rather than deriving them from Issue prose or the current flow.
+`issue --file <file> --policy <policy>` creates an Issue, registers its task and prepares its workspace. `<Issue编号> --policy <policy>` registers an existing Issue and prepares or resumes its workspace. Registration creates `<Issue编号>/state.json`; preparation adds the workspace record. All delivery modes use this record. Later commands use the Issue number to read the saved authorization policy and approval points, account, delivery mode, branches, starting commit and repository bindings, rather than deriving them from Issue prose or the current authorization policy.
 
-`state.json` 的 `flow` 保存工作流程标识 `selector`、交付模式 `mode` 和授权配置 `authorization`。`delivery` 保存交付模式 `mode` 和远程绑定 `remote`。远程绑定包含获取来源仓库、获取分支和推送目标仓库。独立工作树的对应记录保存在 `storage.json` 的 `worktrees` 中，也使用 `delivery` 字段。`gidd <Issue编号>` 将这些信息打印为 `delivery_mode` 和 `target.remote`。任务命令输出使用 `gidd.task-command/v1`；任务文件使用 `gidd.task/v1`。
+`state.json` 的 `policy` 保存授权方案标识 `selector`、交付模式 `mode` 和授权配置 `authorization`。`delivery` 保存交付模式 `mode` 和远程绑定 `remote`。远程绑定包含获取来源仓库、获取分支和推送目标仓库。独立工作树的对应记录保存在 `storage.json` 的 `worktrees` 中，也使用 `delivery` 字段。`gidd <Issue编号>` 将这些信息打印为 `delivery_mode` 和 `target.remote`。任务命令输出使用 `gidd.task-command/v1`；任务文件使用 `gidd.task/v1`。
 
-The `flow` field in `state.json` stores the workflow selector (`selector`), delivery mode (`mode`) and authorization settings (`authorization`). The `delivery` field stores the delivery mode (`mode`) and remote binding (`remote`). The binding contains the fetch repository, fetch branch and push repository. Dedicated worktree records are stored under `worktrees` in `storage.json` and also use `delivery`. `gidd <Issue编号>` reports these values as `delivery_mode` and `target.remote`. Task command output uses `gidd.task-command/v1`; task files use `gidd.task/v1`.
+The `policy` field in `state.json` stores the authorization policy selector (`selector`), delivery mode (`mode`) and authorization settings (`authorization`). The `delivery` field stores the delivery mode (`mode`) and remote binding (`remote`). The binding contains the fetch repository, fetch branch and push repository. Dedicated worktree records are stored under `worktrees` in `storage.json` and also use `delivery`. `gidd <Issue编号>` reports these values as `delivery_mode` and `target.remote`. Task command output uses `gidd.task-command/v1`; task files use `gidd.task/v1`.
 
-`state.json` 的 `registration` 保存登记 ID 和完成状态，供中断后补写 Issue 副本及工作流程历史。`preparation` 在执行 fetch 或快进更新目标分支前，保存已确定的起始提交点、更新前的提交点，以及获取来源使用的临时 Git 引用。重试沿用已保存的提交点，先核对记录与 Git，再继续准备。
+`state.json` 的 `registration` 保存登记 ID 和完成状态，供中断后补写 Issue 副本及授权方案历史。`preparation` 在执行 fetch 或快进更新目标分支前，保存已确定的起始提交点、更新前的提交点，以及获取来源使用的临时 Git 引用。重试沿用已保存的提交点，先核对记录与 Git，再继续准备。
 
-The `registration` field in `state.json` saves the registration ID and completion state so interrupted writes of the Issue copy and flow history can resume. Before fetch or a target branch fast-forward, `preparation` saves the selected starting commit, the previous commit and any temporary Git reference used to fetch the source. A retry retains the saved commit and checks the records against Git before continuing.
+The `registration` field in `state.json` saves the registration ID and completion state so interrupted writes of the Issue copy and authorization policy history can resume. Before fetch or a target branch fast-forward, `preparation` saves the selected starting commit, the previous commit and any temporary Git reference used to fetch the source. A retry retains the saved commit and checks the records against Git before continuing.
 
 本地合并成功后，工作树资源记录的 `local_merge` 只保存参与合并的工作提交 `head` 和目标分支的结果提交 `commit`。后续交付检查确认工作提交未变，且结果提交仍在目标分支历史中；普通 merge 也可直接用提交历史核验。复用工作树时移除这份记录。
 
@@ -43,17 +43,17 @@ Before squash changes the target checkout, it stores `head`, the previous target
 
 Before Git changes, dedicated worktree preparation saves its intent in the corresponding UUID record's `preparation` field in `storage.json`, with the Issue number, working branch, target branch and starting commit. Reuse also saves the previous release record. A repeated numbered command finds the same workspace by Issue number, checks its actual Git state and completes unfinished operations. Inconsistent state stops preparation. Commands do not scan system temporary directories or resume other tasks automatically.
 
-创建 Issue 前，`create-pending.json` 保存请求 ID、草稿绝对路径及内容校验值、工作流程和任务约定。阶段依次为 `planned`、`creating`、`created`、`ready`。收到 Issue 编号后，先保存编号，再登记任务；完成后保留最近一次请求。草稿路径、内容和 `--flow` 参数相同的请求重试时，沿用已确认的编号，不再次创建 Issue。未完成的创建请求会阻止其他创建请求覆盖它。
+创建 Issue 前，`create-pending.json` 保存请求 ID、草稿绝对路径及内容校验值、授权方案和任务约定。阶段依次为 `planned`、`creating`、`created`、`ready`。收到 Issue 编号后，先保存编号，再登记任务；完成后保留最近一次请求。草稿路径、内容和 `--policy` 参数相同的请求重试时，沿用已确认的编号，不再次创建 Issue。未完成的创建请求会阻止其他创建请求覆盖它。
 
-Before creating an Issue, `create-pending.json` saves the request ID, absolute draft path and content hash, flow and task plan. Its phases are `planned`, `creating`, `created` and `ready`. After receiving an Issue number, the command saves that number before task registration; completion retains the latest request. A request with the same draft path, contents and `--flow` argument uses the confirmed number without creating another Issue. An unfinished creation request prevents another request from replacing its record.
+Before creating an Issue, `create-pending.json` saves the request ID, absolute draft path and content hash, authorization policy and task plan. Its phases are `planned`, `creating`, `created` and `ready`. After receiving an Issue number, the command saves that number before task registration; completion retains the latest request. A request with the same draft path, contents and `--policy` argument uses the confirmed number without creating another Issue. An unfinished creation request prevents another request from replacing its record.
 
-已有编号时，优先用 `gidd <Issue编号> --flow <工作流程>` 继续。准备成功后，匹配的已确认创建记录标记为 `ready`，可以开始下一次创建。创建结果不明时先核对交付仓库；记录不能证明远端没有创建 Issue，命令不会自动重复提交创建请求。只有确认远端结果后，才可人工移除这份创建记录。
+已有编号时，优先用 `gidd <Issue编号> --policy <授权方案>` 继续。准备成功后，匹配的已确认创建记录标记为 `ready`，可以开始下一次创建。创建结果不明时先核对交付仓库；记录不能证明远端没有创建 Issue，命令不会自动重复提交创建请求。只有确认远端结果后，才可人工移除这份创建记录。
 
-With a known number, use `gidd <Issue编号> --flow <flow>` to continue. Successful preparation marks the matching confirmed creation record `ready`, so a new creation request can start. An unknown creation result requires checking the delivery repository first. The record cannot prove that no remote Issue was created; the command does not automatically repeat the creation request. Remove this creation record manually only after confirming the remote result.
+With a known number, use `gidd <Issue编号> --policy <policy>` to continue. Successful preparation marks the matching confirmed creation record `ready`, so a new creation request can start. An unknown creation result requires checking the delivery repository first. The record cannot prove that no remote Issue was created; the command does not automatically repeat the creation request. Remove this creation record manually only after confirming the remote result.
 
-`flow-history.jsonl` 每行保存时间 `at` 和完整工作流程标识 `selector`。首次登记的条目也可保存登记 UUID `id`，中断后按此 ID 去重；`.flow.set` 的条目只保存时间和工作流程标识。平时追加；超过500条时，只保留最新200条。未写完的末行不算记录，下次写入时移除。`flow.history` 倒序显示最近200条，`-v` 加上时间。首次绑定及成功修改任务工作流程时追加记录；查看或重复准备工作区不追加。`<Issue编号>.flow` 使用任务保存的确认点。历史在任务清理后仍保留，不表示用户已授权新的操作。
+`policy-history.jsonl` 每行保存时间 `at` 和完整授权方案标识 `selector`。首次登记的条目也可保存登记 UUID `id`，中断后按此 ID 去重；`.policy.set` 的条目只保存时间和授权方案标识。平时追加；超过500条时，只保留最新200条。未写完的末行不算记录，下次写入时移除。`policy.history` 倒序显示最近200条，`-v` 加上时间。首次绑定及成功修改任务授权方案时追加记录；查看或重复准备工作区不追加。`<Issue编号>.policy` 使用任务保存的确认点。历史在任务清理后仍保留，不表示用户已授权新的操作。
 
-Each line in `flow-history.jsonl` stores the time (`at`) and full flow name (`selector`). Initial registration entries can also store their registration UUID (`id`) to prevent duplicate entries after an interrupted append; `.flow.set` entries store only the time and flow name. New records are appended. Above 500 records, only the latest 200 are retained. An unfinished final line is ignored and removed on the next write. `flow.history` shows the latest 200 records, newest first; `-v` adds timestamps. Initial binding and successful changes append records; viewing or repeated preparation does not. `<Issue编号>.flow` uses the saved task approval points. History remains after task cleanup and does not grant approval for new actions.
+Each line in `policy-history.jsonl` stores the time (`at`) and full authorization policy name (`selector`). Initial registration entries can also store their registration UUID (`id`) to prevent duplicate entries after an interrupted append; `.policy.set` entries store only the time and authorization policy name. New records are appended. Above 500 records, only the latest 200 are retained. An unfinished final line is ignored and removed on the next write. `policy.history` shows the latest 200 records, newest first; `-v` adds timestamps. Initial binding and successful changes append records; viewing or repeated preparation does not. `<Issue编号>.policy` uses the saved task approval points. History remains after task cleanup and does not grant approval for new actions.
 
 任务账号记录只包含登录名。`gh/` 保存仓库的 gh 配置，由 `gh.auth` 创建，任务清理时保留。凭据由 gh 管理，不写入任务记录。
 

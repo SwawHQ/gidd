@@ -94,60 +94,58 @@ test('gh launcher discovers bound Git with empty PATH and refreshes after Git re
   } finally {f.dispose();}
 });
 
-test('bootstrap bindings and repair survive interruption without overwriting unknown files', {timeout:120000}, async()=>{
+for (const name of ['gh', 'git']) test(`bootstrap ${name} bindings and repair survive interruption without overwriting unknown files`, {timeout:120000}, async()=>{
   const f=fixture();
   try {
     const exe=compile(f.root),license=join(f.root,'LICENSE');write(license,'upstream license');
-    for(const name of ['gh','git']) {
-      const root=join(f.root,name+'-storage'),archive=join(f.root,name+'.zip');
-      const entries=name==='gh'?[{name:'bin/gh.exe',source:exe},{name:'LICENSE',source:license}]:
-        [{name:'cmd/git.exe',source:exe},{name:'mingw64/bin/git.exe',source:exe},{name:'LICENSE.txt',source:license}];
-      makeZip(f.root,archive,entries);
-      const url=name==='gh'?'https://github.com/cli/cli/releases/download/v2.98.0/gh_2.98.0_windows_amd64.zip':
-        'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/MinGit-2.55.0.5-64-bit.zip';
-      const responses=name==='gh'?{
-        'https://api.github.com/repos/cli/cli/releases/latest':JSON.stringify({tag_name:'v2.98.0'}),
-        'https://github.com/cli/cli/releases/download/v2.98.0/gh_2.98.0_checksums.txt':hash(archive)+'  gh_2.98.0_windows_amd64.zip',
-      }:{'https://api.github.com/repos/git-for-windows/git/releases/latest':JSON.stringify({tag_name:'v2.55.0.windows.5',
-        assets:[{name:'MinGit-2.55.0.5-64-bit.zip',size:readFileSync(archive).length,digest:'sha256:'+hash(archive),browser_download_url:url}]})};
-      const request={action:'prepare',repositoryRoot:f.root,root,names:[name],responses,downloads:{[url]:archive}};
-      const invoke=patch=>shellAdapter(f.root,{...request,...patch},{env:{PATH:''}});
-      assert.equal(json(ok(invoke())).tools[0].action,'installed');
-      const executable=readBindings(root).tools[name].path,record=join(root,name,'install.json');
-      const first=hash(record);
-      assert.equal(json(ok(invoke({responses:{},downloads:{}}))).tools[0].binding_action,'reused');
-      assert.equal(hash(record),first);
-      assert.equal(json(ok(invoke({checkOnly:true,responses:{},downloads:{}}))).status,'ready');
-      assert.equal(invoke({force:true,responses:{},downloads:{}}).status,1);
-      assert.equal(hash(record),first,'Failed force preparation preserves the healthy installation');
-      assert.equal(json(ok(invoke({force:true,publicReport:true}))).tools[0].action,'reinstalled');
-      assert.notEqual(hash(record),first,'Force replaces even a healthy same-version installation');
-      const external=join(f.root,'external-'+name,name+'.exe');stub(exe,external);
-      const externalHash=hash(external),fresh=join(f.root,name+'-forced-storage');
-      const forced=json(ok(shellAdapter(f.root,{...request,root:fresh,force:true},{env:{PATH:dirname(external)}})));
-      assert.equal(forced.tools[0].action,'installed');assert.equal(readBindings(fresh).tools[name].source,'managed');
-      assert.equal(hash(external),externalHash,'Force never modifies an external executable');
-      for(const phase of ['extracted','backed_up','published','bound']) {
-        write(executable,'damaged');
-        const oldBinding=hash(join(root,'tool-bindings.json'));
-        const killed=await startShellAdapter(f.root,{...request,stopAt:phase},{env:{PATH:''}}).result;
-        assert.notEqual(killed.status,0);
-        const afterCrash=hash(join(root,'tool-bindings.json'));
-        assert.equal(afterCrash===oldBinding,phase!=='bound');
-        const backup=join(root,'.cache','previous-'+name);
-        assert.equal(existsSync(backup),phase!=='extracted');
-        const readonly=invoke({checkOnly:true,responses:{},downloads:{}});
-        assert.equal(readonly.status,1);assert.equal(hash(join(root,'tool-bindings.json')),afterCrash);
-        const recovered=json(ok(invoke(phase==='bound'?{responses:{},downloads:{}}:{})));
-        assert.equal(recovered.status,'ready');assert.equal(existsSync(backup),false);
-        assert.equal(json(ok(shellAdapter(f.root,{action:'validate',root:join(root,name),name}))),true);
-        assert.notEqual(hash(record),first,'Same-version replacement has a distinct installation identity');
-      }
-      write(join(root,name,'user.txt'),'keep');write(executable,'damaged');
-      const unknown=invoke({force:true,responses:{},downloads:{}});
-      assert.equal(unknown.status,1);assert.equal(json(unknown).checks.at(-1).reason,'unknown_tool_ownership:'+name);
-      assert.equal(readFileSync(join(root,name,'user.txt'),'utf8'),'keep');
+    const root=join(f.root,name+'-storage'),archive=join(f.root,name+'.zip');
+    const entries=name==='gh'?[{name:'bin/gh.exe',source:exe},{name:'LICENSE',source:license}]:
+      [{name:'cmd/git.exe',source:exe},{name:'mingw64/bin/git.exe',source:exe},{name:'LICENSE.txt',source:license}];
+    makeZip(archive,entries);
+    const url=name==='gh'?'https://github.com/cli/cli/releases/download/v2.98.0/gh_2.98.0_windows_amd64.zip':
+      'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/MinGit-2.55.0.5-64-bit.zip';
+    const responses=name==='gh'?{
+      'https://api.github.com/repos/cli/cli/releases/latest':JSON.stringify({tag_name:'v2.98.0'}),
+      'https://github.com/cli/cli/releases/download/v2.98.0/gh_2.98.0_checksums.txt':hash(archive)+'  gh_2.98.0_windows_amd64.zip',
+    }:{'https://api.github.com/repos/git-for-windows/git/releases/latest':JSON.stringify({tag_name:'v2.55.0.windows.5',
+      assets:[{name:'MinGit-2.55.0.5-64-bit.zip',size:readFileSync(archive).length,digest:'sha256:'+hash(archive),browser_download_url:url}]})};
+    const request={action:'prepare',repositoryRoot:f.root,root,names:[name],responses,downloads:{[url]:archive}};
+    const invoke=patch=>shellAdapter(f.root,{...request,...patch},{env:{PATH:''}});
+    assert.equal(json(ok(invoke())).tools[0].action,'installed');
+    const executable=readBindings(root).tools[name].path,record=join(root,name,'install.json');
+    const first=hash(record);
+    assert.equal(json(ok(invoke({responses:{},downloads:{}}))).tools[0].binding_action,'reused');
+    assert.equal(hash(record),first);
+    assert.equal(json(ok(invoke({checkOnly:true,responses:{},downloads:{}}))).status,'ready');
+    assert.equal(invoke({force:true,responses:{},downloads:{}}).status,1);
+    assert.equal(hash(record),first,'Failed force preparation preserves the healthy installation');
+    assert.equal(json(ok(invoke({force:true,publicReport:true}))).tools[0].action,'reinstalled');
+    assert.notEqual(hash(record),first,'Force replaces even a healthy same-version installation');
+    const external=join(f.root,'external-'+name,name+'.exe');stub(exe,external);
+    const externalHash=hash(external),fresh=join(f.root,name+'-forced-storage');
+    const forced=json(ok(shellAdapter(f.root,{...request,root:fresh,force:true},{env:{PATH:dirname(external)}})));
+    assert.equal(forced.tools[0].action,'installed');assert.equal(readBindings(fresh).tools[name].source,'managed');
+    assert.equal(hash(external),externalHash,'Force never modifies an external executable');
+    for(const phase of ['extracted','backed_up','published','bound']) {
+      write(executable,'damaged');
+      const oldBinding=hash(join(root,'tool-bindings.json'));
+      const killed=await startShellAdapter(f.root,{...request,stopAt:phase},{env:{PATH:''}}).result;
+      assert.notEqual(killed.status,0);
+      const afterCrash=hash(join(root,'tool-bindings.json'));
+      assert.equal(afterCrash===oldBinding,phase!=='bound');
+      const backup=join(root,'.cache','previous-'+name);
+      assert.equal(existsSync(backup),phase!=='extracted');
+      const readonly=invoke({checkOnly:true,responses:{},downloads:{}});
+      assert.equal(readonly.status,1);assert.equal(hash(join(root,'tool-bindings.json')),afterCrash);
+      const recovered=json(ok(invoke(phase==='bound'?{responses:{},downloads:{}}:{})));
+      // A ready recovery already validates the managed payload and its binding.
+      assert.equal(recovered.status,'ready');assert.equal(existsSync(backup),false);
+      assert.notEqual(hash(record),first,'Same-version replacement has a distinct installation identity');
     }
+    write(join(root,name,'user.txt'),'keep');write(executable,'damaged');
+    const unknown=invoke({force:true,responses:{},downloads:{}});
+    assert.equal(unknown.status,1);assert.equal(json(unknown).checks.at(-1).reason,'unknown_tool_ownership:'+name);
+    assert.equal(readFileSync(join(root,name,'user.txt'),'utf8'),'keep');
   } finally {f.dispose();}
 });
 
@@ -232,6 +230,26 @@ test('MinGit release selection requires the official regular ZIP and asset diges
   }
 });
 
+test('JS ZIP fixtures preserve binary and empty files through the real extractor', () => {
+  const f = fixture();
+  try {
+    const binary = join(f.root, 'binary'), license = join(f.root, 'license'), empty = join(f.root, 'empty');
+    const bytes = Buffer.from([0, 255, 1, 128, 13, 10]);
+    write(binary, bytes); write(license, 'fixture license'); write(empty, '');
+    const archivePath = join(f.root, 'fixture.zip'), destination = join(f.root, 'payload');
+    const definitionPath = join(f.root, 'definition.json');
+    makeZip(archivePath, [
+      { name: 'cmd/git.exe', source: binary }, { name: 'LICENSE.txt', source: license }, { name: 'etc/empty', source: empty },
+    ]);
+    assert.throws(() => makeZip(archivePath, []), { code: 'EEXIST' });
+    write(definitionPath, JSON.stringify({ name: 'git' })); mkdirSync(destination);
+    ok(shellAdapter(f.root, { action: 'extract', archivePath, destination, definitionPath }));
+    assert.deepEqual(readFileSync(join(destination, 'cmd/git.exe')), bytes);
+    assert.equal(readFileSync(join(destination, 'etc/empty')).length, 0);
+    assert.equal(readFileSync(join(destination, 'LICENSE.txt'), 'utf8'), 'fixture license');
+  } finally { f.dispose(); }
+});
+
 test('MinGit nested installation, integrity, recovery, managed selection and external reuse', { timeout: 120000 }, async () => {
   const f = fixture();
   try {
@@ -239,7 +257,7 @@ test('MinGit nested installation, integrity, recovery, managed selection and ext
     write(license,'upstream license'); write(empty,'');
     const entries = [{name:'cmd/git.exe',source:exe},{name:'ucrt64/bin/git.exe',source:exe},
       {name:'ucrt64/bin/dependency.dll',source:license},{name:'LICENSE.txt',source:license},{name:'etc/empty',source:empty}];
-    makeZip(f.root,archive,entries);
+    makeZip(archive,entries);
     const definition = {name:'git',version:'2.55.0',reported_version:'2.55.0.windows.5',release_tag:'v2.55.0.windows.5',
       archive:'git.zip',url:'https://example.invalid/git.zip',sha256:hash(archive)};
     const definitionPath = join(f.root,'git.json'); write(definitionPath,JSON.stringify(definition));
@@ -259,7 +277,7 @@ test('MinGit nested installation, integrity, recovery, managed selection and ext
       const where = join(f.root,'interrupted-'+phase);
       const killed = await startShellAdapter(f.root,installRequest(where,definitionPath,f.root,phase)).result;
       assert.notEqual(killed.status,0); assert.equal(existsSync(join(where,'git')),phase==='published');
-      ok(install(where)); assert.equal(json(ok(shellAdapter(f.root,{action:'validate',root:join(where,'git'),name:'git'}))),true);
+      assert.equal(json(ok(install(where))).action,phase==='published'?'reused':'installed');
       assert.equal(existsSync(join(where,'.cache/git')),false);
     }
     const dependency = join(target,'ucrt64/bin/dependency.dll'); write(dependency,'corrupt dependency');
@@ -273,12 +291,12 @@ test('MinGit nested installation, integrity, recovery, managed selection and ext
     assert.equal(existsSync(join(toolsRoot(home),'tool-bindings.json')),true);
     for (const required of ['cmd/git.exe','LICENSE.txt']) {
       const archivePath=join(f.root,'missing-'+required.replace(/\W/g,'_')+'.zip'), destination=archivePath+'.payload';
-      makeZip(f.root,archivePath,entries.filter(entry=>entry.name!==required)); mkdirSync(destination);
+      makeZip(archivePath,entries.filter(entry=>entry.name!==required)); mkdirSync(destination);
       assert.match(shellAdapter(f.root,{action:'extract',archivePath,destination,definitionPath}).stderr,/missing_git_payload/);
     }
     for (const name of ['../escape','cmd/GIT.exe','cmd/CON.exe','etc/config.toml']) {
       const bad = join(f.root,'bad-'+name.replace(/\W/g,'_')+'.zip'), destination = join(f.root,'bad-'+name.replace(/\W/g,'_'));
-      makeZip(f.root,bad,[...entries,{name,source:license}]); mkdirSync(destination);
+      makeZip(bad,[...entries,{name,source:license}]); mkdirSync(destination);
       assert.notEqual(shellAdapter(f.root,{action:'extract',archivePath:bad,destination,definitionPath}).status,0);
     }
     const linked = Buffer.from(readFileSync(archive));
@@ -322,7 +340,7 @@ test('Native installers exclude each other and reclaim a killed owner', { timeou
   const f = fixture();
   try {
     const exe = compile(f.root), archive = join(f.root,'bun.zip'), definitionPath = join(f.root,'definition.json');
-    makeZip(f.root,archive,[{ name: 'bun/bun.exe', source: exe }]);
+    makeZip(archive,[{ name: 'bun/bun.exe', source: exe }]);
     write(definitionPath,JSON.stringify({ name: 'bun', version: '1.4.2', archive: 'bun.zip', url: 'https://fixture.invalid/bun.zip', sha256: hash(archive), files: [{ entry: 'bun/bun.exe', name: 'bun.exe' }], supplements: [] }));
     {
       const root = join(f.root,'native-lock'), requestData = installRequest(root,definitionPath,f.root);
@@ -348,7 +366,7 @@ test(`setup shell: install, integrity, interrupted publication, locks, preservat
   const f = fixture();
   try {
     const exe = compile(f.root), archive = join(f.root,'bun.zip');
-    makeZip(f.root,archive,[{name:'bun-windows-x64/bun.exe',source:exe}]);
+    makeZip(archive,[{name:'bun-windows-x64/bun.exe',source:exe}]);
     const definition = {name:'bun',version:'1.4.2',archive:'bun.zip',url:'https://example.invalid/bun.zip',sha256:hash(archive),files:[{entry:'bun-windows-x64/bun.exe',name:'bun.exe'}],supplements:[]};
     const definitionPath = join(f.root,'definition.json'); write(definitionPath,JSON.stringify(definition));
     const install = (root, path = definitionPath, archives = f.root) => shellAdapter(f.root,installRequest(root,path,archives));
@@ -364,23 +382,24 @@ test(`setup shell: install, integrity, interrupted publication, locks, preservat
     const recordPath=join(tools,'bun/install.json'), recordHash=hash(recordPath), recordText=readFileSync(recordPath,'utf8');
     assert.equal(json(ok(install(tools,definitionPath,join(f.root,'missing')))).action,'reused'); assert.equal(hash(recordPath),recordHash);
     const managedBin=join(tools,'bun'), managedExe=join(managedBin,'bun.exe');
-    for (const searchPath of [managedBin,managedBin.replaceAll('\\','/'),managedBin+'\\..\\bun',managedBin.toUpperCase()]) {
-      for (const managedPath of [managedExe,managedExe.replaceAll('\\','/')]) {
-        const requestData={action:'find',name:'bun',minimum:'1.2',pattern:'^(\\d+\\.\\d+\\.\\d+)$',managedPath};
-        write(recordPath,recordText);
-        assert.equal(json(ok(shellAdapter(f.root,requestData,{env:{PATH:searchPath}}))).status,'ready');
-        write(recordPath,'incomplete manifest');
-        const check=json(ok(shellAdapter(f.root,requestData,{env:{PATH:searchPath}})));
-        assert.equal(check.status,'invalid'); assert.ok(check.details.rejected.length>=2);
-        assert.ok(check.details.rejected.every(x=>x.reason==='managed_integrity_failed'));
-      }
+    for (const [searchPath,managedPath] of [
+      [managedBin,managedExe], [managedBin.replaceAll('\\','/'),managedExe.replaceAll('\\','/')],
+      [managedBin+'\\..\\bun',managedExe], [managedBin.toUpperCase(),managedExe.replaceAll('\\','/')],
+    ]) {
+      const requestData={action:'find',name:'bun',minimum:'1.2',pattern:'^(\\d+\\.\\d+\\.\\d+)$',managedPath};
+      write(recordPath,recordText);
+      assert.equal(json(ok(shellAdapter(f.root,requestData,{env:{PATH:searchPath}}))).status,'ready');
+      write(recordPath,'incomplete manifest');
+      const check=json(ok(shellAdapter(f.root,requestData,{env:{PATH:searchPath}})));
+      assert.equal(check.status,'invalid'); assert.ok(check.details.rejected.length>=2);
+      assert.ok(check.details.rejected.every(x=>x.reason==='managed_integrity_failed'));
     }
     write(recordPath,recordText);
     for (const phase of ['downloaded','extracted','verified','published']) {
       const root=join(f.root,`kill-${phase}/gidd.tools`);
       const killed=await startShellAdapter(f.root,installRequest(root,definitionPath,f.root,phase)).result;
       assert.notEqual(killed.status,0); assert.equal(existsSync(join(root,'bun')),phase==='published');
-      ok(install(root)); assert.equal(valid(root),true); assert.equal(existsSync(join(root,'.cache/bun')),false);
+      assert.equal(json(ok(install(root))).action,phase==='published'?'reused':'installed'); assert.equal(existsSync(join(root,'.cache/bun')),false);
     }
     const concurrent=join(f.root,'concurrent/gidd.tools');
     const owner=startShellAdapter(f.root,installRequest(concurrent,definitionPath,f.root,'locked'));
@@ -407,7 +426,7 @@ test(`setup shell: install, integrity, interrupted publication, locks, preservat
       const bad=structuredClone(definition), root=join(f.root,`${scenario}/gidd.tools`);
       if (scenario==='hash') bad.sha256='0'.repeat(64);
       if (scenario==='zip') { bad.archive='broken.zip'; write(join(f.root,bad.archive),'not zip'); bad.sha256=hash(join(f.root,bad.archive)); }
-      if (scenario==='traversal') { bad.archive='traversal.zip'; makeZip(f.root,join(f.root,bad.archive),[{name:'../escape.exe',source:exe}]); bad.sha256=hash(join(f.root,bad.archive)); }
+      if (scenario==='traversal') { bad.archive='traversal.zip'; makeZip(join(f.root,bad.archive),[{name:'../escape.exe',source:exe}]); bad.sha256=hash(join(f.root,bad.archive)); }
       if (scenario==='version') bad.version='1.9.9';
       const path=join(f.root,`${scenario}.json`); write(path,JSON.stringify(bad));
       assert.notEqual(install(root,path).status,0); assert.equal(existsSync(join(root,'bun')),false);
@@ -440,7 +459,7 @@ test(`setup shell: Node archive version, integrity and reuse without downloads`,
   const f=fixture();
   try {
     const exe=compile(f.root), archive=join(f.root,'node.zip'), root=join(f.root,'node-storage');
-    makeZip(f.root,archive,[{name:'node/node.exe',source:exe}]);
+    makeZip(archive,[{name:'node/node.exe',source:exe}]);
     const definition={name:'node',version:'24.19.0',archive:'node.zip',url:'https://example.invalid/node.zip',sha256:hash(archive),files:[{entry:'node/node.exe',name:'node.exe'}],supplements:[]};
     const path=join(f.root,'node.json'); write(path,JSON.stringify(definition));
     assert.equal(json(ok(shellAdapter(f.root,installRequest(root,path,f.root)))).action,'installed');

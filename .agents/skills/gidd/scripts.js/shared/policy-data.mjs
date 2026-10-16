@@ -1,21 +1,21 @@
-export const flowLanguages = Object.freeze(['en', 'zh-CN']);
-export const invalidFlowResource = () => { throw new Error('flow_resources_invalid'); };
+export const policyLanguages = Object.freeze(['en', 'zh-CN']);
+export const invalidPolicyResource = () => { throw new Error('policy_resources_invalid'); };
 export const nonemptyText = value => typeof value === 'string' && !!value.trim();
 export const stringList = (value, min = 1, max = 100) => Array.isArray(value) && value.length >= min &&
   value.length <= max && value.every(nonemptyText);
 export function fields(value, required, optional = []) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
       required.some(key => !Object.hasOwn(value, key)) ||
-      Object.keys(value).some(key => !required.includes(key) && !optional.includes(key))) invalidFlowResource();
+      Object.keys(value).some(key => !required.includes(key) && !optional.includes(key))) invalidPolicyResource();
 }
 
 // Validate shipped form resources without evaluating Issue bodies.
 export function validateIssueForms(forms) {
-  const invalid = invalidFlowResource;
-  fields(forms, flowLanguages);
+  const invalid = invalidPolicyResource;
+  fields(forms, policyLanguages);
   const names = new Set();
   let shape;
-  for (const lang of flowLanguages) {
+  for (const lang of policyLanguages) {
     const form = forms[lang];
     fields(form, ['name', 'description', 'body'], ['title', 'labels', 'assignees', 'projects', 'type']);
     if (!nonemptyText(form.name) || form.name.trim().length <= 3 || names.has(form.name) ||

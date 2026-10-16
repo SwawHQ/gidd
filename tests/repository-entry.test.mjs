@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import { renameSync } from 'node:fs';
 import { runRepositoryCommand } from './support/repository.mjs';
-import { flowSnapshot } from '../.agents/skills/gidd/scripts.js/shared/flow-definition.mjs';
-import { loadFlow } from '../.agents/skills/gidd/scripts.js/shared/flows.mjs';
-import { recordFlowUse, flowStorage } from '../.agents/skills/gidd/scripts.js/shared/flow-history.mjs';
+import { policySnapshot } from '../.agents/skills/gidd/scripts.js/shared/policy-definition.mjs';
+import { loadPolicy } from '../.agents/skills/gidd/scripts.js/shared/policies.mjs';
+import { recordPolicyUse, policyStorage } from '../.agents/skills/gidd/scripts.js/shared/policy-history.mjs';
 import { adapter, assert, bindFixture, copySkill, dirname, existsSync, findGit, fixture, join, json,
   mkdirSync, ok, readFileSync, run, snapshot, toolsRoot, write, compile, stub, rmSync, initializeDataFixture } from './support/helpers.mjs';
 
@@ -57,10 +57,10 @@ test('one static entry discovers each calling repository and shares main data wi
     }
     assert.deepEqual(snapshot(s.root), before);
     initializeDataFixture(s.target);
-    recordFlowUse(flowStorage(s.target), flowSnapshot(loadFlow('00/00')));
-    assert.equal(existsSync(join(s.target + '.gidd', 'flow-history.jsonl')), true);
+    recordPolicyUse(policyStorage(s.target), policySnapshot(loadPolicy('00/00')));
+    assert.equal(existsSync(join(s.target + '.gidd', 'policy-history.jsonl')), true);
     assert.equal(existsSync(linked + '.gidd'), false);
-    assert.equal(ok(s.invoke(['flow.history', '--lang', 'zh'], nested)).stdout, '工作流程记录（最新在前，最多200条）：\n00/00\n');
+    assert.equal(ok(s.invoke(['policy.history', '--lang', 'zh'], nested)).stdout, '授权方案记录（最新在前，最多200条）：\n00/00\n');
   } finally { s.dispose(); }
 });
 
@@ -84,10 +84,10 @@ test('a missing runtime prepares tools and then runs the original command', () =
   try {
     const home = join(s.root, 'empty home'), bin = join(s.root, 'native tools'); mkdirSync(join(home, 'AppData/Roaming'), {recursive:true});
     stub(compile(s.root), join(bin, 'gh.exe'));
-    const result = ok(s.invoke(['flow.deliveries', '--lang', 'zh'], s.root, {
+    const result = ok(s.invoke(['policy.deliveries', '--lang', 'zh'], s.root, {
       USERPROFILE: home, PATH: [dirname(process.execPath), dirname(s.git), bin].join(';'),
     }));
-    assert.ok(json(result).modes.length);
+    assert.ok(json(result).deliveries.length);
     assert.match(result.stderr, /gidd.tools\/v1/);
     const root = toolsRoot(home);
     for (const name of [process.versions.bun ? 'bun' : 'node', 'git', 'gh']) assert.ok(existsSync(join(root, name + '.link.cmd')));
@@ -115,16 +115,16 @@ test('catalog queries and doctor work without Git bindings or a repository', () 
   try {
     rmSync(join(toolsRoot(s.root), 'tool-bindings.json'));
     const before = snapshot(s.root);
-    for (const args of [['flow.deliveries'], ['flow.list','00'], ['flow.issue','00/00']]) {
+    for (const args of [['policy.deliveries'], ['policy.list','00'], ['policy.issue','00/00']]) {
       const report = json(ok(s.invoke([...args,'--lang','zh'],s.root)));
       assert.equal(report.scope, undefined);
     }
-    assert.match(ok(s.invoke(['flow','00/00','--lang','zh'],s.root)).stdout, /流程与授权/);
+    assert.match(ok(s.invoke(['policy','00/00','--lang','zh'],s.root)).stdout, /步骤与授权/);
     const report = json(s.invoke(['doctor','--offline'],s.root));
     assert.equal(report.schema, 'gidd.doctor/v1');
     assert.ok(report.checks.length > 5);
     assert.notEqual(report.checks.find(x=>x.id==='tool.git').status,'ready');
-    assert.notEqual(s.invoke(['14.flow','--lang','zh'],s.root).status,0);
+    assert.notEqual(s.invoke(['14.policy','--lang','zh'],s.root).status,0);
     assert.deepEqual(snapshot(s.root),before);
   } finally { s.dispose(); }
 });

@@ -3,7 +3,7 @@ import { runTool, toolNames } from './commands/tool/index.mjs';
 import { isAbsolute, resolve } from 'node:path';
 import { configurationHint } from './shared/config.mjs';
 import { doctor, parseDoctorArguments } from './commands/doctor/index.mjs';
-import { parseFlowArguments, runFlow, flowError } from './commands/flow/index.mjs';
+import { parsePolicyArguments, runPolicy, policyError } from './commands/policy/index.mjs';
 import { printHelp } from './commands/help.mjs';
 import { parseLangArguments, langCommand } from './commands/lang/index.mjs';
 import { show } from './commands/set/show.mjs';
@@ -19,15 +19,15 @@ import { currentRepository } from './shared/current-repository.mjs';
 export async function main(args, { boundRepository } = {}) {
   const route = (args.shift() || 'help').toLowerCase();
   if (toolNames.includes(route)) return runTool(route, args);
-  const command = route.startsWith('flow.') ? 'flow'
+  const command = route.startsWith('policy.') ? 'policy'
     : route.startsWith('worktree.') ? 'worktree'
     : route.startsWith('gh.') ? 'gh'
     : route.startsWith('lang.') ? 'lang'
     : /^[0-9]+(?:\.|$)/.test(route) ? 'issue-task' : route;
   const repositoryCommand = ['gh', 'issue', 'issue-task'].includes(command);
-  const flowOutput = command === 'flow' || command === 'issue-task' && route.endsWith('.flow');
+  const policyOutput = command === 'policy' || command === 'issue-task' && route.endsWith('.policy');
   const configurationCommand = ['set.show', 'lang'].includes(command);
-  const schemas = { 'set.show': 'gidd.config/v1', lang: 'gidd.config/v1', doctor: 'gidd.doctor/v1', flow: 'gidd.flow/v1', worktree: 'gidd.worktree/v1', gh: 'gidd.task-command/v1', issue: 'gidd.task-command/v1', 'issue-task': 'gidd.task-command/v1' };
+  const schemas = { 'set.show': 'gidd.config/v1', lang: 'gidd.config/v1', doctor: 'gidd.doctor/v1', policy: 'gidd.policy/v1', worktree: 'gidd.worktree/v1', gh: 'gidd.task-command/v1', issue: 'gidd.task-command/v1', 'issue-task': 'gidd.task-command/v1' };
   let schema = 'gidd.cli/v1';
   try {
     if (['help','--help','-h'].includes(command)) {
@@ -36,7 +36,7 @@ export async function main(args, { boundRepository } = {}) {
     }
     if (!Object.hasOwn(schemas,command)) throw new Error('unknown_command');
     if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('unsupported_platform');
-    let flowOptions, worktreeOptions, commandOptions;
+    let policyOptions, worktreeOptions, commandOptions;
     if (repositoryCommand) {
       schema = schemas[command];
       commandOptions = command === 'gh' ? parseGhArguments(route, args) : command === 'issue'
@@ -53,9 +53,9 @@ export async function main(args, { boundRepository } = {}) {
       worktreeOptions = parseWorktreeArguments(route, args);
       args = [];
     }
-    if (command === 'flow') {
-      schema = schemas.flow;
-      flowOptions = parseFlowArguments(route, args);
+    if (command === 'policy') {
+      schema = schemas.policy;
+      policyOptions = parsePolicyArguments(route, args);
       args = [];
     }
     let doctorOptions;
@@ -65,14 +65,14 @@ export async function main(args, { boundRepository } = {}) {
     }
     if (args.length) throw new Error('invalid_arguments');
     const needsRepository = !configurationCommand && command !== 'doctor' &&
-      (command !== 'flow' || flowOptions.action === 'history');
+      (command !== 'policy' || policyOptions.action === 'history');
     const repository = needsRepository ? boundRepository || await currentRepository()
       : command === 'doctor' ? boundRepository || process.cwd() : undefined;
     if (repository && !isAbsolute(repository)) throw new Error('repository_must_be_absolute');
     if (needsRepository && !existsSync(resolve(repository, '.git'))) throw new Error('not_git_repository_root');
     schema = schemas[command];
-    if (command === 'flow') return await runFlow(repository, flowOptions);
-    if (command === 'issue-task' && commandOptions.action === 'flow') return await runIssueTask(repository, commandOptions);
+    if (command === 'policy') return await runPolicy(repository, policyOptions);
+    if (command === 'issue-task' && commandOptions.action === 'policy') return await runIssueTask(repository, commandOptions);
     let report;
     if (command === 'doctor') report = await doctor(repository, { ...doctorOptions, fixedRepository: !!boundRepository });
     else if (command === 'worktree') report = await runWorktree(repository, worktreeOptions);
@@ -90,8 +90,8 @@ export async function main(args, { boundRepository } = {}) {
     return ['ready','local_ready','checks_passed','checks_incomplete'].includes(report.status) ? 0 : 1;
   } catch (error) {
     const reason = /^[a-z][a-z0-9_]*(?::[a-zA-Z0-9_.-]+)*$/.test(error.message) ? error.message : 'operation_failed';
-    if (flowOutput) {
-      console.log(JSON.stringify(flowError(boundRepository, undefined, reason), null, 2));
+    if (policyOutput) {
+      console.log(JSON.stringify(policyError(boundRepository, undefined, reason), null, 2));
       return 2;
     }
     const bindingHint = reason.startsWith('tool_binding') ? 'Run tools.ensure.cmd to prepare shared tools and rebuild bindings.' : '';
@@ -99,25 +99,25 @@ export async function main(args, { boundRepository } = {}) {
     if (bindingHint) console.error(bindingHint);
     if (hint) console.error(hint);
     const worktreeHints = {
-      task_required: 'Register and prepare the Issue with gidd <Issue编号> --flow <flow>.',
-      task_flow_required: 'Choose a flow with the user, then supply --flow <flow> when creating or first registering the Issue.',
-      task_flow_changed: 'Read the saved approval points with gidd <Issue编号>.flow; use <Issue编号>.flow.set <flow> to change them.',
-      task_flow_mode_locked: 'Preparation has started. Keep its delivery mode, or abort preparation or finish and clean the task before changing modes.',
-      task_registration_pending: 'Registration is incomplete. Repeat gidd <Issue编号> --flow <flow> before changing its flow.',
+      task_required: 'Register and prepare the Issue with gidd <Issue编号> --policy <policy>.',
+      task_policy_required: 'Choose a policy with the user, then supply --policy <policy> when creating or first registering the Issue.',
+      task_policy_changed: 'Read the saved approval points with gidd <Issue编号>.policy; use <Issue编号>.policy.set <policy> to change them.',
+      task_policy_mode_locked: 'Preparation has started. Keep its delivery mode, or abort preparation or finish and clean the task before changing modes.',
+      task_registration_pending: 'Registration is incomplete. Repeat gidd <Issue编号> --policy <policy> before changing its policy.',
       account_token_unavailable: 'Run gidd gh.auth to authorize the delivery account for this repository.',
       gh_auth_required: 'Run gidd gh.auth to choose and authorize the delivery account for this repository.',
       gh_login_failed: 'GitHub login did not complete. Retry gidd gh.auth when ready.',
       unexpected_account: 'The current credentials belong to a different account from the task record. Use the recorded account credentials before retrying.',
       issue_ambiguous: 'Multiple workspace records match this Issue. Inspect local records before continuing.',
       task_workspace_changed: 'The task and workspace records disagree. Inspect local records before continuing.',
-      issue_creation_unconfirmed: 'Issue creation was not confirmed. Inspect GitHub before creating again; continue a confirmed Issue with gidd <Issue编号> --flow <flow>.',
+      issue_creation_unconfirmed: 'Issue creation was not confirmed. Inspect GitHub before creating again; continue a confirmed Issue with gidd <Issue编号> --policy <policy>.',
       issue_creation_pending: 'An unfinished creation request is recorded. Repeat its original command, or inspect create-pending.json and resolve that request first.',
-      issue_copy_required: 'The local Issue copy is missing. Repeat gidd <Issue编号> --flow <flow> to complete registration.',
-      worktree_preparation_pending: 'Preparation is incomplete. Repeat gidd <Issue编号> --flow <flow>, or run gidd <Issue编号>.cleanup to abort preparation.',
+      issue_copy_required: 'The local Issue copy is missing. Repeat gidd <Issue编号> --policy <policy> to complete registration.',
+      worktree_preparation_pending: 'Preparation is incomplete. Repeat gidd <Issue编号> --policy <policy>, or run gidd <Issue编号>.cleanup to abort preparation.',
       issue_draft_missing: 'The file supplied with --file does not exist. Relative paths are resolved from the calling directory.',
       issue_draft_invalid: 'Supply a UTF-8 Markdown file whose first nonblank line is # Title.',
       issue_title_empty: 'Write an Issue title after # in the file supplied with --file. The [gidd] prefix alone is not a title.',
-      delivery_context_exists: 'A direct-commit delivery record already exists. Inspect gidd <Issue编号>; resume with gidd <Issue编号> --flow <flow>. After delivery, run gidd <Issue编号>.cleanup before starting a new task.',
+      delivery_context_exists: 'A direct-commit delivery record already exists. Inspect gidd <Issue编号>; resume with gidd <Issue编号> --policy <policy>. After delivery, run gidd <Issue编号>.cleanup before starting a new task.',
       issue_registered: 'This Issue number already has a local task record. Inspect it with gidd <Issue编号>; the existing record is retained.',
       delivery_target_branch_required: 'Check out the intended target branch in the target repository, then prepare the workspace again.',
       delivery_target_ahead: 'The local target branch is ahead of its remote counterpart. Inspect unpublished commits or a remote history rewrite, resolve the difference, then retry workspace preparation. Nothing was pushed or reset.',
@@ -130,7 +130,7 @@ export async function main(args, { boundRepository } = {}) {
       delivery_merge_unconfirmed: 'The local merge result is not confirmed. Inspect the target checkout, commit history and saved squash plan before continuing.',
       workspace_branch_changed: 'The checkout differs from the recorded working branch. Inspect the expected and actual branches, restore the working branch, then retry.',
       worktree_branch_mismatch: 'The checkout differs from the recorded working branch. Inspect the expected and actual branches before retrying.',
-      delivery_context_required: 'No local workspace is recorded for this Issue. Inspect worktree.list, then prepare it with gidd <Issue编号> --flow <flow>.',
+      delivery_context_required: 'No local workspace is recorded for this Issue. Inspect worktree.list, then prepare it with gidd <Issue编号> --policy <policy>.',
       delivery_target_checkout_required: 'Check out the recorded target branch in its intended directory, then retry <Issue编号>.merge.',
       pr_head_changed: 'The PR head differs from the local working branch commit. Inspect and synchronize the intended changes before retrying.',
       pr_merge_pending: 'The PR is not confirmed merged. Inspect its checks, branch rules or queue before retrying; retain the workspace.',

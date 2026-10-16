@@ -12,7 +12,7 @@ const checkOrder = [
   'tool.platform', 'tool.js_runtime', 'tool.git', 'tool.gh',
   'folder.git.worktree', 'folder.git.identity', 'folder.gidd',
   'config.toml', 'config.ui.language', 'folder.git.remote', 'folder.gidd.remote',
-  'folder.gidd.flow',
+  'folder.gidd.policy',
   'tool.gh.account..online', 'folder.git.remote..online',
 ];
 const byId = (report, id) => {
