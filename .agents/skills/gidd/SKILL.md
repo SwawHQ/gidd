@@ -1,6 +1,6 @@
 ---
 name: gidd
-description: 基于 Git Worktree、GitHub Issue 为要求可审计（过程留痕）、外包式（先立验收契约再开发）、多任务并行、流水线式协作的开发，提供任务登记、工作区管理/交付等工具，自带 git、gh（GitHub CLI）、bun/node 准备；适用于 Git/GitHub 操作-如 clone、Issue、PR 或 gidd 被提及时。
+description: 基于 Git Worktree、GitHub Issue 为要求可审计（过程留痕）、外包式（先立验收契约再开发）、多任务并行、流水线式协作的开发，提供任务登记、工作区管理/交付等工具，自带 git、gh（GitHub CLI）、bun/node 准备；适用于 Git/GitHub 操作-如 clone、Issue、PR 或提及 gidd 时。
 license: MIT
 ---
 
