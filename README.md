@@ -60,11 +60,11 @@ pr merge 后同步本地目标分支
 ## 安装
 
 ```
-npx skills add github.com/swawhq/.agents/skills/gidd/
+npx skills add github.com/swawhq/gidd/.agents/skills/gidd/
 ```
 或使用 gh:
 ```
-gh skills install github.com/swawhq/.agents/skills/gidd/
+gh skills install github.com/swawhq/gidd/.agents/skills/gidd/
 ```
 
 ## 详细帮助
