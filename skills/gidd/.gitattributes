@@ -1,2 +1,2 @@
 # Git for Windows executes these helpers through sh; CRLF breaks the shebang.
-scripts.js/*.sh text eol=lf
+*.sh text eol=lf
