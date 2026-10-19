@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { after, afterEach } from 'node:test';
-import { initializeStorage, inspectStorage } from '../../.agents/skills/gidd/scripts.js/shared/managed-storage.mjs';
+import { initializeStorage, inspectStorage } from '../../skills/gidd/scripts.js/shared/managed-storage.mjs';
 import { disposeTestProcesses, runTestProcess, startTestProcess } from '../../dev/test-process.mjs';
 
 // An exit code of zero alone does not prove that a test worker reached its end.
@@ -17,10 +17,10 @@ after(async () => {
 });
 
 export const repo = fileURLToPath(new URL('../../', import.meta.url));
-export const code = join(repo, '.agents/skills/gidd/scripts.powershell');
+export const code = join(repo, 'skills/gidd/scripts.powershell');
 export const support = join(repo, 'tests/support');
 export function copySkill(destination) {
-  const source = join(repo, '.agents/skills/gidd');
+  const source = join(repo, 'skills/gidd');
   cpSync(source, destination, { recursive: true });
 }
 const windowsRoot = process.env.SystemRoot || process.env.SYSTEMROOT || 'C:\\Windows';

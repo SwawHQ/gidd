@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import { renameSync } from 'node:fs';
 import { runRepositoryCommand } from './support/repository.mjs';
-import { policySnapshot } from '../.agents/skills/gidd/scripts.js/shared/policy-definition.mjs';
-import { loadPolicy } from '../.agents/skills/gidd/scripts.js/shared/policies.mjs';
-import { recordPolicyUse, policyStorage } from '../.agents/skills/gidd/scripts.js/shared/policy-history.mjs';
+import { policySnapshot } from '../skills/gidd/scripts.js/shared/policy-definition.mjs';
+import { loadPolicy } from '../skills/gidd/scripts.js/shared/policies.mjs';
+import { recordPolicyUse, policyStorage } from '../skills/gidd/scripts.js/shared/policy-history.mjs';
 import { adapter, assert, bindFixture, copySkill, dirname, existsSync, findGit, fixture, join, json,
   mkdirSync, ok, readFileSync, run, snapshot, toolsRoot, write, compile, stub, rmSync, initializeDataFixture } from './support/helpers.mjs';
 

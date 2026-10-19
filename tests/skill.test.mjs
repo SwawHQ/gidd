@@ -5,7 +5,7 @@ import { validateFrontmatter, validateLocalLinks, validateSkill } from '../dev/v
 const skill = (header = 'name: example\ndescription: A useful skill.', body = '# Instructions\n') => `---\n${header}\n---\n${body}`;
 
 test('GIDD skill metadata and local Markdown links are valid', () => {
-  const errors = validateSkill(join(repo, '.agents/skills/gidd'));
+  const errors = validateSkill(join(repo, 'skills/gidd'));
   assert.deepEqual(errors, [], errors.join('\n'));
 });
 

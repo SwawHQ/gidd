@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import { realpathSync, renameSync, rmdirSync, unlinkSync } from 'node:fs';
-import { main } from '../.agents/skills/gidd/scripts.js/gidd.mjs';
-import { initializeRepository } from '../.agents/skills/gidd/scripts.js/shared/repository-data.mjs';
-import { readConfiguration } from '../.agents/skills/gidd/scripts.js/shared/config.mjs';
-import { acquireStorageLock } from '../.agents/skills/gidd/scripts.js/shared/managed-storage.mjs';
+import { main } from '../skills/gidd/scripts.js/gidd.mjs';
+import { initializeRepository } from '../skills/gidd/scripts.js/shared/repository-data.mjs';
+import { readConfiguration } from '../skills/gidd/scripts.js/shared/config.mjs';
+import { acquireStorageLock } from '../skills/gidd/scripts.js/shared/managed-storage.mjs';
 import { assert, bindFixture, existsSync, findGit, fixture, join, mkdirSync, ok, readFileSync, readdirSync, run, snapshot, toolsRoot, write } from './support/helpers.mjs';
 
 function setup() {

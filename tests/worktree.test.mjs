@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import { realpathSync, symlinkSync, unlinkSync } from 'node:fs';
 import { relative } from 'node:path';
-import { parseWorktreeArguments, worktreeCommand, readRecords } from '../.agents/skills/gidd/scripts.js/commands/worktree/index.mjs';
-import { runCommand } from '../.agents/skills/gidd/scripts.js/shared/process.mjs';
-import { workspaceReport } from '../.agents/skills/gidd/scripts.js/shared/workspace-report.mjs';
-import { acquireStorageLock } from '../.agents/skills/gidd/scripts.js/shared/managed-storage.mjs';
-import { saveTask } from '../.agents/skills/gidd/scripts.js/shared/task-records.mjs';
-import { worktreePaths } from '../.agents/skills/gidd/scripts.js/shared/git-worktrees.mjs';
-import { policySnapshot } from '../.agents/skills/gidd/scripts.js/shared/policy-definition.mjs';
-import { readPolicy } from '../.agents/skills/gidd/scripts.js/shared/policies.mjs';
+import { parseWorktreeArguments, worktreeCommand, readRecords } from '../skills/gidd/scripts.js/commands/worktree/index.mjs';
+import { runCommand } from '../skills/gidd/scripts.js/shared/process.mjs';
+import { workspaceReport } from '../skills/gidd/scripts.js/shared/workspace-report.mjs';
+import { acquireStorageLock } from '../skills/gidd/scripts.js/shared/managed-storage.mjs';
+import { saveTask } from '../skills/gidd/scripts.js/shared/task-records.mjs';
+import { worktreePaths } from '../skills/gidd/scripts.js/shared/git-worktrees.mjs';
+import { policySnapshot } from '../skills/gidd/scripts.js/shared/policy-definition.mjs';
+import { readPolicy } from '../skills/gidd/scripts.js/shared/policies.mjs';
 import { adapter, assert, bindFixture, compile, copySkill, dirname, existsSync, findGit, fixture, initializeDataFixture, join, json, mkdirSync, ok, readFileSync, run, snapshot, write, resourceText, writeResource } from './support/helpers.mjs';
 import { runRepositoryCommand } from './support/repository.mjs';
 
@@ -428,7 +428,7 @@ test('list is read-only; cleanup deletes delivered branches and reuse preserves 
     assert.equal(first.path, join(s.target + '.gidd', first.id));
     const noticePath = join(s.target + '.gidd', 'README.md');
     const notice = readFileSync(noticePath, 'utf8');
-    assert.equal(notice, readFileSync(new URL('../.agents/skills/gidd/references/worktree-directory.md', import.meta.url), 'utf8'));
+    assert.equal(notice, readFileSync(new URL('../skills/gidd/references/worktree-directory.md', import.meta.url), 'utf8'));
     const amendedNotice = notice + '\nLocal notes to preserve.\n';
     write(noticePath, amendedNotice);
     write(join(first.path, 'tracked.txt'), 'delivered\n');

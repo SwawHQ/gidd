@@ -1,6 +1,6 @@
 import { test } from 'node:test';
-import { runCommand } from '../.agents/skills/gidd/scripts.js/shared/process.mjs';
-import { validLocalMerge } from '../.agents/skills/gidd/scripts.js/shared/local-delivery.mjs';
+import { runCommand } from '../skills/gidd/scripts.js/shared/process.mjs';
+import { validLocalMerge } from '../skills/gidd/scripts.js/shared/local-delivery.mjs';
 import { assert, existsSync, join, readFileSync, write } from './support/helpers.mjs';
 import { installation } from './support/issue-task.mjs';
 

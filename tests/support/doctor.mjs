@@ -1,5 +1,5 @@
 // Isolate process/runtime state for doctor module tests; this is not a product CLI.
-import { doctor } from '../../.agents/skills/gidd/scripts.js/commands/doctor/index.mjs';
+import { doctor } from '../../skills/gidd/scripts.js/commands/doctor/index.mjs';
 
 const report = await doctor(process.argv[2], { offline: true, lang: 'en' });
 console.log(JSON.stringify(report));

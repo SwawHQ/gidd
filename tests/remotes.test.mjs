@@ -1,7 +1,7 @@
 import { test } from 'node:test';
-import { resolveRemoteBinding, verifyRemoteBinding, remoteIdentity, validRemoteBinding } from '../.agents/skills/gidd/scripts.js/shared/remote-binding.mjs';
-import { runCommand } from '../.agents/skills/gidd/scripts.js/shared/process.mjs';
-import { repositoryConnection } from '../.agents/skills/gidd/scripts.js/shared/repository-remote.mjs';
+import { resolveRemoteBinding, verifyRemoteBinding, remoteIdentity, validRemoteBinding } from '../skills/gidd/scripts.js/shared/remote-binding.mjs';
+import { runCommand } from '../skills/gidd/scripts.js/shared/process.mjs';
+import { repositoryConnection } from '../skills/gidd/scripts.js/shared/repository-remote.mjs';
 import { assert, bindFixture, fixture, findGit, join, ok, run, readFileSync } from './support/helpers.mjs';
 
 function setup() {

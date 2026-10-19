@@ -3,9 +3,9 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { unlinkSync, rmdirSync, symlinkSync } from 'node:fs';
-import { workspaceReport } from '../.agents/skills/gidd/scripts.js/shared/workspace-report.mjs';
-import { readTasks } from '../.agents/skills/gidd/scripts.js/shared/task-records.mjs';
-import { readCreatePending } from '../.agents/skills/gidd/scripts.js/shared/create-pending.mjs';
+import { workspaceReport } from '../skills/gidd/scripts.js/shared/workspace-report.mjs';
+import { readTasks } from '../skills/gidd/scripts.js/shared/task-records.mjs';
+import { readCreatePending } from '../skills/gidd/scripts.js/shared/create-pending.mjs';
 import { assert, existsSync, join, mkdirSync, readFileSync, run, write } from './support/helpers.mjs';
 import { installation, noPreparedResources } from './support/issue-task.mjs';
 
@@ -129,7 +129,7 @@ test('invalid Issue draft files fail before authentication or remote creation', 
     await assert.rejects(s.invoke('issue', ['--file', file]), /issue_draft_invalid/);
     assert.deepEqual(readFileSync(file), invalidUtf8);
     write(file, '# [gidd]\nBody');
-    const entry = new URL('../.agents/skills/gidd/scripts.js/gidd.mjs', import.meta.url).href;
+    const entry = new URL('../skills/gidd/scripts.js/gidd.mjs', import.meta.url).href;
     const cli = run(process.execPath, ['--input-type=module', '-e',
       `import { main } from ${JSON.stringify(entry)}; process.exitCode = await main(process.argv.slice(1), { boundRepository: ${JSON.stringify(s.target)} });`,
       'issue', '--file', file], { cwd: s.target });

@@ -1,5 +1,5 @@
 import { test } from 'node:test';
-import { runCommand } from '../.agents/skills/gidd/scripts.js/shared/process.mjs';
+import { runCommand } from '../skills/gidd/scripts.js/shared/process.mjs';
 import { assert, existsSync, fixture, join, nodeExecutable, readFileSync, repo, support, until, write } from './support/helpers.mjs';
 
 test('JS execution requires binary paths and preserves literal arguments without a shell', async () => {

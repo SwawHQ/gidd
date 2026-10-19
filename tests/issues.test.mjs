@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
-import { closeIssue, createIssue, readIssue } from '../.agents/skills/gidd/scripts.js/shared/issues.mjs';
-import { readDraft } from '../.agents/skills/gidd/scripts.js/shared/task-records.mjs';
+import { closeIssue, createIssue, readIssue } from '../skills/gidd/scripts.js/shared/issues.mjs';
+import { readDraft } from '../skills/gidd/scripts.js/shared/task-records.mjs';
 import { assert, fixture, join, readFileSync, write } from './support/helpers.mjs';
 
 test('new Issue drafts normalize the title prefix without changing the source or body', () => {

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import { unlinkSync } from 'node:fs';
-import { readTasks } from '../.agents/skills/gidd/scripts.js/shared/task-records.mjs';
-import { readPolicyHistory } from '../.agents/skills/gidd/scripts.js/shared/policy-history.mjs';
+import { readTasks } from '../skills/gidd/scripts.js/shared/task-records.mjs';
+import { readPolicyHistory } from '../skills/gidd/scripts.js/shared/policy-history.mjs';
 import { assert, existsSync, join, readFileSync, write } from './support/helpers.mjs';
 import { installation, noPreparedResources } from './support/issue-task.mjs';
 

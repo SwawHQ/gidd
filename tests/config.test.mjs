@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import { createHash } from 'node:crypto';
 import { symlinkSync, unlinkSync, realpathSync, statSync } from 'node:fs';
-import { configure, editConfiguration, readConfiguration, normalizeRepositoryIdentity } from '../.agents/skills/gidd/scripts.js/shared/config.mjs';
-import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/shared/storage.mjs';
-import { resolveLanguage } from '../.agents/skills/gidd/scripts.js/shared/language.mjs';
+import { configure, editConfiguration, readConfiguration, normalizeRepositoryIdentity } from '../skills/gidd/scripts.js/shared/config.mjs';
+import { parseConfiguration } from '../skills/gidd/scripts.js/shared/storage.mjs';
+import { resolveLanguage } from '../skills/gidd/scripts.js/shared/language.mjs';
 import { prepare, toolsRoot, adapter, assert, compile, existsSync, fixture, hash, join, json, mkdirSync, ok, readFileSync, repo, snapshot, stub, write } from './support/helpers.mjs';
 
 const configText = 'schema_version = 1\n[ui]\nlanguage = "zh"\n';
@@ -274,7 +274,7 @@ test('release resolution selects stable versions, verifies upstream hashes and p
         assert.match(resolve(name,'latest',{...data,[endpoint]:JSON.stringify(bad)}).stderr,/invalid_stable_release/);
       }
     }
-    const pinned=JSON.parse(readFileSync(join(repo,'.agents/skills/gidd/scripts.powershell/runtimes.json'),'utf8')).tools[0];
+    const pinned=JSON.parse(readFileSync(join(repo,'skills/gidd/scripts.powershell/runtimes.json'),'utf8')).tools[0];
     const pinnedPath=join(f.root,'pinned.json'); write(pinnedPath,JSON.stringify(pinned));
     const original=hash(pinnedPath);
     const verified=json(ok(resolve('bun',pinned.version,{}, {pinnedPath})));

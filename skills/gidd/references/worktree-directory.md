@@ -11,13 +11,13 @@ GIDD manages this directory: `storage.json` holds ownership and worktree resourc
 
 ## 安全移除 / Safe removal
 
-先确认任务已交付、工作区不再使用、相关进程已停止，并保存需保留的本地文件。在原仓库根目录运行下列命令；cleanup 沿用记录的交付模式，已释放的工作区可直接 remove。
-Confirm delivery, stop using the worktree and its related processes, and preserve needed local files. Run these commands from the original repository root; cleanup uses the recorded delivery mode, or remove an already released worktree.
+先确认任务已交付、工作区不再使用、相关进程已停止，并保存需保留的本地文件。在原仓库根目录运行下列命令，将 `<skill-directory>` 替换为技能目录的实际路径；cleanup 沿用记录的交付模式，已释放的工作区可直接 remove。
+Confirm delivery, stop using the worktree and its related processes, and preserve needed local files. Run these commands from the original repository root and replace `<skill-directory>` with the actual skill directory; cleanup uses the recorded delivery mode, or remove an already released worktree.
 
 ```powershell
-.\.agents\skills\gidd\gidd.cmd worktree.list           #查看 / List
-.\.agents\skills\gidd\gidd.cmd <Issue编号>.cleanup     #核验交付并清理 / Verify delivery and clean up
-.\.agents\skills\gidd\gidd.cmd worktree.remove <path>  #移除目录 / Remove directory
+& "<skill-directory>\gidd.cmd" worktree.list           #查看 / List
+& "<skill-directory>\gidd.cmd" <Issue编号>.cleanup     #核验交付并清理 / Verify delivery and clean up
+& "<skill-directory>\gidd.cmd" worktree.remove <path>  #移除目录 / Remove directory
 ```
 
 准备中断时，cleanup 只撤销确认安全的未完成准备，保留任务记录和 Issue 副本。新建工作树没有用户文件或修改时才移除；复用工作树恢复原释放状态。修复后，用 `gidd <Issue编号> --policy <授权方案>` 继续准备。

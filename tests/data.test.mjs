@@ -1,18 +1,18 @@
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { renameSync, symlinkSync, unlinkSync } from 'node:fs';
-import { initializeRepository } from '../.agents/skills/gidd/scripts.js/shared/repository-data.mjs';
-import { inspectData } from '../.agents/skills/gidd/scripts.js/shared/data-inspection.mjs';
-import { locateStorage } from '../.agents/skills/gidd/scripts.js/shared/managed-storage.mjs';
-import { doctor } from '../.agents/skills/gidd/scripts.js/commands/doctor/index.mjs';
-import { worktreeCommand } from '../.agents/skills/gidd/scripts.js/commands/worktree/index.mjs';
-import { main } from '../.agents/skills/gidd/scripts.js/gidd.mjs';
-import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/shared/storage.mjs';
-import { runCommand } from '../.agents/skills/gidd/scripts.js/shared/process.mjs';
-import { newCreatePending, saveCreatePending, createPendingPath } from '../.agents/skills/gidd/scripts.js/shared/create-pending.mjs';
-import { readDraft } from '../.agents/skills/gidd/scripts.js/shared/task-records.mjs';
-import { readPolicy } from '../.agents/skills/gidd/scripts.js/shared/policies.mjs';
-import { policySnapshot } from '../.agents/skills/gidd/scripts.js/shared/policy-definition.mjs';
+import { initializeRepository } from '../skills/gidd/scripts.js/shared/repository-data.mjs';
+import { inspectData } from '../skills/gidd/scripts.js/shared/data-inspection.mjs';
+import { locateStorage } from '../skills/gidd/scripts.js/shared/managed-storage.mjs';
+import { doctor } from '../skills/gidd/scripts.js/commands/doctor/index.mjs';
+import { worktreeCommand } from '../skills/gidd/scripts.js/commands/worktree/index.mjs';
+import { main } from '../skills/gidd/scripts.js/gidd.mjs';
+import { parseConfiguration } from '../skills/gidd/scripts.js/shared/storage.mjs';
+import { runCommand } from '../skills/gidd/scripts.js/shared/process.mjs';
+import { newCreatePending, saveCreatePending, createPendingPath } from '../skills/gidd/scripts.js/shared/create-pending.mjs';
+import { readDraft } from '../skills/gidd/scripts.js/shared/task-records.mjs';
+import { readPolicy } from '../skills/gidd/scripts.js/shared/policies.mjs';
+import { policySnapshot } from '../skills/gidd/scripts.js/shared/policy-definition.mjs';
 import { assert, bindFixture, existsSync, findGit, fixture, join, mkdirSync, ok, readFileSync, run, snapshot, write, writeResource } from './support/helpers.mjs';
 
 function installation() {

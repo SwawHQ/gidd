@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import { copyFileSync, statSync, symlinkSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { doctor as diagnose } from '../.agents/skills/gidd/scripts.js/commands/doctor/index.mjs';
-import { parseCatalog } from '../.agents/skills/gidd/scripts.js/commands/doctor/catalog.mjs';
-import { configure } from '../.agents/skills/gidd/scripts.js/shared/config.mjs';
-import { parseConfiguration } from '../.agents/skills/gidd/scripts.js/shared/storage.mjs';
+import { doctor as diagnose } from '../skills/gidd/scripts.js/commands/doctor/index.mjs';
+import { parseCatalog } from '../skills/gidd/scripts.js/commands/doctor/catalog.mjs';
+import { configure } from '../skills/gidd/scripts.js/shared/config.mjs';
+import { parseConfiguration } from '../skills/gidd/scripts.js/shared/storage.mjs';
 import { bindFixture, copySkill, diagnosis, toolsRoot, assert, compile, dirname, existsSync, findGit, fixture, join, json, mkdirSync, ok, readFileSync, repo, rmSync, run, snapshot, stub, write, initializeDataFixture } from './support/helpers.mjs';
 
 const configText = 'schema_version = 1\n';
@@ -28,7 +28,7 @@ const byId = (report, id) => {
 };
 const doctor = (target, options = {}) => diagnose(target, { lang: 'en', ...options });
 const success = text => ({ ok: true, reason: 'process_exit', text });
-const catalogText = readFileSync(join(repo, '.agents/skills/gidd/references/doctor.toml'), 'utf8').replaceAll('\r\n', '\n');
+const catalogText = readFileSync(join(repo, 'skills/gidd/references/doctor.toml'), 'utf8').replaceAll('\r\n', '\n');
 
 // These tests exercise other diagnostic domains with initialized local data.
 // Deliberately damaged TOML must remain damaged for the configuration checks.

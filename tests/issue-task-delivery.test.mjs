@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { realpathSync, unlinkSync } from 'node:fs';
-import { worktreeCommand } from '../.agents/skills/gidd/scripts.js/commands/worktree/index.mjs';
-import { workspaceReport } from '../.agents/skills/gidd/scripts.js/shared/workspace-report.mjs';
-import { readPolicy } from '../.agents/skills/gidd/scripts.js/shared/policies.mjs';
-import { policySnapshot } from '../.agents/skills/gidd/scripts.js/shared/policy-definition.mjs';
-import { recordPolicyUse, policyStorage } from '../.agents/skills/gidd/scripts.js/shared/policy-history.mjs';
+import { worktreeCommand } from '../skills/gidd/scripts.js/commands/worktree/index.mjs';
+import { workspaceReport } from '../skills/gidd/scripts.js/shared/workspace-report.mjs';
+import { readPolicy } from '../skills/gidd/scripts.js/shared/policies.mjs';
+import { policySnapshot } from '../skills/gidd/scripts.js/shared/policy-definition.mjs';
+import { recordPolicyUse, policyStorage } from '../skills/gidd/scripts.js/shared/policy-history.mjs';
 import { assert, existsSync, join, readFileSync, write } from './support/helpers.mjs';
 import { installation } from './support/issue-task.mjs';
 

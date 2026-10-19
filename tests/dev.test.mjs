@@ -12,7 +12,7 @@ test('PowerShell sources are ASCII and parse without BOM', { timeout: 120000 }, 
         if (entry.isDirectory()) visit(path); else if (entry.name.endsWith('.ps1')) paths.push(path);
       }
     }
-    for (const dir of ['dev','.agents/skills/gidd/scripts.powershell','.agents/skills/gidd/scripts.js','tests']) visit(join(repo,dir));
+    for (const dir of ['dev','skills/gidd/scripts.powershell','skills/gidd/scripts.js','tests']) visit(join(repo,dir));
     for (const path of paths) assert.ok(readFileSync(path).every(byte => byte < 128), `PowerShell source must be ASCII without BOM: ${path}`);
     assert.equal(json(ok(adapter(f.root,{action:'syntax',paths}))).checked,paths.length);
   } finally { f.dispose(); }
@@ -70,7 +70,7 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
   const f=fixture();
   try {
     const checkout=join(f.root,'开发 repo & spaces'); mkdirSync(checkout);
-    for (const path of ['dev.cmd','dev','.agents/skills/gidd/scripts.powershell','.agents/skills/gidd/scripts.js']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    for (const path of ['dev.cmd','dev','skills/gidd/scripts.powershell','skills/gidd/scripts.js']) cpSync(join(repo,path),join(checkout,path),{recursive:true});
     const script=join(checkout,'dev/windows.ps1');
     // Exercise different UI and regional cultures regardless of the test host.
     write(script,'[Globalization.CultureInfo]::CurrentUICulture = [Globalization.CultureInfo]::GetCultureInfo("en-US")\n[Globalization.CultureInfo]::CurrentCulture = [Globalization.CultureInfo]::GetCultureInfo("zh-CN")\n'+readFileSync(script,'utf8'));
@@ -124,7 +124,7 @@ test('dev.cmd: help without runtimes, language selection, validation and explici
     const result=invoke(['.setup']); assert.notEqual(result.status,0); assert.match(result.stderr,/occupied_or_version_conflicting_target/);
     assert.equal(readFileSync(occupied,'utf8'),'keep');
     stub(join(bin,'bun.exe'),localBun,undefined,true);
-    const config=join(checkout,'.agents/skills/gidd/config.toml');
+    const config=join(checkout,'skills/gidd/config.toml');
     const configuredRoot = toolsRoot(f.root);
     write(config,'# retain this comment\nschema_version = 1\n[tools]\n');
     const configuredInfo=json(ok(invoke(['.info'])));
@@ -145,7 +145,7 @@ test('development setup keeps runtime selectors and retires the gh shortcut',()=
   const f=fixture();
   try {
     const checkout=join(f.root,'checkout');
-    for(const path of ['dev.cmd','dev','.agents/skills/gidd'])cpSync(join(repo,path),join(checkout,path),{recursive:true});
+    for(const path of ['dev.cmd','dev','skills/gidd'])cpSync(join(repo,path),join(checkout,path),{recursive:true});
     const cmd=join(process.env.SystemRoot || process.env.SYSTEMROOT,'System32/cmd.exe');
     const invoke=tool=>run(cmd,['/d','/s','/c',`""${join(checkout,'dev.cmd')}" .setup ${tool}"`],{windowsVerbatimArguments:true,env:{PATH:''}});
     const rejected=invoke('gh');assert.notEqual(rejected.status,0);assert.match(rejected.stderr,/tools\.ensure/);
@@ -158,8 +158,8 @@ test('dev.cmd bun/node forwards argv, stdin, cwd and exit code using the selecte
   const f = fixture();
   try {
     const checkout = join(f.root, '开发 repo & spaces');
-    for (const path of ['dev.cmd','dev','.agents/skills/gidd/scripts.powershell','.agents/skills/gidd/scripts.js']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
-    const config = join(checkout, '.agents/skills/gidd/config.toml');
+    for (const path of ['dev.cmd','dev','skills/gidd/scripts.powershell','skills/gidd/scripts.js']) cpSync(join(repo, path), join(checkout, path), { recursive: true });
+    const config = join(checkout, 'skills/gidd/config.toml');
     write(config, 'schema_version = 1\n[tools]\n');
     const name = process.versions.bun ? 'bun' : 'node', other = name === 'bun' ? 'node' : 'bun';
     const script = join(f.root, 'script with spaces.mjs');

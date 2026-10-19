@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { symlinkSync, unlinkSync } from 'node:fs';
-import { toolEnvironment } from '../.agents/skills/gidd/scripts.js/shared/tools.mjs';
-import { boundTools, boundExecutor, readBindings } from '../.agents/skills/gidd/scripts.js/shared/bindings.mjs';
+import { toolEnvironment } from '../skills/gidd/scripts.js/shared/tools.mjs';
+import { boundTools, boundExecutor, readBindings } from '../skills/gidd/scripts.js/shared/bindings.mjs';
 import { prepare, diagnosis, toolsRoot, adapter as shellAdapter, assert, code, compile, copySkill, dirname, existsSync, fixture, findGit, bindFixture, bindNodeFixture, hash, installRequest, join, json, makeZip, mkdirSync, ok, ps, readFileSync, run, startAdapter as startShellAdapter, stub, until, write } from './support/helpers.mjs';
 
 test('gh launcher selects the local main-worktree profile and preserves explicit environment and native arguments', () => {
@@ -375,7 +375,7 @@ test(`setup shell: install, integrity, interrupted publication, locks, preservat
     ok(shellAdapter(f.root,{action:'guide',root:tools}));
     write(join(tools,'INSTALLATION.md'),'old guide'); ok(shellAdapter(f.root,{action:'guide',root:tools}));
     assert.equal(readFileSync(join(tools,'INSTALLATION.md'),'utf8'),
-      readFileSync(new URL('../.agents/skills/gidd/scripts.powershell/INSTALLATION.md',import.meta.url),'utf8'));
+      readFileSync(new URL('../skills/gidd/scripts.powershell/INSTALLATION.md',import.meta.url),'utf8'));
     assert.equal(json(ok(install(tools))).action,'installed'); assert.equal(valid(tools),true);
     assert.equal(existsSync(join(tools,'.cache/bun')),false,'Successful install must remove downloads and extraction');
     assert.equal(existsSync(join(tools,'.cache/install.lock')),false,'Finished installer releases its lock');

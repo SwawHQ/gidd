@@ -1,5 +1,5 @@
 import { test } from 'node:test';
-import { selectRepositoryAccount, authorizeRepositoryGitHub } from '../.agents/skills/gidd/scripts.js/shared/repository-auth.mjs';
+import { selectRepositoryAccount, authorizeRepositoryGitHub } from '../skills/gidd/scripts.js/shared/repository-auth.mjs';
 import { assert, fixture, join, write, readFileSync, existsSync } from './support/helpers.mjs';
 
 test('repository profiles select independent accounts and ignore caller tokens and profile', async () => {

@@ -1,9 +1,9 @@
-import { parseIssueTaskArguments, issueTaskCommand } from '../../.agents/skills/gidd/scripts.js/commands/issue-task/index.mjs';
-import { parseIssueArguments, issueCommand } from '../../.agents/skills/gidd/scripts.js/commands/issue/index.mjs';
-import { worktreeCommand } from '../../.agents/skills/gidd/scripts.js/commands/worktree/index.mjs';
-import { runCommand } from '../../.agents/skills/gidd/scripts.js/shared/process.mjs';
-import { workspaceReport } from '../../.agents/skills/gidd/scripts.js/shared/workspace-report.mjs';
-import { readTasks } from '../../.agents/skills/gidd/scripts.js/shared/task-records.mjs';
+import { parseIssueTaskArguments, issueTaskCommand } from '../../skills/gidd/scripts.js/commands/issue-task/index.mjs';
+import { parseIssueArguments, issueCommand } from '../../skills/gidd/scripts.js/commands/issue/index.mjs';
+import { worktreeCommand } from '../../skills/gidd/scripts.js/commands/worktree/index.mjs';
+import { runCommand } from '../../skills/gidd/scripts.js/shared/process.mjs';
+import { workspaceReport } from '../../skills/gidd/scripts.js/shared/workspace-report.mjs';
+import { readTasks } from '../../skills/gidd/scripts.js/shared/task-records.mjs';
 import { assert, bindFixture, existsSync, findGit, fixture, initializeDataFixture, join, mkdirSync, ok, readFileSync, run, write } from './helpers.mjs';
 
 export function installation(t) {

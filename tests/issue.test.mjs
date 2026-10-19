@@ -2,14 +2,14 @@ import { test } from 'node:test';
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { issueCommand, parseIssueArguments } from '../.agents/skills/gidd/scripts.js/commands/issue/index.mjs';
+import { issueCommand, parseIssueArguments } from '../skills/gidd/scripts.js/commands/issue/index.mjs';
 import { createPendingPath, newCreatePending, readCreatePending, sameCreationRequest,
-  saveCreatePending } from '../.agents/skills/gidd/scripts.js/shared/create-pending.mjs';
-import { policySnapshot } from '../.agents/skills/gidd/scripts.js/shared/policy-definition.mjs';
-import { readPolicy } from '../.agents/skills/gidd/scripts.js/shared/policies.mjs';
-import { completeTaskRegistration } from '../.agents/skills/gidd/scripts.js/shared/task-registration.mjs';
-import { issuePath, readTask, taskPath, readDraft } from '../.agents/skills/gidd/scripts.js/shared/task-records.mjs';
-import { readPolicyHistory } from '../.agents/skills/gidd/scripts.js/shared/policy-history.mjs';
+  saveCreatePending } from '../skills/gidd/scripts.js/shared/create-pending.mjs';
+import { policySnapshot } from '../skills/gidd/scripts.js/shared/policy-definition.mjs';
+import { readPolicy } from '../skills/gidd/scripts.js/shared/policies.mjs';
+import { completeTaskRegistration } from '../skills/gidd/scripts.js/shared/task-registration.mjs';
+import { issuePath, readTask, taskPath, readDraft } from '../skills/gidd/scripts.js/shared/task-records.mjs';
+import { readPolicyHistory } from '../skills/gidd/scripts.js/shared/policy-history.mjs';
 import { assert, fixture, join, repo, run, ok, bindFixture, findGit, existsSync,
   initializeDataFixture, readFileSync, write } from './support/helpers.mjs';
 
@@ -31,7 +31,7 @@ test('Issue CLI checks the draft before login or initializing repository data', 
     const target = join(f.root, 'repo'), git = findGit();
     bindFixture(f.root, { git });
     ok(run(git, ['init', '-b', 'main', target]));
-    const entry = pathToFileURL(join(repo, '.agents/skills/gidd/scripts.js/gidd.mjs')).href;
+    const entry = pathToFileURL(join(repo, 'skills/gidd/scripts.js/gidd.mjs')).href;
     const result = run(process.execPath, ['--input-type=module', '-e',
       `const {main}=await import(${JSON.stringify(entry)}); process.exitCode=await main(['issue','--file','missing.md','--policy','00/00'],{boundRepository:process.argv[1]});`, target], { cwd: target });
     assert.equal(result.status, 2);

@@ -68,15 +68,15 @@ npx skills add swawhq/gidd --skill gidd
 或使用支持技能安装的 [GitHub CLI](https://cli.github.com/manual/gh_skill_install)：
 
 ```text
-gh skill install swawhq/gidd .agents/skills/gidd --allow-hidden-dirs
+gh skill install swawhq/gidd skills/gidd
 ```
 
 ## 详细帮助
 
-- [命令与参数](.agents/skills/gidd/references/gidd.help.zh-CN.md)：任务、交付和工具命令。
-- [工具准备参数](.agents/skills/gidd/references/tools.ensure.help.zh-CN.md)：准备、检查和修复工具。
-- [本地数据目录](.agents/skills/gidd/references/data.md)：任务记录、工作树、恢复与清理。
-- [卸载与清理](.agents/skills/gidd/references/disable.md)：技能、共享工具和本地数据的移除说明。
+- [命令与参数](skills/gidd/references/gidd.help.zh-CN.md)：任务、交付和工具命令。
+- [工具准备参数](skills/gidd/references/tools.ensure.help.zh-CN.md)：准备、检查和修复工具。
+- [本地数据目录](skills/gidd/references/data.md)：任务记录、工作树、恢复与清理。
+- [卸载与清理](skills/gidd/references/disable.md)：技能、共享工具和本地数据的移除说明。
 
 ## 扩展阅读
 

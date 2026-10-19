@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
-import { gitConfigurationEnvironment, selectGitHubAccount } from '../.agents/skills/gidd/scripts.js/shared/execution-env.mjs';
-import { runAttachedCommand } from '../.agents/skills/gidd/scripts.js/shared/attached-process.mjs';
-import { noninteractiveEnvironment } from '../.agents/skills/gidd/scripts.js/shared/noninteractive.mjs';
+import { gitConfigurationEnvironment, selectGitHubAccount } from '../skills/gidd/scripts.js/shared/execution-env.mjs';
+import { runAttachedCommand } from '../skills/gidd/scripts.js/shared/attached-process.mjs';
+import { noninteractiveEnvironment } from '../skills/gidd/scripts.js/shared/noninteractive.mjs';
 import { assert, fixture, findGit, join, mkdirSync, write, run, ok, compile,
   readFileSync, repo, until, existsSync } from './support/helpers.mjs';
 
@@ -210,7 +210,7 @@ test('credential helper verifies explicitly selected accounts and supplied token
 test('streaming execution has no output cap and cancellation returns a nonzero status', async () => {
   const f = fixture();
   try {
-    const entry = pathToFileURL(join(repo, '.agents/skills/gidd/scripts.js/shared/attached-process.mjs')).href;
+    const entry = pathToFileURL(join(repo, 'skills/gidd/scripts.js/shared/attached-process.mjs')).href;
     const script = `const {runAttachedCommand}=await import(${JSON.stringify(entry)});process.exitCode=await runAttachedCommand(process.execPath,['-e','process.stdin.pipe(process.stdout);process.stderr.write("stderr");process.exitCode=17']);`;
     const input = 'x'.repeat(1100000) + '\n中文\0\n';
     const output = run(process.execPath, ['--input-type=module', '-e', script], { input, maxBuffer: 2000000 });

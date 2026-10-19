@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 if (!process.versions.bun) throw new Error('Run this build with Bun.');
 const version = '1.7.2';
 const stage = mkdtempSync(join(tmpdir(), 'gidd-toml-build-'));
-const vendor = fileURLToPath(new URL('../.agents/skills/gidd/scripts.js/vendor/', import.meta.url));
+const vendor = fileURLToPath(new URL('../skills/gidd/scripts.js/vendor/', import.meta.url));
 const run = args => {
   const result = spawnSync(process.execPath, args, { cwd: stage, stdio: 'inherit', windowsHide: true });
   if (result.error || result.status !== 0) throw result.error || new Error('toml_build_failed');
