@@ -1,4 +1,4 @@
-基于 Git Worktree、GitHub Issue 为要求可审计（过程留痕）、外包式（先立验收契约再开发）、多任务并行、流水线式协作的开发，提供任务登记、工作区分配管理与交付等工具。
+基于 Git Worktree、GitHub Issue 为要求可审计（过程留痕）、外包式（先立验收契约再开发）、多任务并行、流水线式协作的开发，提供任务登记、工作区管理与交付等工具。
 
 ## GIDD 会要求 Agent 遵守以下流程规范
 
@@ -59,12 +59,16 @@ pr merge 后同步本地目标分支
 
 ## 安装
 
+使用 [skills CLI](https://github.com/vercel-labs/skills#readme)：
+
+```text
+npx skills add swawhq/gidd --skill gidd
 ```
-npx skills add github.com/swawhq/gidd/.agents/skills/gidd/
-```
-或使用 gh:
-```
-gh skills install github.com/swawhq/gidd/.agents/skills/gidd/
+
+或使用支持技能安装的 [GitHub CLI](https://cli.github.com/manual/gh_skill_install)：
+
+```text
+gh skill install swawhq/gidd .agents/skills/gidd --allow-hidden-dirs
 ```
 
 ## 详细帮助
@@ -73,3 +77,7 @@ gh skills install github.com/swawhq/gidd/.agents/skills/gidd/
 - [工具准备参数](.agents/skills/gidd/references/tools.ensure.help.zh-CN.md)：准备、检查和修复工具。
 - [本地数据目录](.agents/skills/gidd/references/data.md)：任务记录、工作树、恢复与清理。
 - [卸载与清理](.agents/skills/gidd/references/disable.md)：技能、共享工具和本地数据的移除说明。
+
+## 扩展阅读
+
+[NVIDIA Agora：Git 作为集体自主研究的共享内存](https://arxiv.org/abs/2609.18094)
