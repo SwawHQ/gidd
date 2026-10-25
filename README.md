@@ -1,4 +1,4 @@
-基于 Git Worktree、GitHub Issue 为要求可审计（过程留痕）、外包式（先立验收契约再开发）、多任务并行、流水线式协作的开发，提供任务登记、工作区管理与交付等工具。
+基于 Git Worktree、GitHub Issue 为要求可审计（过程留痕）、外包式（先立验收契约再开发）、多任务安全并行、流水线式协作的开发，提供任务登记、工作区管理与交付等工具。
 
 ## GIDD 会要求 Agent 遵守以下流程规范
 
@@ -47,7 +47,7 @@ pr merge 后同步本地目标分支
 
 ① 自带 git、gh（GitHub CLI）、bun/node 准备：会优先沿用系统已存在的，缺少时自动下载/设置便携版；放置于：~/.agents/skills.tools/gidd/
 
-② 也可用于 Git/GitHub 操作，如 clone、Issue、PR 等。
+② 也可用于 Git/GitHub 操作，如 clone、Issue、PR、Release 等。
 
 ③ 对 Issue 任务的领取情况、任务专用工作分支的 worktree 会放置于 <目标仓库>.gidd/ 中（没有时会新建）。
 
